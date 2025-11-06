@@ -1,0 +1,9 @@
+title: WAL++ API Documentation
+description:
+output: build/docs/api
+files:
+  - "include/*.h"
+  - "include/**/*.h"
+  - "src/*.h"
+  - "src/**/*.h"
+

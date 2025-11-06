@@ -1,0 +1,81 @@
+site_name: WAL++
+site_url: https://walpp.iti.uni-luebeck.de/
+repo_url: https://gitlab.iti.uni-luebeck.de/BuddelChip/WALpp/
+
+copyright: Copyright &copy; 2025
+theme:
+  name: material
+  custom_dir: docs/overrides
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - content.code.select
+    - content.code.copy
+    - content.code.annotate
+  language: en
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - meta
+  - def_list
+  - attr_list
+  - admonition
+  - pymdownx.details
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences:
+      preserve_tabs: true
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+plugins:
+  - search
+extra:
+  generator: false
+#extra_css:
+  #- docs/stylesheets/doxide.css
+  #- https://cdn.jsdelivr.net/npm/es6-shim@0.35.8/coverage/base.min.css
+extra_javascript:
+  #- docs/javascripts/mathjax.js
+  #- https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js
+  #- https://cdn.jsdelivr.net/npm/es6-shim@0.35.8/es6-shim.min.js
+  #- https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - https://cdn.jsdelivr.net/npm/mermaid@11.5.0/dist/mermaid.min.js
+  #- docs/javascripts/mermaid.js
+use_directory_urls: true
+
+nav:
+ - Home: README.md
+ - Quick Start: docs/API_QUICK_REFERENCE.md
+ - API:
+   - "api/index.md"
+
+
+docs_dir: build/docs
+site_dir: build/site

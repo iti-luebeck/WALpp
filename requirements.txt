@@ -1,0 +1,5 @@
+pybind11==3.0.1
+#doxide==0.10.0
+mkdocs==1.5.2
+mkdocs-material==9.1.13
+#mkdocs-mermaid2-plugin==0.7.0

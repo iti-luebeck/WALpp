@@ -1,0 +1,17 @@
+;; Test WAL program
+;; Basic arithmetic
+(+ 10 20 30)
+
+;; Define variables
+(define x 42)
+(define y 58)
+
+;; Use them
+(+ x y)
+
+;; Simple lambda
+(define double (lambda (n) (* n 2)))
+(double 21)
+
+;; List operations
+(map double '(1 2 3 4 5))

@@ -1,0 +1,59 @@
+# Build directories
+build/
+cmake-build-debug/
+cmake-build-release/
+cmake-build-relwithdebinfo/
+cmake-build-minsizerel/
+out/
+
+# IDE directories
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CMake
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exe
+*.elf
+
+# Test artifacts
+Testing/
+*.gcda
+*.gcno
+coverage_report/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Documentation
+docs/_build/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+.tags
