@@ -6,6 +6,8 @@
 #include <fstream>
 #include <algorithm>
 #include <cstring>
+#include <unistd.h>
+#include <cstdio>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -218,4 +220,144 @@ std::string REPL::load_history_file() const {
     return std::string(home) + "/.wal_history";
 }
 
+bool REPL::load_pipe(const std::string& pipe_path) {
+    try {
+        // Determine format from pipe_path if possible
+        std::string format = "vcd";  // default
+        size_t dot_pos = pipe_path.find_last_of(".");
+        if (dot_pos != std::string::npos) {
+            std::string ext = pipe_path.substr(dot_pos + 1);
+            if (ext == "csv" || ext == "fst" || ext == "vcd") {
+                format = ext;
+            }
+        }
+        
+        // Create a temporary file with correct extension
+        std::string temp_file = "/tmp/wal_pipe_" + std::to_string(getpid()) + "." + format;
+        
+        // Open named pipe (FIFO) for reading
+        std::ifstream pipe(pipe_path);
+        if (!pipe.is_open()) {
+            print_error("Failed to open pipe: " + pipe_path);
+            return false;
+        }
+        
+        // Write pipe content to temporary file
+        std::ofstream temp(temp_file);
+        if (!temp.is_open()) {
+            print_error("Failed to create temporary file: " + temp_file);
+            return false;
+        }
+        
+        temp << pipe.rdbuf();
+        temp.close();
+        pipe.close();
+        
+        // Check file size
+        std::ifstream check(temp_file);
+        check.seekg(0, std::ios::end);
+        size_t file_size = check.tellg();
+        check.close();
+        
+        if (file_size == 0) {
+            print_error("Pipe is empty: " + pipe_path);
+            std::remove(temp_file.c_str());
+            return false;
+        }
+        
+        // Load as trace file (format auto-detected from extension)
+        std::cout << "Loading trace data from pipe: " << pipe_path << " (" << file_size << " bytes)" << std::endl;
+        try {
+            wal_instance->load(temp_file);
+            std::cout << "✓ Trace loaded successfully from pipe" << std::endl;
+        } catch (const std::exception& e) {
+            print_error("Failed to load trace: " + std::string(e.what()));
+            std::remove(temp_file.c_str());
+            return false;
+        }
+        
+        // Clean up temporary file
+        std::remove(temp_file.c_str());
+        return true;
+    } catch (const std::exception& e) {
+        print_error("Error reading from pipe: " + std::string(e.what()));
+        return false;
+    }
+}
+
+bool REPL::read_from_stdin() {
+    try {
+        // Check if stdin is available
+        if (std::cin.eof()) {
+            print_error("Standard input is not available");
+            return false;
+        }
+        
+        // Try to detect format from stdin header
+        // Read first few bytes to detect format
+        std::string header_buf;
+        char c;
+        for (int i = 0; i < 20 && std::cin.get(c); ++i) {
+            header_buf += c;
+        }
+        
+        std::string format = "vcd";  // default
+        if (header_buf.find("$") != std::string::npos) {
+            format = "vcd";  // VCD starts with $
+        } else if (header_buf.find(",") != std::string::npos && header_buf.find("\n") != std::string::npos) {
+            format = "csv";  // CSV has commas and newlines
+        } else if (header_buf.find("LSB") != std::string::npos || header_buf.find("FST") != std::string::npos) {
+            format = "fst";  // FST has LSB/FST marker
+        }
+        
+        // Create temp file with detected format
+        std::string temp_file = "/tmp/wal_stdin_" + std::to_string(getpid()) + "." + format;
+        
+        // Read stdin into temporary file
+        std::ofstream temp(temp_file);
+        if (!temp.is_open()) {
+            print_error("Failed to create temporary file: " + temp_file);
+            return false;
+        }
+        
+        // Write buffered header first
+        temp << header_buf;
+        
+        // Write rest of stdin
+        temp << std::cin.rdbuf();
+        temp.close();
+        
+        // Check file size
+        std::ifstream check(temp_file);
+        check.seekg(0, std::ios::end);
+        size_t file_size = check.tellg();
+        check.close();
+        
+        if (file_size == 0) {
+            print_error("No input from standard input");
+            std::remove(temp_file.c_str());
+            return false;
+        }
+        
+        // Load as trace file
+        std::cout << "Loading trace data from stdin... (detected format: " << format << ", " << file_size << " bytes)" << std::endl;
+        try {
+            wal_instance->load(temp_file);
+            std::cout << "✓ Trace loaded successfully from stdin" << std::endl;
+        } catch (const std::exception& e) {
+            print_error("Failed to load trace: " + std::string(e.what()));
+            std::remove(temp_file.c_str());
+            return false;
+        }
+        
+        // Clean up temporary file
+        std::remove(temp_file.c_str());
+        return true;
+    } catch (const std::exception& e) {
+        print_error("Error reading from stdin: " + std::string(e.what()));
+        return false;
+    }
+}
+
 } // namespace wal
+

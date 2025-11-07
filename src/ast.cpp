@@ -1,7 +1,6 @@
 #include "wal/ast.h"
-#include <sstream>
 #include <iomanip>
-#include <cmath>
+#include <sstream>
 
 namespace wal {
 

@@ -13,6 +13,7 @@ set(IMPL_TEST_FILES
     test_data_export.cpp
     test_visualization.cpp
     test_trace_operators.cpp
+    test_trace_script_application.cpp
 )
 
 # Create test executables
@@ -77,5 +78,28 @@ endif()
 add_test(
     NAME test_cli
     COMMAND test_cli
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Trace integration CLI test (also needs REPL/CLI sources)
+add_executable(test_trace_integration_cli
+    test_trace_integration_cli.cpp
+    ../../src/cli.cpp
+    ../../src/repl.cpp
+)
+
+target_link_libraries(test_trace_integration_cli PRIVATE walpp)
+
+# Link readline if available
+if(readline_FOUND)
+    target_link_libraries(test_trace_integration_cli PRIVATE readline::readline)
+elseif(HAVE_READLINE)
+    target_include_directories(test_trace_integration_cli PRIVATE ${READLINE_INCLUDE_DIR})
+    target_link_libraries(test_trace_integration_cli PRIVATE ${READLINE_LIBRARY})
+endif()
+
+add_test(
+    NAME test_trace_integration_cli
+    COMMAND test_trace_integration_cli
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

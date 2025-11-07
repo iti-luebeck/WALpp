@@ -71,6 +71,24 @@ public:
     bool load_file(const std::string& filename);
     
     /**
+     * @brief Read and execute from a named pipe (FIFO)
+     * 
+     * @param pipe_path Path to the named pipe file
+     * @return true if successful
+     */
+    bool load_pipe(const std::string& pipe_path);
+    
+    /**
+     * @brief Read and execute from standard input
+     * 
+     * Reads input from stdin until EOF and executes all input.
+     * Useful for piping simulation output directly.
+     * 
+     * @return true if successful
+     */
+    bool read_from_stdin();
+    
+    /**
      * @brief Get the WAL instance
      */
     std::shared_ptr<Wal> get_wal() const { return wal_instance; }

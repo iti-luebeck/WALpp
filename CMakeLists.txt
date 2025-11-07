@@ -67,12 +67,25 @@ set(WALPP_CORE_SOURCES
     src/core.cpp
     src/operator_registry.cpp
     
-    # Trace system (stubs for Phase 1)
+    # Trace system
     src/trace/trace.cpp
     src/trace/trace_container.cpp
     src/trace/vcd_trace.cpp
     src/trace/csv_trace.cpp
     src/trace/fst_trace.cpp
+    
+    # Streaming Implementation - enabled with completed implementations
+    src/trace/streaming_chunk_reader.cpp
+    src/trace/streaming_vcd_trace.cpp
+    src/trace/streaming_csv_trace.cpp
+    src/trace/streaming_fst_trace.cpp
+    
+    # Phase 3 Writers
+    src/writers/trace_writer.cpp
+    src/writers/vcd_writer.cpp
+    src/writers/fst_writer.cpp
+    src/writers/csv_writer.cpp
+    src/writers/writers.cpp
     
     # Phase 2-5: All operators are header-only (implementations in .h files)
 )

@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <iostream>
+#include <unordered_map>
 
 namespace wal {
 
@@ -504,7 +505,7 @@ public:
 };
 
 /**
- * @}  
+ * @}
  * @endgroup Errors
  */
 
@@ -512,3 +513,5 @@ public:
  * @}
  * @endgroup AST
  */
+
+} // namespace wal

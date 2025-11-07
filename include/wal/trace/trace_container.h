@@ -2,6 +2,7 @@
 
 #include "../ast.h"
 #include "trace.h"
+#include "streaming_config.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -10,6 +11,7 @@
 namespace wal {
 
 class TraceContainer;
+struct StreamingConfig;
 
 /**
  * Central hub for managing multiple loaded waveform traces
@@ -48,6 +50,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<Trace>> traces;
     size_t num_traces = 0;
     std::vector<int> index_stack;
+    StreamingConfig streaming_config;  // Configuration for streaming mode
     
     friend class Trace;
 
@@ -219,6 +222,85 @@ public:
     bool empty() const { return num_traces == 0; }
     ///@}
 
+    ///@name Streaming Configuration
+    ///@{
+    /**
+     * Configure streaming behavior for trace loading
+     * 
+     * By default, the container auto-enables streaming for files > 100 MB.
+     * This can be customized globally or per-load.
+     * 
+     * **Examples:**
+     * ```cpp
+     * // Enable streaming for all files
+     * StreamingConfig cfg;
+     * cfg.enabled = true;
+     * cfg.chunk_size_bytes = 50 * 1024 * 1024;  // 50 MB chunks
+     * container->set_streaming_config(cfg);
+     * 
+     * // Disable streaming
+     * cfg.enabled = false;
+     * container->set_streaming_config(cfg);
+     * ```
+     * 
+     * @param config StreamingConfig with desired settings
+     * @see StreamingConfig for available options
+     */
+    void set_streaming_config(const StreamingConfig& config) {
+        streaming_config = config;
+    }
+
+    /**
+     * Get current streaming configuration
+     * 
+     * @return Reference to current StreamingConfig
+     */
+    const StreamingConfig& get_streaming_config() const {
+        return streaming_config;
+    }
+
+    /**
+     * Enable or disable streaming mode globally
+     * 
+     * @param enable true to enable, false to disable
+     */
+    void set_streaming_enabled(bool enable) {
+        streaming_config.enabled = enable;
+    }
+
+    /**
+     * Check if streaming is enabled
+     * 
+     * @return true if streaming is active
+     */
+    bool is_streaming_enabled() const {
+        return streaming_config.enabled;
+    }
+
+    /**
+     * Set file size threshold for automatic streaming
+     * 
+     * Files larger than this size will automatically use streaming
+     * even if streaming is disabled. Set to 0 to disable auto-detection.
+     * 
+     * @param bytes Threshold in bytes (e.g., 100*1024*1024 for 100 MB)
+     */
+    void set_auto_streaming_threshold(size_t bytes) {
+        streaming_config.auto_threshold_bytes = bytes;
+    }
+
+    /**
+     * Get cache statistics for a loaded trace
+     * 
+     * Only available for streaming traces. Returns cache hit rate,
+     * misses, and evictions.
+     * 
+     * @param tid Trace ID
+     * @return Statistics string, or empty if trace not streaming
+     */
+    std::string get_cache_statistics(const std::string& tid) const;
+    ///@}
+
     ///@name Management
     ///@{
     /**
@@ -250,6 +332,18 @@ private:
     /// Load CSV (Comma-Separated Values) format
     void load_csv(const std::string& file, const std::string& tid,
                   const std::vector<std::string>* keep_signals);
+
+    /// Load VCD using streaming reader
+    void load_streaming_vcd(const std::string& file, const std::string& tid,
+                           const std::vector<std::string>* keep_signals);
+    
+    /// Load CSV using streaming reader
+    void load_streaming_csv(const std::string& file, const std::string& tid,
+                           const std::vector<std::string>* keep_signals);
+    
+    /// Load FST using streaming reader
+    void load_streaming_fst(const std::string& file, const std::string& tid,
+                           const std::vector<std::string>* keep_signals);
 };
 
 /**
