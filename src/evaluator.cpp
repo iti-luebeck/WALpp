@@ -17,6 +17,7 @@
 #include "wal/operators/data_export_operators.h"
 #include "wal/operators/visualization_operators.h"
 #include "wal/operators/trace_management_operators.h"
+#include "wal/operators/hamming_operators.h"
 #include <cmath>
 #include <algorithm>
 
@@ -251,6 +252,7 @@ void SEval::initialize_builtins() {
     
     // Register Phase 6 - Signal Analysis operators
     wal::operators::SpectrumAnalysisOperators::register_all(builtin_operators);
+    wal::operators::HammingOperators::register_all(builtin_operators);
     wal::operators::StatisticalAnalysisOperators::register_all(builtin_operators);
     wal::operators::SignalProcessingOperators::register_all(builtin_operators);
     
