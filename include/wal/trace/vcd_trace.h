@@ -77,6 +77,16 @@ public:
      */
     int64_t get_timestamp() const;
 
+    /**
+     * @brief Get direct access to time steps (for performance-critical operations)
+     */
+    const std::vector<TimeStep>& get_time_steps() const { return time_steps; }
+
+    /**
+     * @brief Get signal info map (for performance-critical operations)
+     */
+    const std::unordered_map<std::string, SignalInfo>& get_signal_info() const { return signal_info; }
+
 private:
     /**
      * @brief Parse VCD header section

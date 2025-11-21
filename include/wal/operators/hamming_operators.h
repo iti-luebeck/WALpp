@@ -24,12 +24,10 @@ public:
     /**
      * Count the number of '1' bits in a string representation of a value
      */
-    static int count_ones(const std::string& bits) {
+    static inline int count_ones(const std::string& bits) {
         int count = 0;
         for (char c : bits) {
-            if (c == '1') {
-                count++;
-            }
+            count += (c == '1');
         }
         return count;
     }
@@ -40,16 +38,16 @@ public:
     static std::string value_to_binary_string(const Value& value) {
         if (value.is_int()) {
             int64_t val = value.to_int();
-            if (val < 0) {
-                return ""; // Handle negative values gracefully
+            if (val <= 0) {
+                return val == 0 ? "0" : "";
             }
-            if (val == 0) {
-                return "0";
-            }
+            // Pre-calculate size to avoid reallocations
+            int bits = 64 - __builtin_clzll(static_cast<uint64_t>(val));
             std::string result;
-            while (val > 0) {
-                result = (val % 2 == 0 ? '0' : '1') + result;
-                val /= 2;
+            result.reserve(bits);
+            uint64_t uval = static_cast<uint64_t>(val);
+            for (int i = bits - 1; i >= 0; --i) {
+                result += ((uval >> i) & 1) ? '1' : '0';
             }
             return result;
         } else if (value.is_string()) {
@@ -117,40 +115,71 @@ public:
                 int max_index = trace->get_max_index();
 
                 std::vector<Value> results;
+                results.reserve(max_index + 1);
                 
-                // Iterate through all timestamps
-                for (int idx = 0; idx <= max_index; ++idx) {
-                    trace->set_index(idx);
+                // Fast path for VCDTrace: direct access to time_steps
+                auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                if (vcd_trace) {
+                    const auto& time_steps = vcd_trace->get_time_steps();
+                    const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
                     
-                    int64_t total_hamming_weight = 0;
+                    for (size_t idx = 0; idx < num_steps; ++idx) {
+                        const auto& ts = time_steps[idx];
+                        int64_t total_hamming_weight = 0;
+                        
+                        // Iterate through all signal values at this timestamp
+                        for (const auto& [identifier, value] : ts.signal_values) {
+                            if (value.is_int()) {
+                                int64_t val = value.to_int();
+                                if (val > 0) {
+                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+                                } else if (val < 0) {
+                                    // For negative values, count bits in two's complement
+                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+                                }
+                            } else if (value.is_string()) {
+                                const std::string& str = value.to_string();
+                                total_hamming_weight += count_ones(str);
+                            }
+                        }
+                        
+                        auto result_tuple = std::make_shared<WList>();
+                        result_tuple->push_back(Value(ts.timestamp));
+                        result_tuple->push_back(Value(total_hamming_weight));
+                        results.push_back(Value(result_tuple));
+                    }
+                } else {
+                    // Fallback path for other trace types
                     auto signal_names = trace->get_all_signals();
                     
-                    // Calculate Hamming weight for all signals at this timestamp
-                    for (const auto& signal_name : signal_names) {
-                        try {
-                            Value signal_val = trace->signal_value(signal_name, 0);
-                            std::string binary_str = value_to_binary_string(signal_val);
-                            total_hamming_weight += count_ones(binary_str);
-                        } catch (const std::exception&) {
-                            // Skip signals that can't be converted
-                            continue;
+                    for (int idx = 0; idx <= max_index; ++idx) {
+                        trace->set_index(idx);
+                        
+                        int64_t total_hamming_weight = 0;
+                        
+                        for (const auto& signal_name : signal_names) {
+                            try {
+                                Value signal_val = trace->signal_value(signal_name, 0);
+                                if (signal_val.is_int()) {
+                                    int64_t val = signal_val.to_int();
+                                    if (val > 0) {
+                                        total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+                                    }
+                                } else {
+                                    std::string binary_str = value_to_binary_string(signal_val);
+                                    total_hamming_weight += count_ones(binary_str);
+                                }
+                            } catch (const std::exception&) {
+                                continue;
+                            }
                         }
+                        
+                        int64_t timestamp = static_cast<int64_t>(idx);
+                        auto result_tuple = std::make_shared<WList>();
+                        result_tuple->push_back(Value(timestamp));
+                        result_tuple->push_back(Value(total_hamming_weight));
+                        results.push_back(Value(result_tuple));
                     }
-                    
-                    // Get actual VCD timestamp
-                    int64_t timestamp = 0;
-                    auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
-                    if (vcd_trace) {
-                        timestamp = vcd_trace->get_timestamp();
-                    } else {
-                        timestamp = static_cast<int64_t>(idx);
-                    }
-                    
-                    // Create result tuple (timestamp, hamming_weight)
-                    auto result_tuple = std::make_shared<WList>();
-                    result_tuple->push_back(Value(timestamp));
-                    result_tuple->push_back(Value(total_hamming_weight));
-                    results.push_back(Value(result_tuple));
                 }
                 
                 // Restore original index
@@ -188,53 +217,132 @@ public:
                 // Store original index
                 int original_index = trace->get_index();
                 int max_index = trace->get_max_index();
-                auto signal_names = trace->get_all_signals();
 
                 std::vector<Value> results;
-                std::vector<std::string> prev_values;
+                results.reserve(max_index);  // Pre-allocate (max_index timestamps, first skipped)
                 
-                // Iterate through all timestamps
-                for (int idx = 0; idx <= max_index; ++idx) {
-                    trace->set_index(idx);
+                // Fast path for VCDTrace: direct access to time_steps
+                auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                if (vcd_trace) {
+                    const auto& time_steps = vcd_trace->get_time_steps();
+                    const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
                     
-                    std::vector<std::string> curr_values;
-                    
-                    // Get binary representation of all signals at current timestamp
-                    for (const auto& signal_name : signal_names) {
-                        try {
-                            Value signal_val = trace->signal_value(signal_name, 0);
-                            std::string binary_str = value_to_binary_string(signal_val);
-                            curr_values.push_back(binary_str);
-                        } catch (const std::exception&) {
-                            curr_values.push_back("");
+                    if (num_steps > 0) {
+                        // Store previous timestamp signal values for comparison
+                        std::unordered_map<std::string, int64_t> prev_int_values;
+                        std::unordered_map<std::string, std::string> prev_str_values;
+                        
+                        for (size_t idx = 0; idx < num_steps; ++idx) {
+                            const auto& ts = time_steps[idx];
+                            int64_t total_distance = 0;
+                            
+                            // Current timestamp values
+                            std::unordered_map<std::string, int64_t> curr_int_values;
+                            std::unordered_map<std::string, std::string> curr_str_values;
+                            
+                            for (const auto& [identifier, value] : ts.signal_values) {
+                                if (value.is_int()) {
+                                    int64_t curr_val = value.to_int();
+                                    curr_int_values[identifier] = curr_val;
+                                    
+                                    // Calculate distance from previous value if exists
+                                    if (idx > 0) {
+                                        auto prev_it = prev_int_values.find(identifier);
+                                        if (prev_it != prev_int_values.end()) {
+                                            // XOR to find differing bits
+                                            uint64_t diff = static_cast<uint64_t>(curr_val) ^ static_cast<uint64_t>(prev_it->second);
+                                            total_distance += __builtin_popcountll(diff);
+                                        } else {
+                                            // New signal, count all bits as changed
+                                            if (curr_val > 0) {
+                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
+                                            } else if (curr_val < 0) {
+                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
+                                            }
+                                        }
+                                    }
+                                } else if (value.is_string()) {
+                                    const std::string& curr_str = value.to_string();
+                                    curr_str_values[identifier] = curr_str;
+                                    
+                                    // Calculate distance from previous value if exists
+                                    if (idx > 0) {
+                                        auto prev_it = prev_str_values.find(identifier);
+                                        if (prev_it != prev_str_values.end()) {
+                                            total_distance += hamming_distance(prev_it->second, curr_str);
+                                        } else {
+                                            // New signal, count all '1' bits
+                                            total_distance += count_ones(curr_str);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Store results starting from second timestamp
+                            if (idx > 0) {
+                                auto result_tuple = std::make_shared<WList>();
+                                result_tuple->push_back(Value(ts.timestamp));
+                                result_tuple->push_back(Value(total_distance));
+                                results.push_back(Value(result_tuple));
+                            }
+                            
+                            // Move current to previous (using move to avoid copies)
+                            prev_int_values = std::move(curr_int_values);
+                            prev_str_values = std::move(curr_str_values);
                         }
                     }
+                } else {
+                    // Fallback path for other trace types
+                    auto signal_names = trace->get_all_signals();
+                    std::vector<std::string> prev_values;
+                    prev_values.reserve(signal_names.size());
                     
-                    // Calculate Hamming distance if we have a previous timestamp
-                    if (!prev_values.empty()) {
-                        int64_t total_distance = 0;
+                    // Iterate through all timestamps
+                    for (int idx = 0; idx <= max_index; ++idx) {
+                        trace->set_index(idx);
                         
-                        for (size_t i = 0; i < std::min(prev_values.size(), curr_values.size()); ++i) {
-                            total_distance += hamming_distance(prev_values[i], curr_values[i]);
+                        std::vector<std::string> curr_values;
+                        curr_values.reserve(signal_names.size());
+                        
+                        // Get binary representation of all signals at current timestamp
+                        for (const auto& signal_name : signal_names) {
+                            try {
+                                Value signal_val = trace->signal_value(signal_name, 0);
+                                if (signal_val.is_int()) {
+                                    int64_t val = signal_val.to_int();
+                                    // For integers, convert to binary string
+                                    curr_values.push_back(value_to_binary_string(signal_val));
+                                } else if (signal_val.is_string()) {
+                                    curr_values.push_back(signal_val.to_string());
+                                } else {
+                                    curr_values.push_back("");
+                                }
+                            } catch (const std::exception&) {
+                                curr_values.push_back("");
+                            }
                         }
                         
-                        // Get actual VCD timestamp
-                        int64_t timestamp = 0;
-                        auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
-                        if (vcd_trace) {
-                            timestamp = vcd_trace->get_timestamp();
-                        } else {
-                            timestamp = static_cast<int64_t>(idx);
+                        // Calculate Hamming distance if we have a previous timestamp
+                        if (!prev_values.empty()) {
+                            int64_t total_distance = 0;
+                            size_t min_size = std::min(prev_values.size(), curr_values.size());
+                            
+                            for (size_t i = 0; i < min_size; ++i) {
+                                total_distance += hamming_distance(prev_values[i], curr_values[i]);
+                            }
+                            
+                            // Get actual VCD timestamp
+                            int64_t timestamp = static_cast<int64_t>(idx);
+                            
+                            // Create result tuple (timestamp, hamming_distance)
+                            auto result_tuple = std::make_shared<WList>();
+                            result_tuple->push_back(Value(timestamp));
+                            result_tuple->push_back(Value(total_distance));
+                            results.push_back(Value(result_tuple));
                         }
                         
-                        // Create result tuple (timestamp, hamming_distance)
-                        auto result_tuple = std::make_shared<WList>();
-                        result_tuple->push_back(Value(timestamp));
-                        result_tuple->push_back(Value(total_distance));
-                        results.push_back(Value(result_tuple));
+                        prev_values = std::move(curr_values);
                     }
-                    
-                    prev_values = curr_values;
                 }
                 
                 // Restore original index
