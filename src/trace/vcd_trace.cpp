@@ -62,6 +62,7 @@ Value VCDTrace::parse_bit_value(const std::string& bits) {
 
 void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_idx) {
     std::string current_scope;
+    std::vector<std::string> scope_stack;  // Track nested scopes
     
     while (line_idx < lines.size()) {
         std::string line = lines[line_idx];
@@ -84,11 +85,31 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
             std::istringstream iss(line);
             std::string cmd, type, scope_name;
             iss >> cmd >> type >> scope_name;
-            current_scope = scope_name;
-            scope_names.push_back(scope_name);
-        }
-        else if (line.substr(0, 6) == "$upscope") {
+            
+            // Push scope onto stack
+            scope_stack.push_back(scope_name);
+            
+            // Build full hierarchical scope
             current_scope = "";
+            for (size_t i = 0; i < scope_stack.size(); ++i) {
+                if (i > 0) current_scope += Trace::SCOPE_SEPARATOR;
+                current_scope += scope_stack[i];
+            }
+            
+            scope_names.push_back(current_scope);
+        }
+        else if (line.substr(0, 8) == "$upscope") {
+            // Pop scope from stack
+            if (!scope_stack.empty()) {
+                scope_stack.pop_back();
+            }
+            
+            // Rebuild current scope
+            current_scope = "";
+            for (size_t i = 0; i < scope_stack.size(); ++i) {
+                if (i > 0) current_scope += Trace::SCOPE_SEPARATOR;
+                current_scope += scope_stack[i];
+            }
         }
         else if (line.substr(0, 4) == "$var") {
             // $var wire|reg|parameter|real 1|N identifier reference

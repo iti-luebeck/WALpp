@@ -9,6 +9,7 @@
 #include <bitset>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 namespace wal::operators {
 
@@ -347,6 +348,316 @@ public:
                 // Restore original index
                 trace->set_index(original_index);
                 
+                return Value(std::make_shared<WList>(results));
+            });
+
+        // hamming-weight-scope: Calculate hamming weight for signals in a specific scope
+        // Usage: (hamming-weight-scope "top.cpu")
+        // Returns: ((timestamp1 weight1) (timestamp2 weight2) ...)
+        registry.register_operator("hamming-weight-scope",
+            [](SEval& eval, const std::vector<Value>& args) -> Value {
+                if (args.size() != 1) {
+                    throw EvalError("hamming-weight-scope expects 1 argument (scope-prefix), got " 
+                        + std::to_string(args.size()));
+                }
+
+                auto evaluated = eval.eval_args(args);
+                if (!evaluated[0].is_string()) {
+                    throw EvalError("hamming-weight-scope: scope prefix must be a string");
+                }
+                
+                std::string scope_prefix = evaluated[0].to_string();
+
+                auto trace_container = eval.get_traces();
+                if (!trace_container) {
+                    throw EvalError("hamming-weight-scope: no trace loaded");
+                }
+
+                auto trace_ids = trace_container->get_trace_ids();
+                if (trace_ids.empty()) {
+                    throw EvalError("hamming-weight-scope: no traces available");
+                }
+
+                auto trace = trace_container->get_trace(trace_ids[0]);
+                if (!trace) {
+                    throw EvalError("hamming-weight-scope: could not access trace");
+                }
+
+                // Get all signals and filter by scope
+                auto all_signals = trace->get_all_signals();
+                std::vector<std::string> scoped_signals;
+                
+                for (const auto& signal : all_signals) {
+                    // Check if signal name starts with scope prefix
+                    if (signal.length() >= scope_prefix.length() &&
+                        signal.substr(0, scope_prefix.length()) == scope_prefix) {
+                        scoped_signals.push_back(signal);
+                    }
+                }
+
+                if (scoped_signals.empty()) {
+                    throw EvalError("hamming-weight-scope: no signals found with scope prefix '" 
+                        + scope_prefix + "'");
+                }
+
+                int original_index = trace->get_index();
+                int max_index = trace->get_max_index();
+
+                std::vector<Value> results;
+                results.reserve(max_index + 1);
+
+                // Calculate hamming weight for filtered signals
+                auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                if (vcd_trace) {
+                    const auto& time_steps = vcd_trace->get_time_steps();
+                    const auto& signal_info = vcd_trace->get_signal_info();
+                    const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
+
+                    // Build set of identifiers for scoped signals
+                    std::unordered_set<std::string> scoped_identifiers;
+                    for (const auto& sig_name : scoped_signals) {
+                        auto it = signal_info.find(sig_name);
+                        if (it != signal_info.end()) {
+                            scoped_identifiers.insert(it->second.identifier);
+                        }
+                    }
+
+                    for (size_t idx = 0; idx < num_steps; ++idx) {
+                        const auto& ts = time_steps[idx];
+                        int64_t total_hamming_weight = 0;
+
+                        for (const auto& [identifier, value] : ts.signal_values) {
+                            // Only count if this identifier is in our scoped set
+                            if (scoped_identifiers.find(identifier) == scoped_identifiers.end()) {
+                                continue;
+                            }
+
+                            if (value.is_int()) {
+                                int64_t val = value.to_int();
+                                if (val > 0) {
+                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+                                } else if (val < 0) {
+                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+                                }
+                            } else if (value.is_string()) {
+                                const std::string& str = value.to_string();
+                                total_hamming_weight += count_ones(str);
+                            }
+                        }
+
+                        auto result_tuple = std::make_shared<WList>();
+                        result_tuple->push_back(Value(ts.timestamp));
+                        result_tuple->push_back(Value(total_hamming_weight));
+                        results.push_back(Value(result_tuple));
+                    }
+                } else {
+                    // Fallback for non-VCD traces
+                    for (int idx = 0; idx <= max_index; ++idx) {
+                        trace->set_index(idx);
+                        int64_t total_hamming_weight = 0;
+
+                        for (const auto& signal_name : scoped_signals) {
+                            try {
+                                Value signal_val = trace->signal_value(signal_name, 0);
+                                if (signal_val.is_int()) {
+                                    int64_t val = signal_val.to_int();
+                                    if (val > 0) {
+                                        total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+                                    }
+                                } else {
+                                    std::string binary_str = value_to_binary_string(signal_val);
+                                    total_hamming_weight += count_ones(binary_str);
+                                }
+                            } catch (const std::exception&) {
+                                continue;
+                            }
+                        }
+
+                        int64_t timestamp = static_cast<int64_t>(idx);
+                        auto result_tuple = std::make_shared<WList>();
+                        result_tuple->push_back(Value(timestamp));
+                        result_tuple->push_back(Value(total_hamming_weight));
+                        results.push_back(Value(result_tuple));
+                    }
+                }
+
+                trace->set_index(original_index);
+                return Value(std::make_shared<WList>(results));
+            });
+
+        // hamming-distance-scope: Calculate hamming distance for signals in a specific scope
+        // Usage: (hamming-distance-scope "top.cpu")
+        // Returns: ((timestamp1 distance1) (timestamp2 distance2) ...)
+        registry.register_operator("hamming-distance-scope",
+            [](SEval& eval, const std::vector<Value>& args) -> Value {
+                if (args.size() != 1) {
+                    throw EvalError("hamming-distance-scope expects 1 argument (scope-prefix), got " 
+                        + std::to_string(args.size()));
+                }
+
+                auto evaluated = eval.eval_args(args);
+                if (!evaluated[0].is_string()) {
+                    throw EvalError("hamming-distance-scope: scope prefix must be a string");
+                }
+                
+                std::string scope_prefix = evaluated[0].to_string();
+
+                auto trace_container = eval.get_traces();
+                if (!trace_container) {
+                    throw EvalError("hamming-distance-scope: no trace loaded");
+                }
+
+                auto trace_ids = trace_container->get_trace_ids();
+                if (trace_ids.empty()) {
+                    throw EvalError("hamming-distance-scope: no traces available");
+                }
+
+                auto trace = trace_container->get_trace(trace_ids[0]);
+                if (!trace) {
+                    throw EvalError("hamming-distance-scope: could not access trace");
+                }
+
+                // Get all signals and filter by scope
+                auto all_signals = trace->get_all_signals();
+                std::vector<std::string> scoped_signals;
+                
+                for (const auto& signal : all_signals) {
+                    if (signal.length() >= scope_prefix.length() &&
+                        signal.substr(0, scope_prefix.length()) == scope_prefix) {
+                        scoped_signals.push_back(signal);
+                    }
+                }
+
+                if (scoped_signals.empty()) {
+                    throw EvalError("hamming-distance-scope: no signals found with scope prefix '" 
+                        + scope_prefix + "'");
+                }
+
+                int original_index = trace->get_index();
+                int max_index = trace->get_max_index();
+                std::vector<Value> results;
+                results.reserve(max_index);
+
+                auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                if (vcd_trace) {
+                    const auto& time_steps = vcd_trace->get_time_steps();
+                    const auto& signal_info = vcd_trace->get_signal_info();
+                    const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
+
+                    // Build set of identifiers for scoped signals
+                    std::unordered_set<std::string> scoped_identifiers;
+                    for (const auto& sig_name : scoped_signals) {
+                        auto it = signal_info.find(sig_name);
+                        if (it != signal_info.end()) {
+                            scoped_identifiers.insert(it->second.identifier);
+                        }
+                    }
+
+                    if (num_steps > 0) {
+                        std::unordered_map<std::string, int64_t> prev_int_values;
+                        std::unordered_map<std::string, std::string> prev_str_values;
+
+                        for (size_t idx = 0; idx < num_steps; ++idx) {
+                            const auto& ts = time_steps[idx];
+                            int64_t total_distance = 0;
+
+                            std::unordered_map<std::string, int64_t> curr_int_values;
+                            std::unordered_map<std::string, std::string> curr_str_values;
+
+                            for (const auto& [identifier, value] : ts.signal_values) {
+                                // Only process if this identifier is in our scoped set
+                                if (scoped_identifiers.find(identifier) == scoped_identifiers.end()) {
+                                    continue;
+                                }
+
+                                if (value.is_int()) {
+                                    int64_t curr_val = value.to_int();
+                                    curr_int_values[identifier] = curr_val;
+
+                                    if (idx > 0) {
+                                        auto prev_it = prev_int_values.find(identifier);
+                                        if (prev_it != prev_int_values.end()) {
+                                            uint64_t diff = static_cast<uint64_t>(curr_val) ^ static_cast<uint64_t>(prev_it->second);
+                                            total_distance += __builtin_popcountll(diff);
+                                        } else {
+                                            if (curr_val > 0) {
+                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
+                                            } else if (curr_val < 0) {
+                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
+                                            }
+                                        }
+                                    }
+                                } else if (value.is_string()) {
+                                    const std::string& curr_str = value.to_string();
+                                    curr_str_values[identifier] = curr_str;
+
+                                    if (idx > 0) {
+                                        auto prev_it = prev_str_values.find(identifier);
+                                        if (prev_it != prev_str_values.end()) {
+                                            total_distance += hamming_distance(prev_it->second, curr_str);
+                                        } else {
+                                            total_distance += count_ones(curr_str);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (idx > 0) {
+                                auto result_tuple = std::make_shared<WList>();
+                                result_tuple->push_back(Value(ts.timestamp));
+                                result_tuple->push_back(Value(total_distance));
+                                results.push_back(Value(result_tuple));
+                            }
+
+                            prev_int_values = std::move(curr_int_values);
+                            prev_str_values = std::move(curr_str_values);
+                        }
+                    }
+                } else {
+                    // Fallback for non-VCD traces
+                    std::vector<std::string> prev_values;
+                    prev_values.reserve(scoped_signals.size());
+
+                    for (int idx = 0; idx <= max_index; ++idx) {
+                        trace->set_index(idx);
+                        std::vector<std::string> curr_values;
+                        curr_values.reserve(scoped_signals.size());
+
+                        for (const auto& signal_name : scoped_signals) {
+                            try {
+                                Value signal_val = trace->signal_value(signal_name, 0);
+                                if (signal_val.is_int()) {
+                                    curr_values.push_back(value_to_binary_string(signal_val));
+                                } else if (signal_val.is_string()) {
+                                    curr_values.push_back(signal_val.to_string());
+                                } else {
+                                    curr_values.push_back("");
+                                }
+                            } catch (const std::exception&) {
+                                curr_values.push_back("");
+                            }
+                        }
+
+                        if (!prev_values.empty()) {
+                            int64_t total_distance = 0;
+                            size_t min_size = std::min(prev_values.size(), curr_values.size());
+
+                            for (size_t i = 0; i < min_size; ++i) {
+                                total_distance += hamming_distance(prev_values[i], curr_values[i]);
+                            }
+
+                            int64_t timestamp = static_cast<int64_t>(idx);
+                            auto result_tuple = std::make_shared<WList>();
+                            result_tuple->push_back(Value(timestamp));
+                            result_tuple->push_back(Value(total_distance));
+                            results.push_back(Value(result_tuple));
+                        }
+
+                        prev_values = std::move(curr_values);
+                    }
+                }
+
+                trace->set_index(original_index);
                 return Value(std::make_shared<WList>(results));
             });
     }

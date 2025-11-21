@@ -1,0 +1,11 @@
+; Calculate hamming-weight for signals in a specific module scope
+; Usage: ./wal hw_module.wal -l trace.vcd
+;
+; Examples of scope prefixes:
+;   "top"           - All signals in top module
+;   "top^cpu"       - All signals in cpu submodule
+;   "top^cpu^alu"   - All signals in alu sub-submodule
+;   "a10"           - All signals starting with "a10" (for flat hierarchies)
+
+(print (hamming-weight-scope "test_aes_128"))
+
