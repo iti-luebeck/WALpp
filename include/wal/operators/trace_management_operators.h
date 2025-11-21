@@ -108,7 +108,7 @@ public:
 
         // step - Move all traces forward/backward in time
         registry.register_operator("step", [](SEval& eval, const std::vector<Value>& args) -> Value {
-            if (args.size() < 0 || args.size() > 2) {
+            if (args.size() > 2) {
                 throw EvalError("step expects 0-2 arguments ([steps [trace-id]]), got " + 
                               std::to_string(args.size()));
             }

@@ -136,7 +136,7 @@ public:
                         while (pos < json_str.length() && std::isdigit(json_str[pos])) pos++;
                         return Value(std::stod(json_str.substr(start, pos - start)));
                     } else {
-                        return Value(std::stoll(json_str.substr(start, pos - start)));
+                        return Value(static_cast<int64_t>(std::stoll(json_str.substr(start, pos - start))));
                     }
                 } else {
                     throw EvalError("from-json: unexpected character");
@@ -251,7 +251,7 @@ public:
                             if (cell.find('.') != std::string::npos) {
                                 row->push_back(Value(std::stod(cell)));
                             } else {
-                                row->push_back(Value(std::stoll(cell)));
+                                row->push_back(Value(static_cast<int64_t>(std::stoll(cell))));
                             }
                         } catch (...) {
                             row->push_back(Value(cell));

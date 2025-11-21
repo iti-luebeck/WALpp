@@ -94,16 +94,16 @@ Value CSVTrace::parse_value(const std::string& value) {
         
         // Hexadecimal format: 0x1A or 1A or 0xFFFFFFFF
         if (trimmed.substr(0, 2) == "0x" || trimmed.substr(0, 2) == "0X") {
-            return Value(std::stoll(trimmed, nullptr, 16));
+            return Value(static_cast<int64_t>(std::stoll(trimmed, nullptr, 16)));
         }
         if (trimmed.find_first_not_of("0123456789ABCDEFabcdef") == std::string::npos && 
             trimmed.length() > 1) {
             // Could be hex without 0x prefix
-            return Value(std::stoll(trimmed, nullptr, 16));
+            return Value(static_cast<int64_t>(std::stoll(trimmed, nullptr, 16)));
         }
         
         // Decimal
-        return Value(std::stoll(trimmed));
+        return Value(static_cast<int64_t>(std::stoll(trimmed)));
     } catch (...) {
         return Value(0);
     }

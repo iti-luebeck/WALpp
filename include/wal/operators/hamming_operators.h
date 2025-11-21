@@ -309,7 +309,6 @@ public:
                             try {
                                 Value signal_val = trace->signal_value(signal_name, 0);
                                 if (signal_val.is_int()) {
-                                    int64_t val = signal_val.to_int();
                                     // For integers, convert to binary string
                                     curr_values.push_back(value_to_binary_string(signal_val));
                                 } else if (signal_val.is_string()) {
