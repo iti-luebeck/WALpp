@@ -3,6 +3,7 @@
 #include "wal/ast.h"
 #include "wal/operator_registry.h"
 #include "wal/evaluator.h"
+#include "wal/trace/vcd_trace.h"
 #include <functional>
 #include <algorithm>
 #include <bitset>
@@ -136,8 +137,14 @@ public:
                         }
                     }
                     
-                    // Use index as timestamp (since actual timestamp access varies by trace type)
-                    int64_t timestamp = static_cast<int64_t>(idx);
+                    // Get actual VCD timestamp
+                    int64_t timestamp = 0;
+                    auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                    if (vcd_trace) {
+                        timestamp = vcd_trace->get_timestamp();
+                    } else {
+                        timestamp = static_cast<int64_t>(idx);
+                    }
                     
                     // Create result tuple (timestamp, hamming_weight)
                     auto result_tuple = std::make_shared<WList>();
@@ -211,8 +218,14 @@ public:
                             total_distance += hamming_distance(prev_values[i], curr_values[i]);
                         }
                         
-                        // Use index as timestamp (since actual timestamp access varies by trace type)
-                        int64_t timestamp = static_cast<int64_t>(idx);
+                        // Get actual VCD timestamp
+                        int64_t timestamp = 0;
+                        auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                        if (vcd_trace) {
+                            timestamp = vcd_trace->get_timestamp();
+                        } else {
+                            timestamp = static_cast<int64_t>(idx);
+                        }
                         
                         // Create result tuple (timestamp, hamming_distance)
                         auto result_tuple = std::make_shared<WList>();

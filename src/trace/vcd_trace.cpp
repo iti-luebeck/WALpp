@@ -73,7 +73,7 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
         }
         
         // Check for section end
-        if (line == "$enddefinitions") {
+        if (line == "$enddefinitions" || line.substr(0, 15) == "$enddefinitions") {
             line_idx++;
             break;
         }
@@ -124,17 +124,21 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
         else if (line.substr(0, 5) == "$date") {
             // $date ... $end
             // Skip until $end
-            while (line_idx < lines.size() && line != "$end") {
+            while (line_idx < lines.size()) {
                 line_idx++;
+                if (line_idx >= lines.size()) break;
                 line = lines[line_idx];
+                if (line == "$end") break;
             }
         }
         else if (line.substr(0, 8) == "$version") {
             // $version ... $end
             // Skip until $end
-            while (line_idx < lines.size() && line != "$end") {
+            while (line_idx < lines.size()) {
                 line_idx++;
+                if (line_idx >= lines.size()) break;
                 line = lines[line_idx];
+                if (line == "$end") break;
             }
         }
         
@@ -236,22 +240,25 @@ void VCDTrace::load() {
         // Parse header
         parse_header(lines, line_idx);
         
-        // Find $dumpvars or data start
+        // Look for $dumpvars (optional) or start of data (#)
         int current_timestamp = 0;
         while (line_idx < lines.size()) {
-            if (lines[line_idx] == "$dumpvars") {
+            const std::string& line = lines[line_idx];
+            if (line == "$dumpvars") {
+                // Found $dumpvars - parse initial values until $end
                 line_idx++;
+                while (line_idx < lines.size() && lines[line_idx] != "$end") {
+                    parse_value_change(lines[line_idx], current_timestamp);
+                    line_idx++;
+                }
+                if (line_idx < lines.size()) line_idx++;  // skip $end
+                break;
+            } else if (!line.empty() && line[0] == '#') {
+                // No $dumpvars section - data starts immediately
                 break;
             }
             line_idx++;
         }
-        
-        // Parse initial values
-        while (line_idx < lines.size() && lines[line_idx] != "$end") {
-            parse_value_change(lines[line_idx], current_timestamp);
-            line_idx++;
-        }
-        if (line_idx < lines.size()) line_idx++;  // skip $end
         
         // Parse value changes
         parse_data(lines, line_idx);
@@ -326,6 +333,13 @@ bool VCDTrace::contains_signal(const std::string& name) const {
 
 std::vector<std::string> VCDTrace::get_all_signals() const {
     return signal_names;
+}
+
+int64_t VCDTrace::get_timestamp() const {
+    if (current_index >= 0 && current_index < static_cast<int>(time_steps.size())) {
+        return time_steps[current_index].timestamp;
+    }
+    return 0;
 }
 
 } // namespace wal

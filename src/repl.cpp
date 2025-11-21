@@ -96,8 +96,9 @@ std::string REPL::read_input(const std::string& prompt) {
 }
 
 void REPL::print_output(const Value& result) {
+    // Skip printing nil values (commonly returned by print function)
     if (result.is_nil()) {
-        std::cout << "nil" << std::endl;
+        return;
     } else if (result.is_bool()) {
         std::cout << (result.to_bool() ? "true" : "false") << std::endl;
     } else if (result.is_int()) {

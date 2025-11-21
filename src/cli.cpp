@@ -173,6 +173,18 @@ int CLI::run() {
     // Apply streaming configuration early
     apply_streaming_config();
     
+    // Load trace file if specified
+    if (trace_mode && !trace_file.empty()) {
+        try {
+            // Disable streaming for now - hamming operators require full trace access
+            wal_instance->get_traces()->set_streaming_enabled(false);
+            wal_instance->load(trace_file);
+        } catch (const std::exception& e) {
+            std::cerr << "Error loading trace file: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+    
     // Eval mode
     if (eval_mode && !eval_expr.empty()) {
         try {

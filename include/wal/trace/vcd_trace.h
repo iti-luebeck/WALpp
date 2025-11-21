@@ -72,6 +72,11 @@ public:
      */
     std::vector<std::string> get_all_signals() const override;
 
+    /**
+     * @brief Get actual timestamp value at current index
+     */
+    int64_t get_timestamp() const;
+
 private:
     /**
      * @brief Parse VCD header section
