@@ -114,6 +114,11 @@ public:
                 // Store original index
                 int original_index = trace->get_index();
                 int max_index = trace->get_max_index();
+                
+                // Check if trace has any data
+                if (max_index < 0) {
+                    throw EvalError("hamming-weight-all-signals-all-timestamps: trace has no timestamps");
+                }
 
                 std::vector<Value> results;
                 results.reserve(max_index + 1);
@@ -122,6 +127,12 @@ public:
                 auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
                 if (vcd_trace) {
                     const auto& time_steps = vcd_trace->get_time_steps();
+                    
+                    // Verify we have data
+                    if (time_steps.empty()) {
+                        throw EvalError("hamming-weight-all-signals-all-timestamps: VCD trace has no time steps");
+                    }
+                    
                     const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
                     
                     for (size_t idx = 0; idx < num_steps; ++idx) {
@@ -218,6 +229,11 @@ public:
                 // Store original index
                 int original_index = trace->get_index();
                 int max_index = trace->get_max_index();
+                
+                // Check if trace has any data
+                if (max_index < 0) {
+                    throw EvalError("hamming-distance-all-signals-all-timestamps: trace has no timestamps");
+                }
 
                 std::vector<Value> results;
                 results.reserve(max_index);  // Pre-allocate (max_index timestamps, first skipped)
@@ -226,6 +242,12 @@ public:
                 auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
                 if (vcd_trace) {
                     const auto& time_steps = vcd_trace->get_time_steps();
+                    
+                    // Verify we have data
+                    if (time_steps.empty()) {
+                        throw EvalError("hamming-distance-all-signals-all-timestamps: VCD trace has no time steps");
+                    }
+                    
                     const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
                     
                     if (num_steps > 0) {

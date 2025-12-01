@@ -20,6 +20,15 @@ std::vector<std::string> VCDTrace::read_file_lines(const std::string& filename) 
     
     std::string line;
     while (std::getline(file, line)) {
+        // Remove leading whitespace
+        size_t start = 0;
+        while (start < line.length() && std::isspace(line[start])) {
+            start++;
+        }
+        if (start > 0) {
+            line = line.substr(start);
+        }
+        
         // Remove trailing whitespace and carriage returns
         while (!line.empty() && (line.back() == '\r' || std::isspace(line.back()))) {
             line.pop_back();
@@ -144,22 +153,28 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
         }
         else if (line.substr(0, 5) == "$date") {
             // $date ... $end
-            // Skip until $end
-            while (line_idx < lines.size()) {
-                line_idx++;
-                if (line_idx >= lines.size()) break;
-                line = lines[line_idx];
-                if (line == "$end") break;
+            // Skip until $end (check if already on same line)
+            if (line.find("$end") == std::string::npos) {
+                while (line_idx < lines.size()) {
+                    line_idx++;
+                    if (line_idx >= lines.size()) break;
+                    line = lines[line_idx];
+                    // Match lines starting with $end (handles both "$end" and "$enddefinitions $end")
+                    if (line.length() >= 4 && line.substr(0, 4) == "$end") break;
+                }
             }
         }
         else if (line.substr(0, 8) == "$version") {
             // $version ... $end
-            // Skip until $end
-            while (line_idx < lines.size()) {
-                line_idx++;
-                if (line_idx >= lines.size()) break;
-                line = lines[line_idx];
-                if (line == "$end") break;
+            // Skip until $end (check if already on same line)
+            if (line.find("$end") == std::string::npos) {
+                while (line_idx < lines.size()) {
+                    line_idx++;
+                    if (line_idx >= lines.size()) break;
+                    line = lines[line_idx];
+                    // Match lines starting with $end (handles both "$end" and "$enddefinitions $end")
+                    if (line.length() >= 4 && line.substr(0, 4) == "$end") break;
+                }
             }
         }
         
