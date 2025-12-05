@@ -253,67 +253,74 @@ public:
                     const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
                     
                     if (num_steps > 0) {
-                        // Store previous timestamp signal values for comparison
-                        std::unordered_map<std::string, int64_t> prev_int_values;
-                        std::unordered_map<std::string, std::string> prev_str_values;
+                        // Build identifier index for consistent ordering
+                        std::vector<std::string> all_identifiers;
+                        std::unordered_map<std::string, size_t> identifier_to_idx;
+                        
+                        // Collect all unique identifiers across all timesteps
+                        for (const auto& ts : time_steps) {
+                            for (const auto& [identifier, value] : ts.signal_values) {
+                                if (identifier_to_idx.find(identifier) == identifier_to_idx.end()) {
+                                    identifier_to_idx[identifier] = all_identifiers.size();
+                                    all_identifiers.push_back(identifier);
+                                }
+                            }
+                        }
+                        
+                        const size_t num_signals = all_identifiers.size();
+                        
+                        // Pre-allocate value arrays (reused across timestamps)
+                        std::vector<int64_t> prev_values(num_signals, 0);
+                        std::vector<int64_t> curr_values(num_signals, 0);
+                        std::vector<bool> prev_valid(num_signals, false);
+                        std::vector<bool> curr_valid(num_signals, false);
                         
                         for (size_t idx = 0; idx < num_steps; ++idx) {
                             const auto& ts = time_steps[idx];
-                            int64_t total_distance = 0;
                             
-                            // Current timestamp values
-                            std::unordered_map<std::string, int64_t> curr_int_values;
-                            std::unordered_map<std::string, std::string> curr_str_values;
+                            // Reset current validity flags
+                            std::fill(curr_valid.begin(), curr_valid.end(), false);
                             
+                            // Populate current values by identifier index (no hash lookups!)
                             for (const auto& [identifier, value] : ts.signal_values) {
                                 if (value.is_int()) {
-                                    int64_t curr_val = value.to_int();
-                                    curr_int_values[identifier] = curr_val;
-                                    
-                                    // Calculate distance from previous value if exists
-                                    if (idx > 0) {
-                                        auto prev_it = prev_int_values.find(identifier);
-                                        if (prev_it != prev_int_values.end()) {
-                                            // XOR to find differing bits
-                                            uint64_t diff = static_cast<uint64_t>(curr_val) ^ static_cast<uint64_t>(prev_it->second);
-                                            total_distance += __builtin_popcountll(diff);
-                                        } else {
-                                            // New signal, count all bits as changed
-                                            if (curr_val > 0) {
-                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
-                                            } else if (curr_val < 0) {
-                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
-                                            }
-                                        }
-                                    }
-                                } else if (value.is_string()) {
-                                    const std::string& curr_str = value.to_string();
-                                    curr_str_values[identifier] = curr_str;
-                                    
-                                    // Calculate distance from previous value if exists
-                                    if (idx > 0) {
-                                        auto prev_it = prev_str_values.find(identifier);
-                                        if (prev_it != prev_str_values.end()) {
-                                            total_distance += hamming_distance(prev_it->second, curr_str);
-                                        } else {
-                                            // New signal, count all '1' bits
-                                            total_distance += count_ones(curr_str);
-                                        }
-                                    }
+                                    size_t sig_idx = identifier_to_idx[identifier];
+                                    curr_values[sig_idx] = value.to_int();
+                                    curr_valid[sig_idx] = true;
                                 }
                             }
                             
-                            // Store results starting from second timestamp
+                            // Calculate HD
                             if (idx > 0) {
+                                int64_t total_distance = 0;
+                                
+                                for (size_t s = 0; s < num_signals; ++s) {
+                                    if (curr_valid[s] && prev_valid[s]) {
+                                        // Both timestamps have this signal
+                                        uint64_t diff = static_cast<uint64_t>(curr_values[s]) ^ 
+                                                       static_cast<uint64_t>(prev_values[s]);
+                                        total_distance += __builtin_popcountll(diff);
+                                    } else if (curr_valid[s] && !prev_valid[s]) {
+                                        // New signal appeared
+                                        int64_t val = curr_values[s];
+                                        if (val > 0) {
+                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(val));
+                                        } else if (val < 0) {
+                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(val));
+                                        }
+                                    }
+                                }
+                                
+                                // Store result
                                 auto result_tuple = std::make_shared<WList>();
                                 result_tuple->push_back(Value(ts.timestamp));
                                 result_tuple->push_back(Value(total_distance));
                                 results.push_back(Value(result_tuple));
                             }
                             
-                            // Move current to previous (using move to avoid copies)
-                            prev_int_values = std::move(curr_int_values);
-                            prev_str_values = std::move(curr_str_values);
+                            // Swap current -> previous (no allocations!)
+                            prev_values.swap(curr_values);
+                            prev_valid.swap(curr_valid);
                         }
                     }
                 } else {

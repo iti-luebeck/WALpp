@@ -288,53 +288,48 @@ void VCDTrace::parse_value_change(const std::string& line, int& timestamp) {
     // #<timestamp>            - timestamp marker
     
     if (line[0] == '#') {
-        // Timestamp
-        try {
-            timestamp = std::stoi(line.substr(1));
-        } catch (...) {
-            timestamp = 0;
+        // Timestamp - fast integer parsing
+        timestamp = 0;
+        const char* ptr = line.data() + 1;
+        const char* end = line.data() + line.length();
+        while (ptr < end && *ptr >= '0' && *ptr <= '9') {
+            timestamp = timestamp * 10 + (*ptr - '0');
+            ++ptr;
         }
     } else if (line[0] == 'b') {
-        // Binary value change - optimized to minimize allocations
+        // Binary value change - minimize allocations
         size_t space_pos = line.find(' ');
         if (space_pos != std::string::npos && space_pos + 1 < line.length()) {
+            const char* id_ptr = line.data() + space_pos + 1;
+            size_t id_len = line.length() - space_pos - 1;
+            const char* bit_ptr = line.data() + 1;
+            size_t bit_len = space_pos - 1;
+            
             if (scope_filter.empty()) {
-                // No filter: use operator[] to avoid creating string for lookup
-                const char* id_start = line.data() + space_pos + 1;
-                size_t id_len = line.length() - space_pos - 1;
-                std::string id_str(id_start, id_len);
-                
-                // Parse bit value inline
-                const char* bit_start = line.data() + 1;
-                size_t bit_len = space_pos - 1;
-                current_values[id_str] = parse_bit_value(std::string(bit_start, bit_len));
+                // No filter: directly insert
+                std::string id_str(id_ptr, id_len);
+                current_values[id_str] = parse_bit_value(std::string(bit_ptr, bit_len));
             } else {
-                // With filter: need to check membership
-                const char* id_start = line.data() + space_pos + 1;
-                size_t id_len = line.length() - space_pos - 1;
-                std::string id_str(id_start, id_len);
-                
+                // With filter: check membership
+                std::string id_str(id_ptr, id_len);
                 auto it = filtered_identifiers.find(id_str);
                 if (it != filtered_identifiers.end()) {
-                    const std::string& interned_id = *it;
-                    const char* bit_start = line.data() + 1;
-                    size_t bit_len = space_pos - 1;
-                    current_values[interned_id] = parse_bit_value(std::string(bit_start, bit_len));
+                    current_values[*it] = parse_bit_value(std::string(bit_ptr, bit_len));
                 }
             }
         }
     } else if (line[0] == '0' || line[0] == '1' || line[0] == 'x' || line[0] == 'z') {
-        // Single bit change - ultra-fast path with minimal allocations
+        // Single bit change - ultra-fast path
         if (line.length() > 1) {
-            const char* id_start = line.data() + 1;
+            const char* id_ptr = line.data() + 1;
             size_t id_len = line.length() - 1;
             Value val = (line[0] == '1') ? Value(1) : Value(0);
             
             if (scope_filter.empty()) {
-                std::string id_str(id_start, id_len);
+                std::string id_str(id_ptr, id_len);
                 current_values[id_str] = val;
             } else {
-                std::string id_str(id_start, id_len);
+                std::string id_str(id_ptr, id_len);
                 auto it = filtered_identifiers.find(id_str);
                 if (it != filtered_identifiers.end()) {
                     current_values[*it] = val;
@@ -354,7 +349,7 @@ void VCDTrace::parse_data(const std::vector<std::string>& lines, size_t& line_id
     time_steps.reserve(65536);  // Typical VCD has ~64K timestamps
     
     while (line_idx < lines.size()) {
-        std::string line = lines[line_idx];
+        const std::string& line = lines[line_idx];
         
         if (line.empty()) {
             line_idx++;
@@ -364,10 +359,9 @@ void VCDTrace::parse_data(const std::vector<std::string>& lines, size_t& line_id
         if (line[0] == '#') {
             // New timestamp - save current values
             if (timestamp_count > 0) {
-                TimeStep ts;
-                ts.timestamp = current_timestamp;
-                ts.signal_values = current_values;
-                time_steps.push_back(ts);
+                time_steps.emplace_back();
+                time_steps.back().timestamp = current_timestamp;
+                time_steps.back().signal_values = current_values;
                 timestamp_index_map[current_timestamp] = timestamp_count - 1;
             }
             
@@ -382,10 +376,9 @@ void VCDTrace::parse_data(const std::vector<std::string>& lines, size_t& line_id
     
     // Save final timestamp
     if (timestamp_count > 0) {
-        TimeStep ts;
-        ts.timestamp = current_timestamp;
-        ts.signal_values = current_values;
-        time_steps.push_back(ts);
+        time_steps.emplace_back();
+        time_steps.back().timestamp = current_timestamp;
+        time_steps.back().signal_values = current_values;
         timestamp_index_map[current_timestamp] = timestamp_count - 1;
     }
     
