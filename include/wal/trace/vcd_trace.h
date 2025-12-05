@@ -2,9 +2,13 @@
 
 #include "trace.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <memory>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 namespace wal {
 
@@ -38,13 +42,28 @@ private:
     // Current values at current index
     std::unordered_map<std::string, Value> current_values;
 
+    // Optional scope filter for parse-time filtering
+    std::string scope_filter;
+    std::unordered_set<std::string> filtered_identifiers;  // IDs of signals to keep
+
+    // String interning for identifiers to avoid repeated allocations
+    std::unordered_map<std::string, std::string> identifier_intern_pool;
+    
+    // Helper to get interned identifier string
+    const std::string& intern_identifier(const std::string& id);
+
 public:
     /**
      * @brief Constructor
+     * @param tid Trace ID
+     * @param filename VCD file path
+     * @param container Trace container
+     * @param scope_filter Optional scope prefix to filter signals during parsing (e.g., "TOP^cpu")
      */
     VCDTrace(const std::string& tid, const std::string& filename,
-             std::shared_ptr<TraceContainer> container)
-        : Trace(tid, filename, container) {}
+             std::shared_ptr<TraceContainer> container,
+             const std::string& scope_filter = "")
+        : Trace(tid, filename, container), scope_filter(scope_filter) {}
 
     /**
      * @brief Parse and load VCD file
@@ -117,6 +136,24 @@ private:
      * @brief Read file into lines
      */
     static std::vector<std::string> read_file_lines(const std::string& filename);
+    
+    /**
+     * @brief Read VCD file lines using memory-mapped I/O (faster for large files)
+     */
+    static std::vector<std::string> read_file_lines_mmap(const std::string& filename);
+    
+    /**
+     * @brief Parse data section in parallel (thread-safe)
+     */
+    void parse_data_parallel(const std::vector<std::string>& lines, size_t line_idx);
+    
+    /**
+     * @brief Parse a chunk of VCD data lines (for parallel processing)
+     */
+    void parse_data_chunk(const std::vector<std::string>& lines, 
+                          size_t start_idx, 
+                          size_t end_idx,
+                          std::vector<TimeStep>& chunk_timesteps);
 };
 
 } // namespace wal

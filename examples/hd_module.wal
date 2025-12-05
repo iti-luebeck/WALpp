@@ -6,4 +6,4 @@
 ;   "top^cpu"       - All signals in cpu submodule
 ;   "top^cpu^alu"   - All signals in alu sub-submodule
 
-(print (hamming-distance-scope "test_aes_128^uut"))
+(print (hamming-distance-scope "TOP^TestDriver^testHarness^chiptop0^system^tile_prci_domain^element_reset_domain_rockettile^core"))

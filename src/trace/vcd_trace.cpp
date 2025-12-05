@@ -7,8 +7,23 @@
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstring>
 
 namespace wal {
+
+const std::string& VCDTrace::intern_identifier(const std::string& id) {
+    auto it = identifier_intern_pool.find(id);
+    if (it != identifier_intern_pool.end()) {
+        return it->second;
+    }
+    // Insert and return reference to the stored string
+    auto result = identifier_intern_pool.emplace(id, id);
+    return result.first->second;
+}
 
 std::vector<std::string> VCDTrace::read_file_lines(const std::string& filename) {
     std::vector<std::string> lines;
@@ -40,30 +55,99 @@ std::vector<std::string> VCDTrace::read_file_lines(const std::string& filename) 
     return lines;
 }
 
+// Fast mmap-based line reader for large files
+std::vector<std::string> VCDTrace::read_file_lines_mmap(const std::string& filename) {
+    std::vector<std::string> lines;
+    
+    // Open file
+    int fd = open(filename.c_str(), O_RDONLY);
+    if (fd == -1) {
+        throw std::runtime_error("Cannot open VCD file: " + filename);
+    }
+    
+    // Get file size
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) {
+        close(fd);
+        throw std::runtime_error("Cannot stat VCD file: " + filename);
+    }
+    
+    size_t file_size = sb.st_size;
+    if (file_size == 0) {
+        close(fd);
+        return lines;
+    }
+    
+    // Memory map the file
+    char* data = static_cast<char*>(mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0));
+    if (data == MAP_FAILED) {
+        close(fd);
+        throw std::runtime_error("Cannot mmap VCD file: " + filename);
+    }
+    
+    // Reserve space for lines (estimate ~30 bytes per line average)
+    lines.reserve(file_size / 30);
+    
+    // Parse lines directly from memory-mapped region
+    const char* ptr = data;
+    const char* end = data + file_size;
+    
+    while (ptr < end) {
+        // Skip leading whitespace
+        while (ptr < end && (*ptr == ' ' || *ptr == '\t')) {
+            ++ptr;
+        }
+        
+        // Find end of line
+        const char* line_start = ptr;
+        while (ptr < end && *ptr != '\n' && *ptr != '\r') {
+            ++ptr;
+        }
+        
+        // Extract line, removing trailing whitespace
+        const char* line_end = ptr;
+        while (line_end > line_start && (*(line_end-1) == ' ' || *(line_end-1) == '\t')) {
+            --line_end;
+        }
+        
+        if (line_end > line_start) {
+            lines.emplace_back(line_start, line_end - line_start);
+        } else {
+            lines.emplace_back("");
+        }
+        
+        // Skip newline characters
+        while (ptr < end && (*ptr == '\n' || *ptr == '\r')) {
+            ++ptr;
+        }
+    }
+    
+    // Cleanup
+    munmap(data, file_size);
+    close(fd);
+    
+    return lines;
+}
+
 Value VCDTrace::parse_bit_value(const std::string& bits) {
     if (bits.empty()) {
         return Value(0);
     }
     
     if (bits.length() == 1) {
-        // Single bit: 0, 1, x, or z
+        // Single bit: 0, 1, x, or z - fast path
         char c = bits[0];
-        if (c == '0') return Value(0);
-        if (c == '1') return Value(1);
-        // For 'x' and 'z', return 0 for now
-        return Value(0);
+        return Value((c == '1') ? 1 : 0);
     }
     
-    // Multi-bit value: parse as binary
+    // Multi-bit value: parse as binary - optimized loop
     int64_t value = 0;
-    for (size_t i = 0; i < bits.length(); ++i) {
-        char c = bits[i];
-        if (c == '0' || c == '1') {
-            value = (value << 1) | (c == '1' ? 1 : 0);
-        } else {
-            // 'x' or 'z' bits - treat as 0
-            value = (value << 1);
-        }
+    const char* ptr = bits.data();
+    const char* end = ptr + bits.length();
+    
+    while (ptr < end) {
+        value = (value << 1) | ((*ptr == '1') ? 1 : 0);
+        ++ptr;
     }
     
     return Value(value);
@@ -129,23 +213,36 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
             
             iss >> cmd >> var_type >> width >> identifier >> reference;
             
-            SignalInfo info;
-            info.name = reference;
-            info.identifier = identifier;
-            info.width = width;
-            info.scope = current_scope;
-            
             std::string full_name = reference;
             if (!current_scope.empty()) {
                 full_name = current_scope + Trace::SCOPE_SEPARATOR + reference;
             }
             
-            signal_info[full_name] = info;
-            signal_id_map[identifier] = signal_info.size() - 1;
-            signal_names.push_back(full_name);
+            // If scope_filter is set, only register signals matching the filter
+            bool should_register = scope_filter.empty() || 
+                                   (full_name.length() >= scope_filter.length() &&
+                                    full_name.substr(0, scope_filter.length()) == scope_filter);
             
-            // Initialize current value to 0
-            current_values[identifier] = Value(0);
+            if (should_register) {
+                SignalInfo info;
+                info.name = reference;
+                info.identifier = identifier;
+                info.width = width;
+                info.scope = current_scope;
+                
+                signal_info[full_name] = info;
+                signal_id_map[identifier] = signal_info.size() - 1;
+                signal_names.push_back(full_name);
+                
+                // Intern the identifier string for reuse
+                const std::string& interned_id = intern_identifier(identifier);
+                
+                // Track this identifier as filtered
+                filtered_identifiers.insert(interned_id);
+                
+                // Initialize current value to 0
+                current_values[interned_id] = Value(0);
+            }
         }
         else if (line.substr(0, 8) == "$timescale") {
             // $timescale 1ps
@@ -198,31 +295,63 @@ void VCDTrace::parse_value_change(const std::string& line, int& timestamp) {
             timestamp = 0;
         }
     } else if (line[0] == 'b') {
-        // Binary value change
+        // Binary value change - optimized to minimize allocations
         size_t space_pos = line.find(' ');
-        if (space_pos != std::string::npos) {
-            std::string bit_value = line.substr(1, space_pos - 1);
-            std::string identifier = line.substr(space_pos + 1);
-            
-            current_values[identifier] = parse_bit_value(bit_value);
+        if (space_pos != std::string::npos && space_pos + 1 < line.length()) {
+            if (scope_filter.empty()) {
+                // No filter: use operator[] to avoid creating string for lookup
+                const char* id_start = line.data() + space_pos + 1;
+                size_t id_len = line.length() - space_pos - 1;
+                std::string id_str(id_start, id_len);
+                
+                // Parse bit value inline
+                const char* bit_start = line.data() + 1;
+                size_t bit_len = space_pos - 1;
+                current_values[id_str] = parse_bit_value(std::string(bit_start, bit_len));
+            } else {
+                // With filter: need to check membership
+                const char* id_start = line.data() + space_pos + 1;
+                size_t id_len = line.length() - space_pos - 1;
+                std::string id_str(id_start, id_len);
+                
+                auto it = filtered_identifiers.find(id_str);
+                if (it != filtered_identifiers.end()) {
+                    const std::string& interned_id = *it;
+                    const char* bit_start = line.data() + 1;
+                    size_t bit_len = space_pos - 1;
+                    current_values[interned_id] = parse_bit_value(std::string(bit_start, bit_len));
+                }
+            }
         }
     } else if (line[0] == '0' || line[0] == '1' || line[0] == 'x' || line[0] == 'z') {
-        // Single bit change
-        char bit = line[0];
-        std::string identifier = line.substr(1);
-        
-        Value val;
-        if (bit == '0') val = Value(0);
-        else if (bit == '1') val = Value(1);
-        else val = Value(0);  // 'x' or 'z'
-        
-        current_values[identifier] = val;
+        // Single bit change - ultra-fast path with minimal allocations
+        if (line.length() > 1) {
+            const char* id_start = line.data() + 1;
+            size_t id_len = line.length() - 1;
+            Value val = (line[0] == '1') ? Value(1) : Value(0);
+            
+            if (scope_filter.empty()) {
+                std::string id_str(id_start, id_len);
+                current_values[id_str] = val;
+            } else {
+                std::string id_str(id_start, id_len);
+                auto it = filtered_identifiers.find(id_str);
+                if (it != filtered_identifiers.end()) {
+                    current_values[*it] = val;
+                }
+            }
+        }
     }
 }
 
 void VCDTrace::parse_data(const std::vector<std::string>& lines, size_t& line_idx) {
     int current_timestamp = 0;
     int timestamp_count = 0;
+    
+    // Reserve space for values and timestamps to reduce allocations
+    size_t expected_signals = scope_filter.empty() ? 30000 : filtered_identifiers.size();
+    current_values.reserve(expected_signals);
+    time_steps.reserve(65536);  // Typical VCD has ~64K timestamps
     
     while (line_idx < lines.size()) {
         std::string line = lines[line_idx];
@@ -265,7 +394,8 @@ void VCDTrace::parse_data(const std::vector<std::string>& lines, size_t& line_id
 
 void VCDTrace::load() {
     try {
-        auto lines = read_file_lines(filename);
+        // Use mmap for better performance on large files
+        auto lines = read_file_lines_mmap(filename);
         
         if (lines.empty()) {
             throw std::runtime_error("VCD file is empty");
@@ -376,6 +506,146 @@ int64_t VCDTrace::get_timestamp() const {
         return time_steps[current_index].timestamp;
     }
     return 0;
+}
+
+void VCDTrace::parse_data_chunk(const std::vector<std::string>& lines,
+                                 size_t start_idx,
+                                 size_t end_idx,
+                                 std::vector<TimeStep>& chunk_timesteps) {
+    int current_timestamp = 0;
+    std::unordered_map<std::string, Value> local_values = current_values;
+    
+    for (size_t i = start_idx; i < end_idx && i < lines.size(); ++i) {
+        const std::string& line = lines[i];
+        
+        if (line.empty()) continue;
+        
+        if (line[0] == '#') {
+            // New timestamp - save current values
+            if (current_timestamp > 0 || !local_values.empty()) {
+                TimeStep ts;
+                ts.timestamp = current_timestamp;
+                ts.signal_values = local_values;
+                chunk_timesteps.push_back(ts);
+            }
+            
+            // Parse new timestamp
+            try {
+                current_timestamp = std::stoi(line.substr(1));
+            } catch (...) {
+                current_timestamp = 0;
+            }
+        } else {
+            // Parse value change into local_values
+            int dummy_ts = current_timestamp;
+            
+            if (line[0] == 'b') {
+                size_t space_pos = line.find(' ');
+                if (space_pos != std::string::npos && space_pos + 1 < line.length()) {
+                    const char* id_start = line.data() + space_pos + 1;
+                    size_t id_len = line.length() - space_pos - 1;
+                    std::string id_str(id_start, id_len);
+                    
+                    if (scope_filter.empty() || filtered_identifiers.count(id_str)) {
+                        const char* bit_start = line.data() + 1;
+                        size_t bit_len = space_pos - 1;
+                        local_values[id_str] = parse_bit_value(std::string(bit_start, bit_len));
+                    }
+                }
+            } else if (line[0] == '0' || line[0] == '1' || line[0] == 'x' || line[0] == 'z') {
+                if (line.length() > 1) {
+                    const char* id_start = line.data() + 1;
+                    size_t id_len = line.length() - 1;
+                    std::string id_str(id_start, id_len);
+                    
+                    if (scope_filter.empty() || filtered_identifiers.count(id_str)) {
+                        Value val = (line[0] == '1') ? Value(1) : Value(0);
+                        local_values[id_str] = val;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Save final timestamp for this chunk
+    if (current_timestamp > 0 || !local_values.empty()) {
+        TimeStep ts;
+        ts.timestamp = current_timestamp;
+        ts.signal_values = local_values;
+        chunk_timesteps.push_back(ts);
+    }
+}
+
+void VCDTrace::parse_data_parallel(const std::vector<std::string>& lines, size_t start_line_idx) {
+    // Determine number of threads to use
+    unsigned int num_threads = std::thread::hardware_concurrency();
+    if (num_threads == 0) num_threads = 4;  // Fallback
+    
+    // For small files, don't bother with parallelization
+    size_t total_lines = lines.size() - start_line_idx;
+    if (total_lines < 10000 || num_threads == 1) {
+        // Use sequential parsing for small files
+        size_t idx = start_line_idx;
+        parse_data(lines, idx);
+        return;
+    }
+    
+    // Find timestamp boundaries for chunk splitting
+    std::vector<size_t> timestamp_indices;
+    timestamp_indices.push_back(start_line_idx);
+    
+    for (size_t i = start_line_idx; i < lines.size(); ++i) {
+        if (!lines[i].empty() && lines[i][0] == '#') {
+            timestamp_indices.push_back(i);
+        }
+    }
+    
+    if (timestamp_indices.size() < num_threads * 2) {
+        // Not enough timestamps for effective parallelization
+        size_t idx = start_line_idx;
+        parse_data(lines, idx);
+        return;
+    }
+    
+    // Distribute timestamps across threads
+    size_t timestamps_per_thread = timestamp_indices.size() / num_threads;
+    std::vector<std::thread> threads;
+    std::vector<std::vector<TimeStep>> thread_results(num_threads);
+    
+    for (unsigned int t = 0; t < num_threads; ++t) {
+        size_t start_ts_idx = t * timestamps_per_thread;
+        size_t end_ts_idx = (t == num_threads - 1) ? timestamp_indices.size() - 1 
+                                                    : (t + 1) * timestamps_per_thread;
+        
+        size_t chunk_start = timestamp_indices[start_ts_idx];
+        size_t chunk_end = (end_ts_idx < timestamp_indices.size()) 
+                          ? timestamp_indices[end_ts_idx] 
+                          : lines.size();
+        
+        threads.emplace_back([this, &lines, chunk_start, chunk_end, &thread_results, t]() {
+            parse_data_chunk(lines, chunk_start, chunk_end, thread_results[t]);
+        });
+    }
+    
+    // Wait for all threads to complete
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    // Merge results in order
+    time_steps.reserve(timestamp_indices.size());
+    for (unsigned int t = 0; t < num_threads; ++t) {
+        time_steps.insert(time_steps.end(), 
+                         thread_results[t].begin(), 
+                         thread_results[t].end());
+    }
+    
+    // Build timestamp index map
+    for (size_t i = 0; i < time_steps.size(); ++i) {
+        timestamp_index_map[time_steps[i].timestamp] = static_cast<int>(i);
+    }
+    
+    max_index = static_cast<int>(time_steps.size()) - 1;
 }
 
 } // namespace wal

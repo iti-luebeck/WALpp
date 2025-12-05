@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <thread>
+#include <mutex>
 
 namespace wal::operators {
 
@@ -539,149 +541,118 @@ public:
                     throw EvalError("hamming-distance-scope: could not access trace");
                 }
 
-                // Get all signals and filter by scope
-                auto all_signals = trace->get_all_signals();
-                std::vector<std::string> scoped_signals;
-                
-                for (const auto& signal : all_signals) {
-                    if (signal.length() >= scope_prefix.length() &&
-                        signal.substr(0, scope_prefix.length()) == scope_prefix) {
-                        scoped_signals.push_back(signal);
-                    }
+                // Create a new filtered VCD trace with parse-time filtering
+                auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
+                if (!vcd_trace) {
+                    throw EvalError("hamming-distance-scope: only VCD traces are currently supported");
                 }
 
-                if (scoped_signals.empty()) {
+                // Create a new VCD trace with scope filter
+                auto filtered_trace = std::make_shared<VCDTrace>(
+                    "filtered_" + trace_ids[0],
+                    vcd_trace->get_filename(),
+                    trace_container,
+                    scope_prefix  // This triggers parse-time filtering!
+                );
+                filtered_trace->load();
+
+                // Check if any signals were loaded
+                auto filtered_signals = filtered_trace->get_all_signals();
+                if (filtered_signals.empty()) {
                     throw EvalError("hamming-distance-scope: no signals found with scope prefix '" 
                         + scope_prefix + "'");
                 }
 
-                int original_index = trace->get_index();
-                int max_index = trace->get_max_index();
+                int max_index = filtered_trace->get_max_index();
                 std::vector<Value> results;
                 results.reserve(max_index);
 
-                auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
-                if (vcd_trace) {
-                    const auto& time_steps = vcd_trace->get_time_steps();
-                    const auto& signal_info = vcd_trace->get_signal_info();
-                    const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
+                const auto& time_steps = filtered_trace->get_time_steps();
+                const auto& signal_info = filtered_trace->get_signal_info();
+                const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
 
-                    // Build set of identifiers for scoped signals
-                    std::unordered_set<std::string> scoped_identifiers;
-                    for (const auto& sig_name : scoped_signals) {
-                        auto it = signal_info.find(sig_name);
-                        if (it != signal_info.end()) {
-                            scoped_identifiers.insert(it->second.identifier);
-                        }
+                // Build vector of identifiers for all loaded signals (already filtered!)
+                std::vector<std::string> identifiers;
+                identifiers.reserve(filtered_signals.size());
+                for (const auto& sig_name : filtered_signals) {
+                    auto it = signal_info.find(sig_name);
+                    if (it != signal_info.end()) {
+                        identifiers.push_back(it->second.identifier);
                     }
+                }
 
-                    if (num_steps > 0) {
-                        std::unordered_map<std::string, int64_t> prev_int_values;
-                        std::unordered_map<std::string, std::string> prev_str_values;
+                if (num_steps > 0 && !identifiers.empty()) {
+                    // Sequential HD calculation
+                    std::unordered_map<std::string, int64_t> prev_int_values;
+                    std::unordered_map<std::string, std::string> prev_str_values;
+                    prev_int_values.reserve(identifiers.size());
+                    prev_str_values.reserve(identifiers.size());
 
-                        for (size_t idx = 0; idx < num_steps; ++idx) {
-                            const auto& ts = time_steps[idx];
-                            int64_t total_distance = 0;
+                    for (size_t idx = 0; idx < num_steps; ++idx) {
+                        const auto& ts = time_steps[idx];
+                        int64_t total_distance = 0;
 
-                            std::unordered_map<std::string, int64_t> curr_int_values;
-                            std::unordered_map<std::string, std::string> curr_str_values;
+                        std::unordered_map<std::string, int64_t> curr_int_values;
+                        std::unordered_map<std::string, std::string> curr_str_values;
+                        curr_int_values.reserve(identifiers.size());
+                        curr_str_values.reserve(identifiers.size());
 
-                            for (const auto& [identifier, value] : ts.signal_values) {
-                                // Only process if this identifier is in our scoped set
-                                if (scoped_identifiers.find(identifier) == scoped_identifiers.end()) {
-                                    continue;
-                                }
+                        // Iterate only the filtered identifiers
+                        for (const auto& identifier : identifiers) {
+                            auto value_it = ts.signal_values.find(identifier);
+                            if (value_it == ts.signal_values.end()) {
+                                continue;
+                            }
+                            
+                            const auto& value = value_it->second;
 
-                                if (value.is_int()) {
-                                    int64_t curr_val = value.to_int();
-                                    curr_int_values[identifier] = curr_val;
+                            if (value.is_int()) {
+                                int64_t curr_val = value.to_int();
+                                curr_int_values[identifier] = curr_val;
 
-                                    if (idx > 0) {
-                                        auto prev_it = prev_int_values.find(identifier);
-                                        if (prev_it != prev_int_values.end()) {
-                                            uint64_t diff = static_cast<uint64_t>(curr_val) ^ static_cast<uint64_t>(prev_it->second);
-                                            total_distance += __builtin_popcountll(diff);
-                                        } else {
-                                            if (curr_val > 0) {
-                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
-                                            } else if (curr_val < 0) {
-                                                total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
-                                            }
-                                        }
-                                    }
-                                } else if (value.is_string()) {
-                                    const std::string& curr_str = value.to_string();
-                                    curr_str_values[identifier] = curr_str;
-
-                                    if (idx > 0) {
-                                        auto prev_it = prev_str_values.find(identifier);
-                                        if (prev_it != prev_str_values.end()) {
-                                            total_distance += hamming_distance(prev_it->second, curr_str);
-                                        } else {
-                                            total_distance += count_ones(curr_str);
+                                if (idx > 0) {
+                                    auto prev_it = prev_int_values.find(identifier);
+                                    if (prev_it != prev_int_values.end()) {
+                                        uint64_t diff = static_cast<uint64_t>(curr_val) ^ static_cast<uint64_t>(prev_it->second);
+                                        total_distance += __builtin_popcountll(diff);
+                                    } else {
+                                        if (curr_val > 0) {
+                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
+                                        } else if (curr_val < 0) {
+                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
                                         }
                                     }
                                 }
-                            }
+                            } else if (value.is_string()) {
+                                const std::string& curr_str = value.to_string();
+                                curr_str_values[identifier] = curr_str;
 
-                            if (idx > 0) {
-                                auto result_tuple = std::make_shared<WList>();
-                                result_tuple->push_back(Value(ts.timestamp));
-                                result_tuple->push_back(Value(total_distance));
-                                results.push_back(Value(result_tuple));
-                            }
-
-                            prev_int_values = std::move(curr_int_values);
-                            prev_str_values = std::move(curr_str_values);
-                        }
-                    }
-                } else {
-                    // Fallback for non-VCD traces
-                    std::vector<std::string> prev_values;
-                    prev_values.reserve(scoped_signals.size());
-
-                    for (int idx = 0; idx <= max_index; ++idx) {
-                        trace->set_index(idx);
-                        std::vector<std::string> curr_values;
-                        curr_values.reserve(scoped_signals.size());
-
-                        for (const auto& signal_name : scoped_signals) {
-                            try {
-                                Value signal_val = trace->signal_value(signal_name, 0);
-                                if (signal_val.is_int()) {
-                                    curr_values.push_back(value_to_binary_string(signal_val));
-                                } else if (signal_val.is_string()) {
-                                    curr_values.push_back(signal_val.to_string());
-                                } else {
-                                    curr_values.push_back("");
+                                if (idx > 0) {
+                                    auto prev_it = prev_str_values.find(identifier);
+                                    if (prev_it != prev_str_values.end()) {
+                                        total_distance += hamming_distance(prev_it->second, curr_str);
+                                    } else {
+                                        total_distance += count_ones(curr_str);
+                                    }
                                 }
-                            } catch (const std::exception&) {
-                                curr_values.push_back("");
                             }
                         }
 
-                        if (!prev_values.empty()) {
-                            int64_t total_distance = 0;
-                            size_t min_size = std::min(prev_values.size(), curr_values.size());
-
-                            for (size_t i = 0; i < min_size; ++i) {
-                                total_distance += hamming_distance(prev_values[i], curr_values[i]);
-                            }
-
-                            int64_t timestamp = static_cast<int64_t>(idx);
+                        if (idx > 0) {
                             auto result_tuple = std::make_shared<WList>();
-                            result_tuple->push_back(Value(timestamp));
+                            result_tuple->push_back(Value(ts.timestamp));
                             result_tuple->push_back(Value(total_distance));
                             results.push_back(Value(result_tuple));
                         }
 
-                        prev_values = std::move(curr_values);
+                        prev_int_values = std::move(curr_int_values);
+                        prev_str_values = std::move(curr_str_values);
                     }
                 }
 
-                trace->set_index(original_index);
                 return Value(std::make_shared<WList>(results));
             });
+
     }
 };
 
