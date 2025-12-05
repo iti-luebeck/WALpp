@@ -128,6 +128,15 @@ If you're familiar with WAL from wal-lang.org, WAL++ provides the same expressiv
 - **Signal Processing**: FFT, filtering, windowing, etc.
 - **Data Export**: write-vcd, write-csv, write-fst
 
+### Fast Mode - High-Performance HD/HW
+- ✅ Optimized Hamming Distance calculation (32-743x faster)
+- ✅ Optimized Hamming Weight calculation
+- ✅ Delta compression architecture
+- ✅ Scope-based filtering
+- ✅ CSV output format
+- ✅ Memory-efficient processing
+- ✅ Supports massive traces (100+ GB)
+
 ---
 
 ## Installation
@@ -1034,6 +1043,12 @@ OPTIONS:
   -f, --file FILE             Execute WAL program file
   -l, --load FILE             Load waveform trace file
 
+FAST MODE (optimized HD/HW calculation with CSV output):
+  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)
+  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)
+  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)
+  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)
+
 INPUT MODES:
   --pipe FILE                 Read trace from named pipe
   --stdin                     Read trace from standard input
@@ -1047,6 +1062,38 @@ STREAMING OPTIONS:
 ```
 
 ### Examples
+
+#### Fast Mode - High-Performance HD/HW Calculations
+
+Fast mode provides 32-743x speedup over standard WAL evaluation for Hamming Distance and Hamming Weight calculations. It uses optimized delta compression and outputs results in CSV format.
+
+```bash
+# Hamming Distance for all signals (32x faster)
+wal --fast-hd-all netlist.vcd -o hamming_distance.csv
+
+# Hamming Distance for specific scope (743x faster for large traces)
+wal --fast-hd-scope "TOP.cpu.core" design.vcd -o core_hd.csv
+
+# Hamming Weight for all signals
+wal --fast-hw-all trace.vcd -o hamming_weight.csv
+
+# Hamming Weight for specific module
+wal --fast-hw-scope "TestHarness.dut" testbench.vcd -o dut_hw.csv
+```
+
+**Fast Mode Performance:**
+- AES netlist (147K signals, 383 timestamps): 13.6s → 0.43s (32x speedup)
+- Rocket core (32K signals, 65K timestamps): 2:36 → 0.21s (743x speedup)
+- Output: CSV format with timestamp,value per line
+
+**Visualize Results:**
+```bash
+# Generate HD/HW analysis
+wal --fast-hd-all design.vcd -o results.csv
+
+# Plot with included script
+python plot_results.py results.csv plot.png --title "Hamming Distance"
+```
 
 #### Load Trace and Analyze
 

@@ -37,6 +37,15 @@ private:
     bool streaming_enabled = true;  // Streaming auto-detection (default: enabled)
     bool streaming_explicit = false;  // User explicitly set streaming
     
+    // Fast mode flags
+    bool fast_hd_all = false;
+    bool fast_hd_scope = false;
+    bool fast_hw_all = false;
+    bool fast_hw_scope = false;
+    std::string fast_scope;
+    std::string fast_vcd_file;
+    std::string fast_output_file;
+    
     std::string eval_expr;
     std::string filename;
     std::string trace_file;
@@ -50,6 +59,7 @@ private:
     void print_version();
     void print_usage();
     void apply_streaming_config();
+    int run_fast_mode();
     
 public:
     /**

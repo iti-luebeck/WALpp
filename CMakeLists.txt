@@ -87,6 +87,10 @@ set(WALPP_CORE_SOURCES
     src/writers/csv_writer.cpp
     src/writers/writers.cpp
     
+    # Fast VCD implementation for HD/HW operators
+    src/fast/vcd_parser.cpp
+    src/fast/hamming_ops.cpp
+    
     # Phase 2-5: All operators are header-only (implementations in .h files)
 )
 

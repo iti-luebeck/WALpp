@@ -2,9 +2,13 @@
 #include "wal/core.h"
 #include "wal/repl.h"
 #include "wal/trace/streaming_config.h"
+#include "wal/fast/vcd_parser.h"
+#include "wal/fast/hamming_ops.h"
 #include <iostream>
+#include <fstream>
 #include <cstring>
 #include <unistd.h>
+#include <chrono>
 
 namespace wal {
 
@@ -27,6 +31,36 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
             help_flag = true;
         } else if (arg == "-v" || arg == "--version") {
             version_flag = true;
+        } else if (arg == "--fast-hd-all") {
+            fast_hd_all = true;
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
+        } else if (arg == "--fast-hd-scope") {
+            fast_hd_scope = true;
+            if (i + 1 < args.size()) fast_scope = args[++i];
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
+        } else if (arg == "--fast-hw-all") {
+            fast_hw_all = true;
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
+        } else if (arg == "--fast-hw-scope") {
+            fast_hw_scope = true;
+            if (i + 1 < args.size()) fast_scope = args[++i];
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
         } else if (arg == "-e" || arg == "--eval") {
             eval_mode = true;
             if (i + 1 < args.size()) {
@@ -95,6 +129,12 @@ void CLI::print_usage() {
               << "  -f, --file FILE             Execute WAL program file\n"
               << "  -l, --load FILE             Load waveform trace file (for analysis)\n"
               << "\n"
+              << "FAST MODE (optimized HD/HW calculation with CSV output):\n"
+              << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
+              << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
+              << "  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)\n"
+              << "  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)\n"
+              << "\n"
               << "INPUT MODES:\n"
               << "  --pipe FILE                 Read trace data from named pipe file\n"
               << "  --stdin                     Read trace data from standard input\n"
@@ -156,6 +196,89 @@ void CLI::apply_streaming_config() {
     }
 }
 
+int CLI::run_fast_mode() {
+    using namespace std::chrono;
+    
+    if (fast_vcd_file.empty() || fast_output_file.empty()) {
+        std::cerr << "Error: VCD file and output file required for fast mode\n";
+        print_usage();
+        return 1;
+    }
+    
+    try {
+        // Parse VCD
+        auto parse_start = high_resolution_clock::now();
+        
+        fast_vcd::VCDParser parser;
+        
+        if (fast_hd_scope || fast_hw_scope) {
+            if (fast_scope.empty()) {
+                std::cerr << "Error: Scope required for scoped operations\n";
+                return 1;
+            }
+            std::cerr << "Parsing VCD with scope filter: " << fast_scope << "...\n";
+            parser.parse(fast_vcd_file, fast_scope);
+        } else {
+            std::cerr << "Parsing VCD...\n";
+            parser.parse(fast_vcd_file);
+        }
+        
+        auto parse_end = high_resolution_clock::now();
+        auto parse_ms = duration_cast<milliseconds>(parse_end - parse_start).count();
+        
+        std::cerr << "Parsed " << parser.num_signals() << " signals, "
+                  << parser.num_timestamps() << " timestamps in "
+                  << parse_ms << "ms\n";
+        
+        // Perform operation
+        auto op_start = high_resolution_clock::now();
+        
+        fast_vcd::HammingOps ops(parser);
+        fast_vcd::Result results;
+        
+        if (fast_hd_all) {
+            std::cerr << "Computing Hamming Distance (all signals)...\n";
+            results = ops.hamming_distance_all();
+        } else if (fast_hd_scope) {
+            std::cerr << "Computing Hamming Distance (scope: " << fast_scope << ")...\n";
+            results = ops.hamming_distance_scope(fast_scope);
+        } else if (fast_hw_all) {
+            std::cerr << "Computing Hamming Weight (all signals)...\n";
+            results = ops.hamming_weight_all();
+        } else if (fast_hw_scope) {
+            std::cerr << "Computing Hamming Weight (scope: " << fast_scope << ")...\n";
+            results = ops.hamming_weight_scope(fast_scope);
+        }
+        
+        auto op_end = high_resolution_clock::now();
+        auto op_ms = duration_cast<milliseconds>(op_end - op_start).count();
+        
+        std::cerr << "Computation completed in " << op_ms << "ms\n";
+        std::cerr << "Total time: " << (parse_ms + op_ms) << "ms\n";
+        
+        // Write results to CSV
+        std::ofstream outfile(fast_output_file);
+        if (!outfile) {
+            std::cerr << "Error: Could not open output file: " << fast_output_file << "\n";
+            return 1;
+        }
+        
+        for (const auto& result : results) {
+            outfile << result.first << "," << result.second << "\n";
+        }
+        outfile.close();
+        
+        std::cerr << "Results written to: " << fast_output_file 
+                  << " (" << results.size() << " entries)\n";
+        
+        return 0;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        return 1;
+    }
+}
+
 int CLI::run() {
     parse_arguments(args.size(), nullptr);
     
@@ -168,6 +291,11 @@ int CLI::run() {
     if (version_flag) {
         print_version();
         return 0;
+    }
+    
+    // Check for fast mode first (highest priority)
+    if (fast_hd_all || fast_hd_scope || fast_hw_all || fast_hw_scope) {
+        return run_fast_mode();
     }
     
     // Apply streaming configuration early
