@@ -6,6 +6,8 @@
 #include "wal/fast/hamming_ops.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
 #include <cstring>
 #include <unistd.h>
 #include <chrono>
@@ -199,6 +201,31 @@ void CLI::apply_streaming_config() {
 int CLI::run_fast_mode() {
     using namespace std::chrono;
     
+    // Helper lambda to format duration
+    auto format_duration = [](int64_t ms) -> std::string {
+        if (ms < 1000) {
+            return std::to_string(ms) + "ms";
+        } else if (ms < 60000) {
+            double seconds = ms / 1000.0;
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(2) << seconds << "s";
+            return oss.str();
+        } else if (ms < 3600000) {
+            int minutes = ms / 60000;
+            double seconds = (ms % 60000) / 1000.0;
+            std::ostringstream oss;
+            oss << minutes << "m " << std::fixed << std::setprecision(1) << seconds << "s";
+            return oss.str();
+        } else {
+            int hours = ms / 3600000;
+            int minutes = (ms % 3600000) / 60000;
+            int seconds = (ms % 60000) / 1000;
+            std::ostringstream oss;
+            oss << hours << "h " << minutes << "m " << seconds << "s";
+            return oss.str();
+        }
+    };
+    
     if (fast_vcd_file.empty() || fast_output_file.empty()) {
         std::cerr << "Error: VCD file and output file required for fast mode\n";
         print_usage();
@@ -228,7 +255,7 @@ int CLI::run_fast_mode() {
         
         std::cerr << "Parsed " << parser.num_signals() << " signals, "
                   << parser.num_timestamps() << " timestamps in "
-                  << parse_ms << "ms\n";
+                  << format_duration(parse_ms) << "\n";
         
         // Perform operation
         auto op_start = high_resolution_clock::now();
@@ -253,8 +280,8 @@ int CLI::run_fast_mode() {
         auto op_end = high_resolution_clock::now();
         auto op_ms = duration_cast<milliseconds>(op_end - op_start).count();
         
-        std::cerr << "Computation completed in " << op_ms << "ms\n";
-        std::cerr << "Total time: " << (parse_ms + op_ms) << "ms\n";
+        std::cerr << "Computation completed in " << format_duration(op_ms) << "\n";
+        std::cerr << "Total time: " << format_duration(parse_ms + op_ms) << "\n";
         
         // Write results to CSV
         std::ofstream outfile(fast_output_file);
