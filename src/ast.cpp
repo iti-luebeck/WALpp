@@ -219,9 +219,6 @@ bool Value::operator!=(const Value& other) const {
 
 Symbol::Symbol(const std::string& name) : name(name), scope(""), group("") {}
 
-Symbol::Symbol(std::string_view name) 
-    : name(name), scope(""), group("") {}
-
 Symbol::Symbol(const std::string& name, const std::string& scope)
     : name(name), scope(scope), group("") {}
 

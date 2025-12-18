@@ -112,7 +112,9 @@ if(MSVC)
 else()
     target_compile_options(walpp PRIVATE -Wall -Wextra -Wpedantic)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(walpp PRIVATE -Wduplicated-cond -Wduplicated-branches)
+        target_compile_options(walpp PRIVATE -Wduplicated-cond -Wduplicated-branches -fcoroutines)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(walpp PRIVATE -fcoroutines-ts)
     endif()
 endif()
 
@@ -134,6 +136,10 @@ if(ZLIB_FOUND)
     target_link_libraries(walpp PRIVATE ZLIB::ZLIB)
     target_compile_definitions(walpp PRIVATE HAVE_ZLIB)
 endif()
+
+# Link pthread for coroutines support
+find_package(Threads REQUIRED)
+target_link_libraries(walpp PRIVATE Threads::Threads)
 
 # ============================================================================
 # Readline support for CLI/REPL
