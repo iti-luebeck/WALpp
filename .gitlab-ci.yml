@@ -68,7 +68,7 @@ package:ubuntu22:
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
     - pip3 install --break-system-packages pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
@@ -93,7 +93,7 @@ package:ubuntu24:
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
     - pip3 install --break-system-packages pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
@@ -118,7 +118,7 @@ package:debian11:
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
     - pip3 install --break-system-packages pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
@@ -143,7 +143,7 @@ package:debian12:
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
     - pip3 install --break-system-packages pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
@@ -168,7 +168,7 @@ package:centos9:
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
     - pip3 install --break-system-packages pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G RPM
@@ -193,7 +193,7 @@ package:centos8:
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
     - pip3 install --break-system-packages pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G RPM
@@ -218,7 +218,7 @@ package:rocky9:
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
     - pip3 install pybind11
   script:
-    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G RPM
