@@ -66,7 +66,7 @@ package:ubuntu22:
   before_script:
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
-    - pip3 install --break-system-packages pybind11
+    - pip3 install pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
@@ -116,7 +116,7 @@ package:debian11:
   before_script:
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
-    - pip3 install --break-system-packages pybind11
+    - pip3 install pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
@@ -166,7 +166,7 @@ package:centos9:
   before_script:
     - dnf install -y epel-release
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
-    - pip3 install --break-system-packages pybind11
+    - pip3 install pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
     - cmake --build ${BUILD_DIR} -j$(nproc)
@@ -175,31 +175,6 @@ package:centos9:
     - rpm -qip walpp*.rpm
   artifacts:
     name: "walpp-centos9-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
-    paths:
-      - ${BUILD_DIR}/walpp*.rpm
-    expire_in: 4 weeks
-  only:
-    - main
-    - tags
-
-# Package job for CentOS 8 Stream
-package:centos8:
-  stage: package
-  image: quay.io/centos/centos:stream8
-  dependencies:
-    - build:linux
-  before_script:
-    - dnf install -y epel-release
-    - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
-    - pip3 install --break-system-packages pybind11
-  script:
-    - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
-    - cmake --build ${BUILD_DIR} -j$(nproc)
-    - cd ${BUILD_DIR}
-    - cpack -G RPM
-    - rpm -qip walpp*.rpm
-  artifacts:
-    name: "walpp-centos8-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
     paths:
       - ${BUILD_DIR}/walpp*.rpm
     expire_in: 4 weeks
