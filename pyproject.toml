@@ -41,6 +41,6 @@ cmake.args = [
 # Ensure install passes through so the extension lands under walpp/
 wheel.packages = ["src/walpp"]
 
-[tool.scikit-build.cmake]
-minimum-version = "3.20"
+#[tool.scikit-build.cmake]
+#minimum-version = "3.20"
 
