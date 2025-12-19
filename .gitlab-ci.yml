@@ -190,7 +190,7 @@ wheel:python:
   before_script:
     - apt-get update -qq
     - apt-get install -y --no-install-recommends build-essential cmake ninja-build libreadline-dev
-    - pip install --no-cache-dir --upgrade pip build pybind11
+    - pip install --no-cache-dir --upgrade pip build scikit-build-core pybind11 ninja cmake
   script:
     - python -m build --wheel --outdir dist
   artifacts:

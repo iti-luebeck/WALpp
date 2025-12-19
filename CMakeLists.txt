@@ -239,14 +239,29 @@ install(TARGETS walpp
     RUNTIME DESTINATION bin
 )
 
-install(TARGETS wal
-    RUNTIME DESTINATION bin
-)
+if(DEFINED SKBUILD_PLATLIB_DIR)
+    # Place CLI inside the Python wheel under walpp/bin
+    install(TARGETS wal
+        RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/walpp/bin
+    )
+else()
+    install(TARGETS wal
+        RUNTIME DESTINATION bin
+    )
+endif()
 
 if(BUILD_PYTHON_MODULE)
-    install(TARGETS wal_cpp
-        LIBRARY DESTINATION lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages
-    )
+    # When building via scikit-build-core, install into the wheel's platlib
+    if(DEFINED SKBUILD_PLATLIB_DIR)
+        install(TARGETS wal_cpp
+            LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/walpp
+        )
+    else()
+        # Fallback: install into system site-packages (legacy)
+        install(TARGETS wal_cpp
+            LIBRARY DESTINATION lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages/walpp
+        )
+    endif()
 endif()
 
 # Install headers
