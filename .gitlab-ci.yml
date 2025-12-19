@@ -18,7 +18,7 @@ build:linux:
   script:
     - mkdir -p ${BUILD_DIR}
     - cd ${BUILD_DIR}
-    - cmake .. -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=ON
+    - pybind11_DIR=$(pybind11-config --cmakedir) cmake .. -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=ON
     - cmake --build . -j$(nproc)
   artifacts:
     name: "walpp-linux-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
