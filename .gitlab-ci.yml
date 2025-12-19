@@ -2,6 +2,7 @@ stages:
   - build
   - test
   - package
+  - wheel
 
 variables:
   CMAKE_BUILD_TYPE: Release
@@ -212,6 +213,25 @@ package:rocky9:
     name: "walpp-rocky9-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
     paths:
       - ${BUILD_DIR}/walpp*.rpm
+    expire_in: 4 weeks
+  only:
+    - main
+    - tags
+
+# Build Python wheel in a container
+wheel:python:
+  stage: wheel
+  image: python:3.10-bullseye
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends build-essential cmake ninja-build libreadline-dev
+    - pip install --no-cache-dir --upgrade pip build pybind11
+  script:
+    - python -m build --wheel --outdir dist
+  artifacts:
+    name: "walpp-wheel-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - dist/*.whl
     expire_in: 4 weeks
   only:
     - main
