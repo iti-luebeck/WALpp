@@ -66,8 +66,10 @@ package:ubuntu22:
   before_script:
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
-    - pip3 install pybind11
+    - pip3 install --break-system-packages pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
     - dpkg -I walpp*.deb
@@ -89,8 +91,10 @@ package:ubuntu24:
   before_script:
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
-    - pip3 install pybind11
+    - pip3 install --break-system-packages pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
     - dpkg -I walpp*.deb
@@ -112,8 +116,10 @@ package:debian11:
   before_script:
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
-    - pip3 install pybind11
+    - pip3 install --break-system-packages pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
     - dpkg -I walpp*.deb
@@ -135,8 +141,10 @@ package:debian12:
   before_script:
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev python3-dev python3-pip file dpkg-dev
-    - pip3 install pybind11
+    - pip3 install --break-system-packages pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G DEB
     - dpkg -I walpp*.deb
@@ -158,8 +166,10 @@ package:centos9:
   before_script:
     - dnf install -y epel-release
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
-    - pip3 install pybind11
+    - pip3 install --break-system-packages pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G RPM
     - rpm -qip walpp*.rpm
@@ -181,8 +191,10 @@ package:centos8:
   before_script:
     - dnf install -y epel-release
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
-    - pip3 install pybind11
+    - pip3 install --break-system-packages pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G RPM
     - rpm -qip walpp*.rpm
@@ -206,6 +218,8 @@ package:rocky9:
     - dnf install -y cmake gcc-c++ readline-devel python3-devel python3-pip rpm-build file
     - pip3 install pybind11
   script:
+    - cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
+    - cmake --build ${BUILD_DIR} -j$(nproc)
     - cd ${BUILD_DIR}
     - cpack -G RPM
     - rpm -qip walpp*.rpm
