@@ -100,6 +100,6 @@ endif()
 
 add_test(
     NAME test_trace_integration_cli
-    COMMAND test_trace_integration_cli
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMAND $<TARGET_FILE:test_trace_integration_cli>
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )

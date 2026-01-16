@@ -61,7 +61,11 @@ target_include_directories(test_wal_executable
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
-add_test(NAME test_wal_executable COMMAND test_wal_executable WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(
+    NAME test_wal_executable
+    COMMAND $<TARGET_FILE:test_wal_executable>
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
 
 # ============================================================================
 # Phase 3 Streaming Implementation Tests (VCD/FST/CSV streaming, chunk reader)
