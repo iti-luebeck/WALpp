@@ -63,6 +63,22 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
                 ++i;
                 if (i + 1 < args.size()) fast_output_file = args[++i];
             }
+        } else if (arg == "--fast-hd-signals") {
+            fast_hd_signals = true;
+            if (i + 1 < args.size()) fast_signals_file = args[++i];
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
+        } else if (arg == "--fast-hw-signals") {
+            fast_hw_signals = true;
+            if (i + 1 < args.size()) fast_signals_file = args[++i];
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
         } else if (arg == "-e" || arg == "--eval") {
             eval_mode = true;
             if (i + 1 < args.size()) {
@@ -134,8 +150,10 @@ void CLI::print_usage() {
               << "FAST MODE (optimized HD/HW calculation with CSV output):\n"
               << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
               << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
+              << "  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)\n"
               << "  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)\n"
               << "  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)\n"
+              << "  --fast-hw-signals LIST FILE -o OUT  Hamming Weight (signal list)\n"
               << "\n"
               << "INPUT MODES:\n"
               << "  --pipe FILE                 Read trace data from named pipe file\n"
@@ -245,6 +263,13 @@ int CLI::run_fast_mode() {
             }
             std::cerr << "Parsing VCD with scope filter: " << fast_scope << "...\n";
             parser.parse(fast_vcd_file, fast_scope);
+        } else if (fast_hd_signals || fast_hw_signals) {
+            if (fast_signals_file.empty()) {
+                std::cerr << "Error: Signal list file required for signal list operations\n";
+                return 1;
+            }
+            std::cerr << "Parsing VCD (will filter by signal list later)...\n";
+            parser.parse(fast_vcd_file);
         } else {
             std::cerr << "Parsing VCD...\n";
             parser.parse(fast_vcd_file);
@@ -263,18 +288,49 @@ int CLI::run_fast_mode() {
         fast_vcd::HammingOps ops(parser);
         fast_vcd::Result results;
         
+        // Read signal list if needed
+        std::vector<std::string> signal_names;
+        if (fast_hd_signals || fast_hw_signals) {
+            std::ifstream sigfile(fast_signals_file);
+            if (!sigfile) {
+                std::cerr << "Error: Could not open signal list file: " << fast_signals_file << "\n";
+                return 1;
+            }
+            
+            std::string line;
+            while (std::getline(sigfile, line)) {
+                // Trim whitespace
+                line.erase(0, line.find_first_not_of(" \t\r\n"));
+                line.erase(line.find_last_not_of(" \t\r\n") + 1);
+                
+                // Skip empty lines and comments
+                if (!line.empty() && line[0] != '#') {
+                    signal_names.push_back(line);
+                }
+            }
+            sigfile.close();
+            
+            std::cerr << "Loaded " << signal_names.size() << " signal names from list\n";
+        }
+        
         if (fast_hd_all) {
             std::cerr << "Computing Hamming Distance (all signals)...\n";
             results = ops.hamming_distance_all();
         } else if (fast_hd_scope) {
             std::cerr << "Computing Hamming Distance (scope: " << fast_scope << ")...\n";
             results = ops.hamming_distance_scope(fast_scope);
+        } else if (fast_hd_signals) {
+            std::cerr << "Computing Hamming Distance (" << signal_names.size() << " signals)...\n";
+            results = ops.hamming_distance_signals(signal_names);
         } else if (fast_hw_all) {
             std::cerr << "Computing Hamming Weight (all signals)...\n";
             results = ops.hamming_weight_all();
         } else if (fast_hw_scope) {
             std::cerr << "Computing Hamming Weight (scope: " << fast_scope << ")...\n";
             results = ops.hamming_weight_scope(fast_scope);
+        } else if (fast_hw_signals) {
+            std::cerr << "Computing Hamming Weight (" << signal_names.size() << " signals)...\n";
+            results = ops.hamming_weight_signals(signal_names);
         }
         
         auto op_end = high_resolution_clock::now();
@@ -321,7 +377,8 @@ int CLI::run() {
     }
     
     // Check for fast mode first (highest priority)
-    if (fast_hd_all || fast_hd_scope || fast_hw_all || fast_hw_scope) {
+    if (fast_hd_all || fast_hd_scope || fast_hw_all || fast_hw_scope || 
+        fast_hd_signals || fast_hw_signals) {
         return run_fast_mode();
     }
     
