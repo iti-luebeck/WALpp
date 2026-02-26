@@ -42,9 +42,12 @@ private:
     bool fast_hd_scope = false;
     bool fast_hw_all = false;
     bool fast_hw_scope = false;
+    bool fast_hd_signals = false;
+    bool fast_hw_signals = false;
     std::string fast_scope;
     std::string fast_vcd_file;
     std::string fast_output_file;
+    std::string fast_signals_file;
     
     std::string eval_expr;
     std::string filename;

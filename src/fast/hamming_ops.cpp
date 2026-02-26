@@ -235,4 +235,95 @@ Result HammingOps::hamming_weight_scope(const std::string& scope_prefix) const {
     return results;
 }
 
+Result HammingOps::hamming_distance_signals(const std::vector<std::string>& signal_names) const {
+    // Get signal IDs from names
+    std::vector<uint32_t> signal_ids = parser_.get_signal_ids_by_names(signal_names);
+    
+    if (signal_ids.empty()) {
+        return {};
+    }
+    
+    const auto& deltas = parser_.get_deltas();
+    Result results;
+    results.reserve(deltas.size() - 1);
+    
+    // Map from signal_id to index in state vector
+    std::unordered_map<uint32_t, size_t> sig_id_to_idx;
+    sig_id_to_idx.reserve(signal_ids.size());
+    for (size_t i = 0; i < signal_ids.size(); i++) {
+        sig_id_to_idx[signal_ids[i]] = i;
+    }
+    
+    // Allocate state vectors
+    std::vector<int64_t> prev_state(signal_ids.size(), 0);
+    std::vector<int64_t> curr_state(signal_ids.size(), 0);
+    
+    // Apply first delta
+    for (const auto& [sig_id, value] : deltas[0].changes) {
+        auto it = sig_id_to_idx.find(sig_id);
+        if (it != sig_id_to_idx.end()) {
+            curr_state[it->second] = value;
+        }
+    }
+    
+    prev_state = curr_state;
+    
+    // Process remaining timestamps incrementally
+    for (size_t i = 1; i < deltas.size(); i++) {
+        // Apply delta to current state (incremental update!)
+        for (const auto& [sig_id, value] : deltas[i].changes) {
+            auto it = sig_id_to_idx.find(sig_id);
+            if (it != sig_id_to_idx.end()) {
+                curr_state[it->second] = value;
+            }
+        }
+        
+        int64_t distance = calculate_hd(prev_state, curr_state);
+        results.emplace_back(deltas[i].timestamp, distance);
+        
+        prev_state = curr_state;
+    }
+    
+    return results;
+}
+
+Result HammingOps::hamming_weight_signals(const std::vector<std::string>& signal_names) const {
+    // Get signal IDs from names
+    std::vector<uint32_t> signal_ids = parser_.get_signal_ids_by_names(signal_names);
+    
+    if (signal_ids.empty()) {
+        return {};
+    }
+    
+    const auto& deltas = parser_.get_deltas();
+    Result results;
+    results.reserve(deltas.size());
+    
+    // Map from signal_id to index in state vector
+    std::unordered_map<uint32_t, size_t> sig_id_to_idx;
+    sig_id_to_idx.reserve(signal_ids.size());
+    for (size_t i = 0; i < signal_ids.size(); i++) {
+        sig_id_to_idx[signal_ids[i]] = i;
+    }
+    
+    // Allocate state vector
+    std::vector<int64_t> state(signal_ids.size(), 0);
+    
+    // Process each timestamp incrementally
+    for (size_t i = 0; i < deltas.size(); i++) {
+        // Apply delta to current state
+        for (const auto& [sig_id, value] : deltas[i].changes) {
+            auto it = sig_id_to_idx.find(sig_id);
+            if (it != sig_id_to_idx.end()) {
+                state[it->second] = value;
+            }
+        }
+        
+        int64_t weight = calculate_hw(state);
+        results.emplace_back(deltas[i].timestamp, weight);
+    }
+    
+    return results;
+}
+
 } // namespace fast_vcd

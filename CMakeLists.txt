@@ -112,7 +112,9 @@ if(MSVC)
 else()
     target_compile_options(walpp PRIVATE -Wall -Wextra -Wpedantic)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(walpp PRIVATE -Wduplicated-cond -Wduplicated-branches)
+        target_compile_options(walpp PRIVATE -Wduplicated-cond -Wduplicated-branches -fcoroutines)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(walpp PRIVATE -fcoroutines-ts)
     endif()
 endif()
 
@@ -134,6 +136,10 @@ if(ZLIB_FOUND)
     target_link_libraries(walpp PRIVATE ZLIB::ZLIB)
     target_compile_definitions(walpp PRIVATE HAVE_ZLIB)
 endif()
+
+# Link pthread for coroutines support
+find_package(Threads REQUIRED)
+target_link_libraries(walpp PRIVATE Threads::Threads)
 
 # ============================================================================
 # Readline support for CLI/REPL
@@ -233,14 +239,29 @@ install(TARGETS walpp
     RUNTIME DESTINATION bin
 )
 
-install(TARGETS wal
-    RUNTIME DESTINATION bin
-)
+if(DEFINED SKBUILD_PLATLIB_DIR)
+    # Place CLI inside the Python wheel under walpp/bin
+    install(TARGETS wal
+        RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/walpp/bin
+    )
+else()
+    install(TARGETS wal
+        RUNTIME DESTINATION bin
+    )
+endif()
 
 if(BUILD_PYTHON_MODULE)
-    install(TARGETS wal_cpp
-        LIBRARY DESTINATION lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages
-    )
+    # When building via scikit-build-core, install into the wheel's platlib
+    if(DEFINED SKBUILD_PLATLIB_DIR)
+        install(TARGETS wal_cpp
+            LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/walpp
+        )
+    else()
+        # Fallback: install into system site-packages (legacy)
+        install(TARGETS wal_cpp
+            LIBRARY DESTINATION lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages/walpp
+        )
+    endif()
 endif()
 
 # Install headers
@@ -280,4 +301,82 @@ message(STATUS "  Install Prefix:       ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "")
 message(STATUS "Build with: cmake --build . -j$(nproc)")
 message(STATUS "Install with: cmake --install .")
+message(STATUS "Package with: cpack -G DEB|RPM|TGZ")
 message(STATUS "")
+
+# ============================================================================
+# CPack Configuration
+# ============================================================================
+
+set(CPACK_PACKAGE_NAME "walpp")
+set(CPACK_PACKAGE_VENDOR "WAL++ Project")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Waveform Analysis Language - High-performance C++20 rewrite")
+set(CPACK_PACKAGE_DESCRIPTION "WAL++ is a powerful S-expression based language for analyzing digital simulation waveforms (VCD, FST, CSV). It provides 130+ operators, streaming support, and Python bindings.")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/yourusername/walpp")
+set(CPACK_PACKAGE_CONTACT "maintainer@walpp.org")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+
+# Source package
+set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
+set(CPACK_SOURCE_IGNORE_FILES
+    /.git
+    /.github
+    /build
+    /.vscode
+    /.idea
+    /__pycache__
+    .pyc$
+    .pyo$
+    .so$
+    .dylib$
+    .DS_Store
+)
+
+# DEB (Debian/Ubuntu) specific settings
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "WAL++ Maintainer <maintainer@walpp.org>")
+set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libreadline8, libpython3.10, libstdc++6 (>= 10)")
+set(CPACK_DEBIAN_PACKAGE_SUGGESTS "python3-pip")
+set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/cmake/debian/postinst")
+
+# RPM (CentOS/RedHat/Fedora) specific settings
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_GROUP "Development/Tools")
+set(CPACK_RPM_PACKAGE_REQUIRES "readline >= 6.0, python3 >= 3.8")
+set(CPACK_RPM_PACKAGE_SUGGESTS "python3-pip")
+set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
+set(CPACK_RPM_PACKAGE_RELEASE "1")
+set(CPACK_RPM_PACKAGE_URL ${CPACK_PACKAGE_HOMEPAGE_URL})
+
+# Component installation
+set(CPACK_COMPONENTS_ALL runtime development python)
+set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "WAL++ Runtime")
+set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "WAL++ command-line interface and shared libraries")
+set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "WAL++ Development")
+set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "Headers and libraries for WAL++ development")
+set(CPACK_COMPONENT_PYTHON_DISPLAY_NAME "WAL++ Python Module")
+set(CPACK_COMPONENT_PYTHON_DESCRIPTION "Python bindings for WAL++")
+
+# Generator selection based on platform
+if(UNIX AND NOT APPLE)
+    if(EXISTS "/etc/debian_version")
+        set(CPACK_GENERATOR "DEB")
+    elseif(EXISTS "/etc/redhat-release")
+        set(CPACK_GENERATOR "RPM")
+    else()
+        set(CPACK_GENERATOR "TGZ")
+    endif()
+elseif(APPLE)
+    set(CPACK_GENERATOR "TGZ;ZIP")
+elseif(WIN32)
+    set(CPACK_GENERATOR "ZIP;NSIS")
+endif()
+
+include(CPack)

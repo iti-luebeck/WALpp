@@ -1,0 +1,46 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.9",
+  "cmake>=3.20",
+  "ninja>=1.10",
+  "pybind11>=2.10",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "walpp"
+version = "1.0.0"
+description = "WAL++: Waveform Analysis Language (C++20) with Python bindings"
+readme = "README.md"
+authors = [{ name = "WAL++ Contributors" }]
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: C++",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/walpp"
+Documentation = "https://wal-lang.org"
+Issues = "https://github.com/yourusername/walpp/issues"
+
+[project.scripts]
+wal = "walpp._cli:main"
+
+[tool.scikit-build]
+# Pass CMake options to enable Python module build
+cmake.args = [
+  "-DBUILD_PYTHON_MODULE=ON",
+  "-DENABLE_TESTS=OFF",
+]
+
+# Ensure install passes through so the extension lands under walpp/
+wheel.packages = ["src/walpp"]
+
+#[tool.scikit-build.cmake]
+#minimum-version = "3.20"
+

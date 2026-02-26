@@ -1046,8 +1046,10 @@ OPTIONS:
 FAST MODE (optimized HD/HW calculation with CSV output):
   --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)
   --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)
+  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)
   --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)
   --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)
+  --fast-hw-signals LIST FILE -o OUT  Hamming Weight (signal list)
 
 INPUT MODES:
   --pipe FILE                 Read trace from named pipe
@@ -1079,6 +1081,38 @@ wal --fast-hw-all trace.vcd -o hamming_weight.csv
 
 # Hamming Weight for specific module
 wal --fast-hw-scope "TestHarness.dut" testbench.vcd -o dut_hw.csv
+
+# Hamming Distance for specific signal list (e.g., tainted signals from CellIFT)
+wal --fast-hd-signals signals.txt trace.vcd -o tainted_hd.csv
+
+# Hamming Weight for specific signal list
+wal --fast-hw-signals signals.txt trace.vcd -o tainted_hw.csv
+```
+
+**Signal List Format:**
+The signal list file should contain one signal name per line (full hierarchical names):
+```
+TOP.top.core.ex_reg_valid
+TOP.top.core.mem_reg_valid
+TOP.top.core.wb_reg_valid
+TOP.top.core.rf[0]
+TOP.top.core.rf[1]
+```
+
+**Working with CellIFT Taint Reports:**
+```bash
+# Parse CellIFT taint report and extract signal names
+python parse_taint_report.py report.txt -o tainted_signals.txt
+
+# Calculate Hamming Distance for tainted signals only
+wal --fast-hd-signals tainted_signals.txt trace.vcd -o tainted_hd.csv
+
+# Extract signals from specific scope
+python parse_taint_report.py report.txt --scope "TOP.top.core" -o core_signals.txt
+wal --fast-hw-signals core_signals.txt trace.vcd -o core_hw.csv
+
+# List available modules in taint report
+python parse_taint_report.py report.txt --list-modules
 ```
 
 **Fast Mode Performance:**

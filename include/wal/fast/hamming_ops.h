@@ -45,6 +45,20 @@ public:
      */
     Result hamming_weight_scope(const std::string& scope_prefix) const;
     
+    /**
+     * @brief Calculate Hamming Distance for a specific list of signals
+     * @param signal_names Vector of full hierarchical signal names
+     * @return Vector of (timestamp, hamming_distance) pairs
+     */
+    Result hamming_distance_signals(const std::vector<std::string>& signal_names) const;
+    
+    /**
+     * @brief Calculate Hamming Weight for a specific list of signals
+     * @param signal_names Vector of full hierarchical signal names
+     * @return Vector of (timestamp, hamming_weight) pairs
+     */
+    Result hamming_weight_signals(const std::vector<std::string>& signal_names) const;
+    
 private:
     const VCDParser& parser_;
     

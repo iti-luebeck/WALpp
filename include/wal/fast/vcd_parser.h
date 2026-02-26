@@ -84,6 +84,13 @@ public:
      */
     std::vector<uint32_t> get_signals_in_scope(const std::string& scope_prefix) const;
     
+    /**
+     * @brief Get signal IDs from a list of signal names
+     * @param signal_names Vector of full hierarchical signal names
+     * @return Vector of signal IDs (signals not found are skipped)
+     */
+    std::vector<uint32_t> get_signal_ids_by_names(const std::vector<std::string>& signal_names) const;
+    
 private:
     void parse_header(const char* data, const char* end, size_t& pos);
     void parse_data(const char* data, const char* end, size_t& pos);

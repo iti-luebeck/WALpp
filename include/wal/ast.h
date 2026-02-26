@@ -196,7 +196,6 @@ private:
 
 public:
     Symbol(const std::string& name);
-    Symbol(std::string_view name);
     Symbol(const std::string& name, const std::string& scope);
 
     const std::string& get_name() const { return name; }

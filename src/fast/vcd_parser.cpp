@@ -403,4 +403,26 @@ std::vector<uint32_t> VCDParser::get_signals_in_scope(const std::string& scope_p
     return result;
 }
 
+std::vector<uint32_t> VCDParser::get_signal_ids_by_names(const std::vector<std::string>& signal_names) const {
+    std::vector<uint32_t> result;
+    result.reserve(signal_names.size());
+    
+    // Build name->ID map for efficient lookup
+    std::unordered_map<std::string, uint32_t> name_to_id;
+    name_to_id.reserve(signals_.size());
+    for (const auto& sig : signals_) {
+        name_to_id[sig.name] = sig.id;
+    }
+    
+    // Find signal IDs (skip signals not found)
+    for (const auto& name : signal_names) {
+        auto it = name_to_id.find(name);
+        if (it != name_to_id.end()) {
+            result.push_back(it->second);
+        }
+    }
+    
+    return result;
+}
+
 } // namespace fast_vcd
