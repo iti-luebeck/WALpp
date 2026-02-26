@@ -58,3 +58,7 @@ docs/_build/
 *.bak
 *.swp
 .tags
+helper_scripts/
+python-reference-implementation/
+ubuntu_docker/
+ubuntu_docker/
