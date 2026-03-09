@@ -125,41 +125,57 @@ public:
                 std::vector<Value> results;
                 results.reserve(max_index + 1);
                 
-                // Fast path for VCDTrace: direct access to time_steps
+                // Fast path for VCDTrace: delta computation over sparse time_steps
                 auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
                 if (vcd_trace) {
                     const auto& time_steps = vcd_trace->get_time_steps();
-                    
-                    // Verify we have data
+
                     if (time_steps.empty()) {
                         throw EvalError("hamming-weight-all-signals-all-timestamps: VCD trace has no time steps");
                     }
-                    
+
                     const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
-                    
+
+                    // Rolling state: current value per identifier, and running HW total
+                    std::unordered_map<std::string, Value> current_state =
+                        vcd_trace->get_initial_values();
+
+                    int64_t running_hw = 0;
+                    for (const auto& [id, val] : current_state) {
+                        if (val.is_int()) {
+                            running_hw += __builtin_popcountll(static_cast<uint64_t>(val.to_int()));
+                        } else if (val.is_string()) {
+                            running_hw += count_ones(val.to_string());
+                        }
+                    }
+
                     for (size_t idx = 0; idx < num_steps; ++idx) {
                         const auto& ts = time_steps[idx];
-                        int64_t total_hamming_weight = 0;
-                        
-                        // Iterate through all signal values at this timestamp
-                        for (const auto& [identifier, value] : ts.signal_values) {
-                            if (value.is_int()) {
-                                int64_t val = value.to_int();
-                                if (val > 0) {
-                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
-                                } else if (val < 0) {
-                                    // For negative values, count bits in two's complement
-                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
+
+                        // Apply each change: subtract old HW, add new HW
+                        for (const auto& [id, new_val] : ts.signal_values) {
+                            auto old_it = current_state.find(id);
+                            if (old_it != current_state.end()) {
+                                const Value& old_val = old_it->second;
+                                if (old_val.is_int()) {
+                                    running_hw -= __builtin_popcountll(
+                                        static_cast<uint64_t>(old_val.to_int()));
+                                } else if (old_val.is_string()) {
+                                    running_hw -= count_ones(old_val.to_string());
                                 }
-                            } else if (value.is_string()) {
-                                const std::string& str = value.to_string();
-                                total_hamming_weight += count_ones(str);
                             }
+                            if (new_val.is_int()) {
+                                running_hw += __builtin_popcountll(
+                                    static_cast<uint64_t>(new_val.to_int()));
+                            } else if (new_val.is_string()) {
+                                running_hw += count_ones(new_val.to_string());
+                            }
+                            current_state[id] = new_val;
                         }
-                        
+
                         auto result_tuple = std::make_shared<WList>();
                         result_tuple->push_back(Value(ts.timestamp));
-                        result_tuple->push_back(Value(total_hamming_weight));
+                        result_tuple->push_back(Value(running_hw));
                         results.push_back(Value(result_tuple));
                     }
                 } else {
@@ -188,7 +204,7 @@ public:
                             }
                         }
                         
-                        int64_t timestamp = static_cast<int64_t>(idx);
+                        int64_t timestamp = trace->get_timestamp();
                         auto result_tuple = std::make_shared<WList>();
                         result_tuple->push_back(Value(timestamp));
                         result_tuple->push_back(Value(total_hamming_weight));
@@ -240,87 +256,53 @@ public:
                 std::vector<Value> results;
                 results.reserve(max_index);  // Pre-allocate (max_index timestamps, first skipped)
                 
-                // Fast path for VCDTrace: direct access to time_steps
+                // Fast path for VCDTrace: delta computation over sparse time_steps.
+                // Hamming distance between t[i-1] and t[i] = XOR of only the changed
+                // signals — unchanged signals contribute 0 difference.
                 auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
                 if (vcd_trace) {
                     const auto& time_steps = vcd_trace->get_time_steps();
-                    
-                    // Verify we have data
+
                     if (time_steps.empty()) {
                         throw EvalError("hamming-distance-all-signals-all-timestamps: VCD trace has no time steps");
                     }
-                    
+
                     const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
-                    
+
                     if (num_steps > 0) {
-                        // Build identifier index for consistent ordering
-                        std::vector<std::string> all_identifiers;
-                        std::unordered_map<std::string, size_t> identifier_to_idx;
-                        
-                        // Collect all unique identifiers across all timesteps
-                        for (const auto& ts : time_steps) {
-                            for (const auto& [identifier, value] : ts.signal_values) {
-                                if (identifier_to_idx.find(identifier) == identifier_to_idx.end()) {
-                                    identifier_to_idx[identifier] = all_identifiers.size();
-                                    all_identifiers.push_back(identifier);
-                                }
-                            }
+                        // Rolling state: current integer value per identifier
+                        std::unordered_map<std::string, int64_t> current_state;
+                        for (const auto& [id, val] : vcd_trace->get_initial_values()) {
+                            if (val.is_int()) current_state[id] = val.to_int();
                         }
-                        
-                        const size_t num_signals = all_identifiers.size();
-                        
-                        // Pre-allocate value arrays (reused across timestamps)
-                        std::vector<int64_t> prev_values(num_signals, 0);
-                        std::vector<int64_t> curr_values(num_signals, 0);
-                        std::vector<bool> prev_valid(num_signals, false);
-                        std::vector<bool> curr_valid(num_signals, false);
-                        
+
                         for (size_t idx = 0; idx < num_steps; ++idx) {
                             const auto& ts = time_steps[idx];
-                            
-                            // Reset current validity flags
-                            std::fill(curr_valid.begin(), curr_valid.end(), false);
-                            
-                            // Populate current values by identifier index (no hash lookups!)
-                            for (const auto& [identifier, value] : ts.signal_values) {
-                                if (value.is_int()) {
-                                    size_t sig_idx = identifier_to_idx[identifier];
-                                    curr_values[sig_idx] = value.to_int();
-                                    curr_valid[sig_idx] = true;
-                                }
-                            }
-                            
-                            // Calculate HD
+
                             if (idx > 0) {
+                                // Distance = XOR over changed signals only
                                 int64_t total_distance = 0;
-                                
-                                for (size_t s = 0; s < num_signals; ++s) {
-                                    if (curr_valid[s] && prev_valid[s]) {
-                                        // Both timestamps have this signal
-                                        uint64_t diff = static_cast<uint64_t>(curr_values[s]) ^ 
-                                                       static_cast<uint64_t>(prev_values[s]);
-                                        total_distance += __builtin_popcountll(diff);
-                                    } else if (curr_valid[s] && !prev_valid[s]) {
-                                        // New signal appeared
-                                        int64_t val = curr_values[s];
-                                        if (val > 0) {
-                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(val));
-                                        } else if (val < 0) {
-                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(val));
-                                        }
-                                    }
+                                for (const auto& [id, new_val] : ts.signal_values) {
+                                    if (!new_val.is_int()) continue;
+                                    int64_t new_int = new_val.to_int();
+                                    auto old_it = current_state.find(id);
+                                    int64_t old_int = (old_it != current_state.end())
+                                                      ? old_it->second : 0;
+                                    uint64_t diff = static_cast<uint64_t>(new_int) ^
+                                                    static_cast<uint64_t>(old_int);
+                                    total_distance += __builtin_popcountll(diff);
                                 }
-                                
-                                // Store result
+
                                 auto result_tuple = std::make_shared<WList>();
                                 result_tuple->push_back(Value(ts.timestamp));
                                 result_tuple->push_back(Value(total_distance));
                                 results.push_back(Value(result_tuple));
                             }
-                            
-                            // Swap current -> previous (no allocations!)
-                            prev_values.swap(curr_values);
-                            prev_valid.swap(curr_valid);
+
+                            // Apply changes to rolling state AFTER computing distance
+                            for (const auto& [id, new_val] : ts.signal_values) {
+                                if (new_val.is_int()) current_state[id] = new_val.to_int();
+                            }
                         }
                     }
                 } else {
@@ -362,8 +344,8 @@ public:
                                 total_distance += hamming_distance(prev_values[i], curr_values[i]);
                             }
                             
-                            // Get actual VCD timestamp
-                            int64_t timestamp = static_cast<int64_t>(idx);
+                            // Get actual simulation timestamp
+                            int64_t timestamp = trace->get_timestamp();
                             
                             // Create result tuple (timestamp, hamming_distance)
                             auto result_tuple = std::make_shared<WList>();
@@ -504,7 +486,7 @@ public:
                             }
                         }
 
-                        int64_t timestamp = static_cast<int64_t>(idx);
+                        int64_t timestamp = trace->get_timestamp();
                         auto result_tuple = std::make_shared<WList>();
                         result_tuple->push_back(Value(timestamp));
                         result_tuple->push_back(Value(total_hamming_weight));

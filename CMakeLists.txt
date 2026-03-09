@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(walpp 
+project(walpp
+
     VERSION 1.0.0 
-    LANGUAGES CXX
+    LANGUAGES CXX C
     DESCRIPTION "WAL - Waveform Analysis Language in C++20"
 )
 
@@ -42,15 +43,19 @@ if(BUILD_PYTHON_MODULE)
     message(STATUS "pybind11 found: ${pybind11_INCLUDE_DIR}")
 endif()
 
-# Optional: Find pylibfst for FST support
-if(ENABLE_FST_SUPPORT)
-    find_package(Pylibfst QUIET)
-    if(Pylibfst_FOUND)
-        message(STATUS "pylibfst found - FST support enabled")
-    else()
-        message(STATUS "pylibfst not found - FST support disabled (optional)")
-    endif()
-endif()
+# Bundled GTKWave fstapi for standard FST format support
+add_library(fstapi STATIC
+    third_party/fstapi/fstapi.c
+    third_party/fstapi/fastlz.c
+    third_party/fstapi/lz4.c
+)
+target_include_directories(fstapi PUBLIC third_party/fstapi)
+set_target_properties(fstapi PROPERTIES LINKER_LANGUAGE C)
+# Suppress warnings in third-party C code
+target_compile_options(fstapi PRIVATE -w -fPIC
+    -DFST_CONFIG_INCLUDE=\"fst_config.h\")
+find_package(Threads REQUIRED)
+target_link_libraries(fstapi PRIVATE Threads::Threads m)
 
 # Optional: Find zlib for compression
 find_package(ZLIB QUIET)
@@ -125,11 +130,10 @@ else()
     message(WARNING "Lark not found - you may need to implement parser manually")
 endif()
 
-# Link pylibfst if found
-if(Pylibfst_FOUND)
-    target_link_libraries(walpp PUBLIC Pylibfst::Pylibfst)
-    target_compile_definitions(walpp PRIVATE HAVE_FST_SUPPORT)
-endif()
+# Link bundled fstapi
+target_link_libraries(walpp PRIVATE fstapi)
+target_include_directories(walpp PRIVATE third_party/fstapi)
+target_compile_definitions(walpp PRIVATE HAVE_FST_SUPPORT)
 
 # Link zlib if found
 if(ZLIB_FOUND)

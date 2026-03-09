@@ -224,6 +224,9 @@ public:
     
     /// Get maximum time index
     int get_max_index() const { return max_index; }
+
+    /// Get actual simulation timestamp at current index (default: returns index)
+    virtual int64_t get_timestamp() const { return static_cast<int64_t>(current_index); }
     
     /// Get all signal names
     const std::vector<std::string>& get_signal_names() const { return signal_names; }

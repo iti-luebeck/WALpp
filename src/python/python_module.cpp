@@ -12,7 +12,7 @@ using namespace wal;
 namespace pybind11 { namespace detail {
     template <>
     struct holder_helper<std::shared_ptr<Environment>> {
-        static const auto* get(const std::shared_ptr<Environment>* p) { return p->get(); }
+        static const auto* get(const std::shared_ptr<Environment>& p) { return p.get(); }
     };
 }}
 

@@ -88,7 +88,7 @@ add_executable(test_trace_integration_cli
     ../../src/repl.cpp
 )
 
-target_link_libraries(test_trace_integration_cli PRIVATE walpp)
+target_link_libraries(test_trace_integration_cli PRIVATE walpp Threads::Threads)
 
 # Link readline if available
 if(readline_FOUND)

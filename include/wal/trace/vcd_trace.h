@@ -42,6 +42,9 @@ private:
     // Current values at current index
     std::unordered_map<std::string, Value> current_values;
 
+    // Initial values from $dumpvars section (state before any value changes)
+    std::unordered_map<std::string, Value> initial_values;
+
     // Optional scope filter for parse-time filtering
     std::string scope_filter;
     std::unordered_set<std::string> filtered_identifiers;  // IDs of signals to keep
@@ -102,6 +105,11 @@ public:
     const std::vector<TimeStep>& get_time_steps() const { return time_steps; }
 
     /**
+     * @brief Get initial signal values from $dumpvars section (keyed by VCD identifier)
+     */
+    const std::unordered_map<std::string, Value>& get_initial_values() const { return initial_values; }
+
+    /**
      * @brief Get signal info map (for performance-critical operations)
      */
     const std::unordered_map<std::string, SignalInfo>& get_signal_info() const { return signal_info; }
@@ -118,9 +126,12 @@ private:
     void parse_data(const std::vector<std::string>& lines, size_t& line_idx);
 
     /**
-     * @brief Parse a single value change
+     * @brief Parse a single value change.
+     * When changes != nullptr, also records the updated (id, value) into *changes
+     * (used for sparse delta storage during data-section parsing).
      */
-    void parse_value_change(const std::string& line, int& timestamp);
+    void parse_value_change(const std::string& line, int64_t& timestamp,
+                            std::unordered_map<std::string, Value>* changes = nullptr);
 
     /**
      * @brief Update current values at specific index

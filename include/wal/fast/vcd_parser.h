@@ -43,6 +43,13 @@ public:
      * @param scope_filter Optional scope prefix for filtering (e.g., "top.cpu")
      */
     void parse(const std::string& filename, const std::string& scope_filter = "");
+
+    /**
+     * @brief Parse FST file using GTKWave fstapi
+     * @param filename Path to FST file
+     * @param scope_filter Optional scope prefix for filtering (e.g., "top.cpu")
+     */
+    void parse_fst(const std::string& filename, const std::string& scope_filter = "");
     
     /**
      * @brief Get signal info by ID
@@ -63,6 +70,14 @@ public:
      */
     const std::vector<DeltaTimestamp>& get_deltas() const {
         return deltas_;
+    }
+
+    /**
+     * @brief Get initial signal values from $dumpvars / FST time-0 callback
+     * Maps signal_id -> initial value. Signals absent have implicit value 0.
+     */
+    const std::unordered_map<uint32_t, int64_t>& get_initial_values() const {
+        return initial_values_;
     }
     
     /**
@@ -100,7 +115,8 @@ private:
     std::unordered_map<std::string, uint32_t> vcd_id_to_signal_;  // VCD ID -> signal ID
     std::vector<DeltaTimestamp> deltas_;        // Delta-encoded timestamps
     std::unordered_set<std::string> filtered_vcd_ids_;  // VCD IDs to keep (if filtered)
-    
+    std::unordered_map<uint32_t, int64_t> initial_values_;  // signal_id -> value at t=0
+
     uint32_t next_signal_id_ = 0;
 };
 

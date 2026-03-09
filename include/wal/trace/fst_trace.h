@@ -101,6 +101,11 @@ public:
      */
     std::vector<std::string> get_all_signals() const override;
 
+    /**
+     * @brief Get actual simulation timestamp at current index
+     */
+    int64_t get_timestamp() const override;
+
 private:
     /**
      * @brief Parse FST header section

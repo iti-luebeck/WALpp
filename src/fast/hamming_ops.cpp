@@ -58,271 +58,236 @@ int64_t HammingOps::calculate_hw(const std::vector<int64_t>& state) const {
 Result HammingOps::hamming_distance_all() const {
     const auto& signal_ids = parser_.get_signal_ids();
     const auto& deltas = parser_.get_deltas();
-    
+
     if (deltas.empty() || signal_ids.empty()) {
         return {};
     }
-    
+
     Result results;
-    results.reserve(deltas.size() - 1);
-    
+    results.reserve(deltas.size());
+
     // Map from signal_id to index in state vector
     std::unordered_map<uint32_t, size_t> sig_id_to_idx;
     sig_id_to_idx.reserve(signal_ids.size());
     for (size_t i = 0; i < signal_ids.size(); i++) {
         sig_id_to_idx[signal_ids[i]] = i;
     }
-    
-    // Allocate state vectors
-    std::vector<int64_t> prev_state(signal_ids.size(), 0);
+
+    // Seed state from $dumpvars initial values, then apply delta[0] to form
+    // the first complete state.  HD is emitted from delta[1] onward
+    // (distance between consecutive complete states), matching interpreter semantics.
+    const auto& init = parser_.get_initial_values();
     std::vector<int64_t> curr_state(signal_ids.size(), 0);
-    
-    // Apply first delta
+    for (const auto& [sid, val] : init) {
+        auto it = sig_id_to_idx.find(sid);
+        if (it != sig_id_to_idx.end()) curr_state[it->second] = val;
+    }
+
+    // Apply first delta → complete state at the first timestamp
     for (const auto& [sig_id, value] : deltas[0].changes) {
         auto it = sig_id_to_idx.find(sig_id);
-        if (it != sig_id_to_idx.end()) {
-            curr_state[it->second] = value;
-        }
+        if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
-    
-    prev_state = curr_state;
-    
-    // Process remaining timestamps incrementally
+    std::vector<int64_t> prev_state = curr_state;
+
+    // Emit HD from delta[1] onward
     for (size_t i = 1; i < deltas.size(); i++) {
-        // Apply delta to current state (incremental update!)
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
             if (it != sig_id_to_idx.end()) {
                 curr_state[it->second] = value;
             }
         }
-        
-        int64_t distance = calculate_hd(prev_state, curr_state);
-        results.emplace_back(deltas[i].timestamp, distance);
-        
+
+        results.emplace_back(deltas[i].timestamp, calculate_hd(prev_state, curr_state));
         prev_state = curr_state;
     }
-    
+
     return results;
 }
 
 Result HammingOps::hamming_distance_scope(const std::string& scope_prefix) const {
-    // Get signals in scope
     std::vector<uint32_t> scoped_signal_ids = parser_.get_signals_in_scope(scope_prefix);
-    
-    if (scoped_signal_ids.empty()) {
-        return {};
-    }
-    
+    if (scoped_signal_ids.empty()) return {};
+
     const auto& deltas = parser_.get_deltas();
     Result results;
-    results.reserve(deltas.size() - 1);
-    
-    // Map from signal_id to index in state vector
+    results.reserve(deltas.size());
+
     std::unordered_map<uint32_t, size_t> sig_id_to_idx;
     sig_id_to_idx.reserve(scoped_signal_ids.size());
     for (size_t i = 0; i < scoped_signal_ids.size(); i++) {
         sig_id_to_idx[scoped_signal_ids[i]] = i;
     }
-    
-    // Allocate state vectors
-    std::vector<int64_t> prev_state(scoped_signal_ids.size(), 0);
+
+    const auto& init = parser_.get_initial_values();
     std::vector<int64_t> curr_state(scoped_signal_ids.size(), 0);
-    
-    // Apply first delta
+    for (const auto& [sid, val] : init) {
+        auto it = sig_id_to_idx.find(sid);
+        if (it != sig_id_to_idx.end()) curr_state[it->second] = val;
+    }
+
+    // Apply first delta → complete initial state
     for (const auto& [sig_id, value] : deltas[0].changes) {
         auto it = sig_id_to_idx.find(sig_id);
-        if (it != sig_id_to_idx.end()) {
-            curr_state[it->second] = value;
-        }
+        if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
-    
-    prev_state = curr_state;
-    
-    // Process remaining timestamps incrementally
+    std::vector<int64_t> prev_state = curr_state;
+
     for (size_t i = 1; i < deltas.size(); i++) {
-        // Apply delta to current state (incremental update!)
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) {
-                curr_state[it->second] = value;
-            }
+            if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
         }
-        
-        int64_t distance = calculate_hd(prev_state, curr_state);
-        results.emplace_back(deltas[i].timestamp, distance);
-        
+        results.emplace_back(deltas[i].timestamp, calculate_hd(prev_state, curr_state));
         prev_state = curr_state;
     }
-    
+
     return results;
 }
 
 Result HammingOps::hamming_weight_all() const {
     const auto& signal_ids = parser_.get_signal_ids();
     const auto& deltas = parser_.get_deltas();
-    
+
     if (deltas.empty() || signal_ids.empty()) {
         return {};
     }
-    
+
     Result results;
     results.reserve(deltas.size());
-    
+
     // Map from signal_id to index in state vector
     std::unordered_map<uint32_t, size_t> sig_id_to_idx;
     sig_id_to_idx.reserve(signal_ids.size());
     for (size_t i = 0; i < signal_ids.size(); i++) {
         sig_id_to_idx[signal_ids[i]] = i;
     }
-    
-    // Allocate state vector
+
+    // Seed state from $dumpvars initial values
+    const auto& init = parser_.get_initial_values();
     std::vector<int64_t> state(signal_ids.size(), 0);
-    
+    for (const auto& [sid, val] : init) {
+        auto it = sig_id_to_idx.find(sid);
+        if (it != sig_id_to_idx.end()) state[it->second] = val;
+    }
+
     // Process each timestamp incrementally
     for (size_t i = 0; i < deltas.size(); i++) {
-        // Apply delta to current state
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
             if (it != sig_id_to_idx.end()) {
                 state[it->second] = value;
             }
         }
-        
-        int64_t weight = calculate_hw(state);
-        results.emplace_back(deltas[i].timestamp, weight);
+
+        results.emplace_back(deltas[i].timestamp, calculate_hw(state));
     }
-    
+
     return results;
 }
 
 Result HammingOps::hamming_weight_scope(const std::string& scope_prefix) const {
-    // Get signals in scope
     std::vector<uint32_t> scoped_signal_ids = parser_.get_signals_in_scope(scope_prefix);
-    
-    if (scoped_signal_ids.empty()) {
-        return {};
-    }
-    
+    if (scoped_signal_ids.empty()) return {};
+
     const auto& deltas = parser_.get_deltas();
     Result results;
     results.reserve(deltas.size());
-    
-    // Map from signal_id to index in state vector
+
     std::unordered_map<uint32_t, size_t> sig_id_to_idx;
     sig_id_to_idx.reserve(scoped_signal_ids.size());
     for (size_t i = 0; i < scoped_signal_ids.size(); i++) {
         sig_id_to_idx[scoped_signal_ids[i]] = i;
     }
-    
-    // Allocate state vector
+
+    const auto& init = parser_.get_initial_values();
     std::vector<int64_t> state(scoped_signal_ids.size(), 0);
-    
-    // Process each timestamp incrementally
+    for (const auto& [sid, val] : init) {
+        auto it = sig_id_to_idx.find(sid);
+        if (it != sig_id_to_idx.end()) state[it->second] = val;
+    }
+
     for (size_t i = 0; i < deltas.size(); i++) {
-        // Apply delta to current state
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) {
-                state[it->second] = value;
-            }
+            if (it != sig_id_to_idx.end()) state[it->second] = value;
         }
-        
-        int64_t weight = calculate_hw(state);
-        results.emplace_back(deltas[i].timestamp, weight);
+        results.emplace_back(deltas[i].timestamp, calculate_hw(state));
     }
-    
+
     return results;
 }
 
 Result HammingOps::hamming_distance_signals(const std::vector<std::string>& signal_names) const {
-    // Get signal IDs from names
     std::vector<uint32_t> signal_ids = parser_.get_signal_ids_by_names(signal_names);
-    
-    if (signal_ids.empty()) {
-        return {};
-    }
-    
+    if (signal_ids.empty()) return {};
+
     const auto& deltas = parser_.get_deltas();
     Result results;
-    results.reserve(deltas.size() - 1);
-    
-    // Map from signal_id to index in state vector
+    results.reserve(deltas.size());
+
     std::unordered_map<uint32_t, size_t> sig_id_to_idx;
     sig_id_to_idx.reserve(signal_ids.size());
     for (size_t i = 0; i < signal_ids.size(); i++) {
         sig_id_to_idx[signal_ids[i]] = i;
     }
-    
-    // Allocate state vectors
-    std::vector<int64_t> prev_state(signal_ids.size(), 0);
+
+    const auto& init = parser_.get_initial_values();
     std::vector<int64_t> curr_state(signal_ids.size(), 0);
-    
-    // Apply first delta
+    for (const auto& [sid, val] : init) {
+        auto it = sig_id_to_idx.find(sid);
+        if (it != sig_id_to_idx.end()) curr_state[it->second] = val;
+    }
+
+    // Apply first delta → complete initial state
     for (const auto& [sig_id, value] : deltas[0].changes) {
         auto it = sig_id_to_idx.find(sig_id);
-        if (it != sig_id_to_idx.end()) {
-            curr_state[it->second] = value;
-        }
+        if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
-    
-    prev_state = curr_state;
-    
-    // Process remaining timestamps incrementally
+    std::vector<int64_t> prev_state = curr_state;
+
     for (size_t i = 1; i < deltas.size(); i++) {
-        // Apply delta to current state (incremental update!)
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) {
-                curr_state[it->second] = value;
-            }
+            if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
         }
-        
-        int64_t distance = calculate_hd(prev_state, curr_state);
-        results.emplace_back(deltas[i].timestamp, distance);
-        
+        results.emplace_back(deltas[i].timestamp, calculate_hd(prev_state, curr_state));
         prev_state = curr_state;
     }
-    
+
     return results;
 }
 
 Result HammingOps::hamming_weight_signals(const std::vector<std::string>& signal_names) const {
-    // Get signal IDs from names
     std::vector<uint32_t> signal_ids = parser_.get_signal_ids_by_names(signal_names);
-    
-    if (signal_ids.empty()) {
-        return {};
-    }
-    
+    if (signal_ids.empty()) return {};
+
     const auto& deltas = parser_.get_deltas();
     Result results;
     results.reserve(deltas.size());
-    
-    // Map from signal_id to index in state vector
+
     std::unordered_map<uint32_t, size_t> sig_id_to_idx;
     sig_id_to_idx.reserve(signal_ids.size());
     for (size_t i = 0; i < signal_ids.size(); i++) {
         sig_id_to_idx[signal_ids[i]] = i;
     }
-    
-    // Allocate state vector
+
+    const auto& init = parser_.get_initial_values();
     std::vector<int64_t> state(signal_ids.size(), 0);
-    
-    // Process each timestamp incrementally
+    for (const auto& [sid, val] : init) {
+        auto it = sig_id_to_idx.find(sid);
+        if (it != sig_id_to_idx.end()) state[it->second] = val;
+    }
+
     for (size_t i = 0; i < deltas.size(); i++) {
-        // Apply delta to current state
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) {
-                state[it->second] = value;
-            }
+            if (it != sig_id_to_idx.end()) state[it->second] = value;
         }
-        
-        int64_t weight = calculate_hw(state);
-        results.emplace_back(deltas[i].timestamp, weight);
+        results.emplace_back(deltas[i].timestamp, calculate_hw(state));
     }
-    
+
     return results;
 }
 

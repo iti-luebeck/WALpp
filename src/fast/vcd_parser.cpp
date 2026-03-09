@@ -9,7 +9,53 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+extern "C" {
+#include "fstapi.h"
+}
+
 namespace fast_vcd {
+
+// ---------------------------------------------------------------------------
+// FST fast-path: callback state and value-change function
+// ---------------------------------------------------------------------------
+namespace {
+
+struct FSTFastState {
+    std::unordered_map<fstHandle, uint32_t>* handle_to_sig_id;
+    std::vector<DeltaTimestamp>*             deltas;
+    uint64_t prev_time  = 0;
+    bool     has_prev   = false;
+};
+
+static void fst_fast_change_cb(void* user_data,
+                                uint64_t time,
+                                fstHandle handle,
+                                const unsigned char* value)
+{
+    auto* s = static_cast<FSTFastState*>(user_data);
+
+    // Start a new delta when the timestamp advances
+    if (!s->has_prev || time != s->prev_time) {
+        s->deltas->emplace_back(static_cast<int64_t>(time));
+        s->deltas->back().changes.reserve(64);
+        s->has_prev  = true;
+        s->prev_time = time;
+    }
+
+    // Parse binary value string: "0","1","x","z","0110..." → int64_t
+    int64_t val = 0;
+    for (const unsigned char* p = value; *p; ++p) {
+        val <<= 1;
+        if (*p == '1') val |= 1;
+    }
+
+    auto it = s->handle_to_sig_id->find(handle);
+    if (it != s->handle_to_sig_id->end()) {
+        s->deltas->back().changes.emplace_back(it->second, val);
+    }
+}
+
+} // anonymous namespace
 
 void VCDParser::parse(const std::string& filename, const std::string& scope_filter) {
     // Open and mmap file
@@ -246,34 +292,85 @@ void VCDParser::parse_data(const char* data, const char* end, size_t& pos) {
     int64_t current_timestamp = 0;
     DeltaTimestamp* current_delta = nullptr;
     
-    // Skip $dumpvars if present
+    // Parse $dumpvars to capture initial signal values
     while (pos < static_cast<size_t>(end - data)) {
         // Skip whitespace
-        while (pos < static_cast<size_t>(end - data) && 
-               (data[pos] == ' ' || data[pos] == '\t' || 
+        while (pos < static_cast<size_t>(end - data) &&
+               (data[pos] == ' ' || data[pos] == '\t' ||
                 data[pos] == '\n' || data[pos] == '\r')) {
             pos++;
         }
-        
+
         if (pos >= static_cast<size_t>(end - data)) break;
-        
+
         if (strncmp(data + pos, "$dumpvars", 9) == 0) {
-            // Skip until $end
+            pos += 9;
+            // Parse value changes until $end
             while (pos < static_cast<size_t>(end - data)) {
-                if (strncmp(data + pos, "$end", 4) == 0) {
-                    while (pos < static_cast<size_t>(end - data) && data[pos] != '\n') pos++;
+                while (pos < static_cast<size_t>(end - data) &&
+                       (data[pos] == ' ' || data[pos] == '\t' ||
+                        data[pos] == '\n' || data[pos] == '\r')) {
                     pos++;
+                }
+                if (pos >= static_cast<size_t>(end - data)) break;
+                if (strncmp(data + pos, "$end", 4) == 0) {
+                    pos += 4;
                     break;
                 }
+
+                // Binary value: b<bits> <id>
+                if (data[pos] == 'b') {
+                    pos++;
+                    int64_t value = 0;
+                    while (pos < static_cast<size_t>(end - data) &&
+                           data[pos] != ' ' && data[pos] != '\t') {
+                        value = (value << 1) | (data[pos] == '1' ? 1 : 0);
+                        pos++;
+                    }
+                    while (pos < static_cast<size_t>(end - data) &&
+                           (data[pos] == ' ' || data[pos] == '\t')) pos++;
+                    const char* id_start = data + pos;
+                    while (pos < static_cast<size_t>(end - data) &&
+                           data[pos] != ' ' && data[pos] != '\t' &&
+                           data[pos] != '\n' && data[pos] != '\r') pos++;
+                    std::string vcd_id(id_start, data + pos - id_start);
+                    if (filtered_vcd_ids_.empty() || filtered_vcd_ids_.count(vcd_id)) {
+                        auto it = vcd_id_to_signal_.find(vcd_id);
+                        if (it != vcd_id_to_signal_.end())
+                            initial_values_[it->second] = value;
+                    }
+                    continue;
+                }
+
+                // Single-bit value: <0|1|x|z><id>
+                if (data[pos] == '0' || data[pos] == '1' ||
+                    data[pos] == 'x' || data[pos] == 'z') {
+                    int64_t value = (data[pos] == '1') ? 1 : 0;
+                    pos++;
+                    const char* id_start = data + pos;
+                    while (pos < static_cast<size_t>(end - data) &&
+                           data[pos] != ' ' && data[pos] != '\t' &&
+                           data[pos] != '\n' && data[pos] != '\r') pos++;
+                    std::string vcd_id(id_start, data + pos - id_start);
+                    if (filtered_vcd_ids_.empty() || filtered_vcd_ids_.count(vcd_id)) {
+                        auto it = vcd_id_to_signal_.find(vcd_id);
+                        if (it != vcd_id_to_signal_.end())
+                            initial_values_[it->second] = value;
+                    }
+                    continue;
+                }
+
+                // Skip unknown line
+                while (pos < static_cast<size_t>(end - data) && data[pos] != '\n') pos++;
                 pos++;
             }
             continue;
         }
-        
+
         if (data[pos] == '#') {
             break;  // Start of timestamps
         }
-        
+
         pos++;
     }
     
@@ -423,6 +520,99 @@ std::vector<uint32_t> VCDParser::get_signal_ids_by_names(const std::vector<std::
     }
     
     return result;
+}
+
+void VCDParser::parse_fst(const std::string& filename, const std::string& scope_filter) {
+    void* ctx = fstReaderOpen(filename.c_str());
+    if (!ctx) {
+        throw std::runtime_error("Cannot open FST file: " + filename);
+    }
+
+    try {
+        // ----------------------------------------------------------------
+        // 1. Walk the signal hierarchy
+        // ----------------------------------------------------------------
+        std::unordered_map<fstHandle, uint32_t> handle_to_sig_id;
+        handle_to_sig_id.reserve(50000);
+        signals_.reserve(50000);
+
+        std::string current_scope;
+        std::vector<std::string> scope_stack;
+
+        fstReaderIterateHierRewind(ctx);
+        struct fstHier* hier;
+        while ((hier = fstReaderIterateHier(ctx)) != nullptr) {
+            switch (hier->htyp) {
+                case FST_HT_SCOPE:
+                    scope_stack.push_back(hier->u.scope.name);
+                    current_scope.clear();
+                    for (size_t i = 0; i < scope_stack.size(); ++i) {
+                        if (i > 0) current_scope += '.';
+                        current_scope += scope_stack[i];
+                    }
+                    break;
+
+                case FST_HT_UPSCOPE:
+                    if (!scope_stack.empty()) scope_stack.pop_back();
+                    current_scope.clear();
+                    for (size_t i = 0; i < scope_stack.size(); ++i) {
+                        if (i > 0) current_scope += '.';
+                        current_scope += scope_stack[i];
+                    }
+                    break;
+
+                case FST_HT_VAR: {
+                    if (hier->u.var.is_alias) break;
+
+                    std::string var_name  = hier->u.var.name;
+                    std::string full_name = current_scope.empty()
+                        ? var_name
+                        : current_scope + '.' + var_name;
+
+                    // Apply scope filter if set
+                    if (!scope_filter.empty()) {
+                        if (current_scope.find(scope_filter) != 0 &&
+                            full_name.find(scope_filter) != 0) {
+                            break;
+                        }
+                    }
+
+                    SignalInfo sig;
+                    sig.id     = next_signal_id_++;
+                    sig.name   = full_name;
+                    sig.vcd_id = "";  // FST uses numeric handles, not text IDs
+                    sig.scope  = current_scope;
+                    sig.width  = static_cast<int>(hier->u.var.length);
+
+                    handle_to_sig_id[hier->u.var.handle] = sig.id;
+                    signals_.push_back(sig);
+                    signal_ids_.push_back(sig.id);
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // 2. Collect value-change events into delta timestamps
+        // ----------------------------------------------------------------
+        deltas_.reserve(65536);
+
+        FSTFastState cb_state;
+        cb_state.handle_to_sig_id = &handle_to_sig_id;
+        cb_state.deltas           = &deltas_;
+
+        fstReaderSetFacProcessMaskAll(ctx);
+        fstReaderIterBlocks(ctx, fst_fast_change_cb, &cb_state, nullptr);
+
+    } catch (...) {
+        fstReaderClose(ctx);
+        throw;
+    }
+
+    fstReaderClose(ctx);
 }
 
 } // namespace fast_vcd

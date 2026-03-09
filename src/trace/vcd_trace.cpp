@@ -279,14 +279,10 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
     }
 }
 
-void VCDTrace::parse_value_change(const std::string& line, int& timestamp) {
+void VCDTrace::parse_value_change(const std::string& line, int64_t& timestamp,
+                                   std::unordered_map<std::string, Value>* changes) {
     if (line.empty()) return;
-    
-    // Value change format:
-    // b<value> <identifier>   - multi-bit change
-    // <bit> <identifier>      - single bit change (0, 1, x, z)
-    // #<timestamp>            - timestamp marker
-    
+
     if (line[0] == '#') {
         // Timestamp - fast integer parsing
         timestamp = 0;
@@ -304,17 +300,19 @@ void VCDTrace::parse_value_change(const std::string& line, int& timestamp) {
             size_t id_len = line.length() - space_pos - 1;
             const char* bit_ptr = line.data() + 1;
             size_t bit_len = space_pos - 1;
-            
+
             if (scope_filter.empty()) {
-                // No filter: directly insert
                 std::string id_str(id_ptr, id_len);
-                current_values[id_str] = parse_bit_value(std::string(bit_ptr, bit_len));
+                auto val = parse_bit_value(std::string(bit_ptr, bit_len));
+                current_values[id_str] = val;
+                if (changes) (*changes)[id_str] = val;
             } else {
-                // With filter: check membership
                 std::string id_str(id_ptr, id_len);
                 auto it = filtered_identifiers.find(id_str);
                 if (it != filtered_identifiers.end()) {
-                    current_values[*it] = parse_bit_value(std::string(bit_ptr, bit_len));
+                    auto val = parse_bit_value(std::string(bit_ptr, bit_len));
+                    current_values[*it] = val;
+                    if (changes) (*changes)[*it] = val;
                 }
             }
         }
@@ -324,15 +322,17 @@ void VCDTrace::parse_value_change(const std::string& line, int& timestamp) {
             const char* id_ptr = line.data() + 1;
             size_t id_len = line.length() - 1;
             Value val = (line[0] == '1') ? Value(1) : Value(0);
-            
+
             if (scope_filter.empty()) {
                 std::string id_str(id_ptr, id_len);
                 current_values[id_str] = val;
+                if (changes) (*changes)[id_str] = val;
             } else {
                 std::string id_str(id_ptr, id_len);
                 auto it = filtered_identifiers.find(id_str);
                 if (it != filtered_identifiers.end()) {
                     current_values[*it] = val;
+                    if (changes) (*changes)[*it] = val;
                 }
             }
         }
@@ -340,48 +340,55 @@ void VCDTrace::parse_value_change(const std::string& line, int& timestamp) {
 }
 
 void VCDTrace::parse_data(const std::vector<std::string>& lines, size_t& line_idx) {
-    int current_timestamp = 0;
+    int64_t current_timestamp = 0;
     int timestamp_count = 0;
-    
-    // Reserve space for values and timestamps to reduce allocations
+
+    // Save the initial state (from $dumpvars) so signal_value can scan back to it
+    initial_values = current_values;
+
+    // Sparse: accumulate only the changed signals between consecutive timestamps
+    std::unordered_map<std::string, Value> changes;
+
     size_t expected_signals = scope_filter.empty() ? 30000 : filtered_identifiers.size();
     current_values.reserve(expected_signals);
-    time_steps.reserve(65536);  // Typical VCD has ~64K timestamps
-    
+    time_steps.reserve(65536);
+
     while (line_idx < lines.size()) {
         const std::string& line = lines[line_idx];
-        
+
         if (line.empty()) {
             line_idx++;
             continue;
         }
-        
+
         if (line[0] == '#') {
-            // New timestamp - save current values
+            // Flush the accumulated changes for the current timestamp block
             if (timestamp_count > 0) {
                 time_steps.emplace_back();
                 time_steps.back().timestamp = current_timestamp;
-                time_steps.back().signal_values = current_values;
+                time_steps.back().signal_values = changes;  // sparse: only deltas
                 timestamp_index_map[current_timestamp] = timestamp_count - 1;
+                changes.clear();
             }
-            
-            parse_value_change(line, current_timestamp);
+
+            parse_value_change(line, current_timestamp, nullptr);
             timestamp_count++;
         } else {
-            parse_value_change(line, current_timestamp);
+            // Pass &changes so the value is recorded in both current_values and changes
+            parse_value_change(line, current_timestamp, &changes);
         }
-        
+
         line_idx++;
     }
-    
-    // Save final timestamp
+
+    // Flush the final timestamp
     if (timestamp_count > 0) {
         time_steps.emplace_back();
         time_steps.back().timestamp = current_timestamp;
-        time_steps.back().signal_values = current_values;
+        time_steps.back().signal_values = std::move(changes);
         timestamp_index_map[current_timestamp] = timestamp_count - 1;
     }
-    
+
     max_index = static_cast<int>(time_steps.size()) - 1;
 }
 
@@ -400,7 +407,7 @@ void VCDTrace::load() {
         parse_header(lines, line_idx);
         
         // Look for $dumpvars (optional) or start of data (#)
-        int current_timestamp = 0;
+        int64_t current_timestamp = 0;
         while (line_idx < lines.size()) {
             const std::string& line = lines[line_idx];
             if (line == "$dumpvars") {
@@ -433,27 +440,31 @@ Value VCDTrace::signal_value(const std::string& name, int offset,
     if (!scope.empty()) {
         full_name = scope + Trace::SCOPE_SEPARATOR + name;
     }
-    
-    // Check if signal exists
-    if (signal_info.find(full_name) == signal_info.end()) {
+
+    auto sig_it = signal_info.find(full_name);
+    if (sig_it == signal_info.end()) {
         throw std::runtime_error("Signal not found: " + full_name);
     }
-    
+
     int target_index = current_index + offset;
     if (target_index < 0 || target_index > max_index) {
         throw std::runtime_error("Index out of range");
     }
-    
-    if (target_index < static_cast<int>(time_steps.size())) {
-        auto& ts = time_steps[target_index];
-        auto& signal_info_ref = signal_info[full_name];
-        
-        auto it = ts.signal_values.find(signal_info_ref.identifier);
-        if (it != ts.signal_values.end()) {
+
+    const std::string& identifier = sig_it->second.identifier;
+
+    // Sparse storage: scan backward from target_index to find the most recent change
+    for (int i = target_index; i >= 0; --i) {
+        auto it = time_steps[i].signal_values.find(identifier);
+        if (it != time_steps[i].signal_values.end()) {
             return it->second;
         }
     }
-    
+
+    // Fall back to initial values (from $dumpvars)
+    auto init_it = initial_values.find(identifier);
+    if (init_it != initial_values.end()) return init_it->second;
+
     return Value(0);
 }
 

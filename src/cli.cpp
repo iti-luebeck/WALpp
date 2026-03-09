@@ -251,28 +251,50 @@ int CLI::run_fast_mode() {
     }
     
     try {
-        // Parse VCD
+        // Detect file format by extension
+        auto ends_with = [](const std::string& s, const std::string& suffix) {
+            return s.size() >= suffix.size() &&
+                   s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+        };
+        const bool is_fst = ends_with(fast_vcd_file, ".fst");
+
+        // Parse VCD or FST
         auto parse_start = high_resolution_clock::now();
-        
+
         fast_vcd::VCDParser parser;
-        
+
         if (fast_hd_scope || fast_hw_scope) {
             if (fast_scope.empty()) {
                 std::cerr << "Error: Scope required for scoped operations\n";
                 return 1;
             }
-            std::cerr << "Parsing VCD with scope filter: " << fast_scope << "...\n";
-            parser.parse(fast_vcd_file, fast_scope);
+            if (is_fst) {
+                std::cerr << "Parsing FST with scope filter: " << fast_scope << "...\n";
+                parser.parse_fst(fast_vcd_file, fast_scope);
+            } else {
+                std::cerr << "Parsing VCD with scope filter: " << fast_scope << "...\n";
+                parser.parse(fast_vcd_file, fast_scope);
+            }
         } else if (fast_hd_signals || fast_hw_signals) {
             if (fast_signals_file.empty()) {
                 std::cerr << "Error: Signal list file required for signal list operations\n";
                 return 1;
             }
-            std::cerr << "Parsing VCD (will filter by signal list later)...\n";
-            parser.parse(fast_vcd_file);
+            if (is_fst) {
+                std::cerr << "Parsing FST (will filter by signal list later)...\n";
+                parser.parse_fst(fast_vcd_file);
+            } else {
+                std::cerr << "Parsing VCD (will filter by signal list later)...\n";
+                parser.parse(fast_vcd_file);
+            }
         } else {
-            std::cerr << "Parsing VCD...\n";
-            parser.parse(fast_vcd_file);
+            if (is_fst) {
+                std::cerr << "Parsing FST...\n";
+                parser.parse_fst(fast_vcd_file);
+            } else {
+                std::cerr << "Parsing VCD...\n";
+                parser.parse(fast_vcd_file);
+            }
         }
         
         auto parse_end = high_resolution_clock::now();
