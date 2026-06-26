@@ -1,6 +1,7 @@
 #include "wal/trace/fst_trace.h"
 #include <stdexcept>
 #include <cstring>
+#include <algorithm>
 
 // GTKWave fstapi — standard FST format reader
 extern "C" {

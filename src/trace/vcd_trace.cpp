@@ -443,6 +443,24 @@ Value VCDTrace::signal_value(const std::string& name, int offset,
 
     auto sig_it = signal_info.find(full_name);
     if (sig_it == signal_info.end()) {
+        // Lenient fallback so get-signal accepts every name signal?/signal-width
+        // accept. The interpreter splits a name on '.' as well as '^', so a
+        // dotted record-field leaf (a GRLIB bus's `ahbmo.haddr` / `apbo.pirq`)
+        // arrives reconstructed with '^' and no longer equals the stored '.'
+        // key — normalize '.' and '^' to compare, and also match the leaf name.
+        auto norm = [](std::string s) {
+            for (auto& c : s) if (c == '.') c = '^';
+            return s;
+        };
+        const std::string fn = norm(full_name);
+        for (auto it = signal_info.begin(); it != signal_info.end(); ++it) {
+            if (it->second.name == full_name || norm(it->first) == fn) {
+                sig_it = it;
+                break;
+            }
+        }
+    }
+    if (sig_it == signal_info.end()) {
         throw std::runtime_error("Signal not found: " + full_name);
     }
 

@@ -44,6 +44,8 @@ private:
     bool fast_hw_scope = false;
     bool fast_hd_signals = false;
     bool fast_hw_signals = false;
+    bool fast_values_signals = false;  // raw per-signal value series (changes only)
+    bool fast_list = false;            // list signals (width + name) + timescale
     std::string fast_scope;
     std::string fast_vcd_file;
     std::string fast_output_file;

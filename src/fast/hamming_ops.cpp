@@ -1,5 +1,7 @@
 #include "wal/fast/hamming_ops.h"
 #include <algorithm>
+#include <tuple>
+#include <unordered_map>
 
 namespace fast_vcd {
 
@@ -289,6 +291,37 @@ Result HammingOps::hamming_weight_signals(const std::vector<std::string>& signal
     }
 
     return results;
+}
+
+ValueRows HammingOps::values_signals(const std::vector<std::string>& signal_names) const {
+    std::vector<uint32_t> signal_ids = parser_.get_signal_ids_by_names(signal_names);
+    ValueRows rows;
+    if (signal_ids.empty()) return rows;
+
+    // Canonical signal id -> list index (the requested order). Several names may
+    // resolve to the same canonical id; first occurrence keeps the index.
+    std::unordered_map<uint32_t, uint32_t> id_to_idx;
+    id_to_idx.reserve(signal_ids.size());
+    for (uint32_t i = 0; i < signal_ids.size(); ++i) {
+        id_to_idx.emplace(signal_ids[i], i);
+    }
+
+    // Initial values at t=0 for tracked signals.
+    const auto& init = parser_.get_initial_values();
+    for (const auto& [sid, val] : init) {
+        auto it = id_to_idx.find(sid);
+        if (it != id_to_idx.end()) rows.emplace_back(0, it->second, val);
+    }
+
+    // One row per change of a tracked signal (the actual decoded value).
+    const auto& deltas = parser_.get_deltas();
+    for (const auto& d : deltas) {
+        for (const auto& [sig_id, value] : d.changes) {
+            auto it = id_to_idx.find(sig_id);
+            if (it != id_to_idx.end()) rows.emplace_back(d.timestamp, it->second, value);
+        }
+    }
+    return rows;
 }
 
 } // namespace fast_vcd

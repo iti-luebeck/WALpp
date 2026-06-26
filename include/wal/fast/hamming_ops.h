@@ -13,6 +13,15 @@ namespace fast_vcd {
 using Result = std::vector<std::pair<int64_t, int64_t>>;
 
 /**
+ * @brief Raw value-change rows: (timestamp, signal index, value).
+ * `signal index` is the position in the requested name list. Unlike the Hamming
+ * results this emits one row only when a tracked signal *changes* (plus its
+ * initial value) — the actual decoded value, not a popcount. (int64 holds up to
+ * 64-bit signals; wider vectors are truncated.)
+ */
+using ValueRows = std::vector<std::tuple<int64_t, uint32_t, int64_t>>;
+
+/**
  * @brief Hamming operations on parsed VCD data
  */
 class HammingOps {
@@ -58,7 +67,14 @@ public:
      * @return Vector of (timestamp, hamming_weight) pairs
      */
     Result hamming_weight_signals(const std::vector<std::string>& signal_names) const;
-    
+
+    /**
+     * @brief Raw value series for the named signals (changes only, + initial).
+     * Rows are (timestamp, list-index, value). What edge/pulse/latency timing
+     * analysis needs for buses, where a popcount (HW/HD) is not the value.
+     */
+    ValueRows values_signals(const std::vector<std::string>& signal_names) const;
+
 private:
     const VCDParser& parser_;
     

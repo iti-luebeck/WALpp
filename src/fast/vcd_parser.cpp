@@ -147,7 +147,22 @@ void VCDParser::parse_header(const char* data, const char* end, size_t& pos) {
             pos++;
             break;
         }
-        
+
+        // Parse $timescale (value may be on the same line or the next), e.g.
+        // "$timescale 1ps $end" — grab the magnitude+unit token(s) before $end.
+        if (strncmp(data + pos, "$timescale", 10) == 0) {
+            pos += 10;
+            std::string ts;
+            while (pos < static_cast<size_t>(end - data) &&
+                   strncmp(data + pos, "$end", 4) != 0) {
+                const char c = data[pos];
+                if (c != ' ' && c != '\t' && c != '\n' && c != '\r') ts += c;
+                pos++;
+            }
+            if (!ts.empty()) timescale_ = ts;
+            continue;
+        }
+
         // Parse $scope
         if (strncmp(data + pos, "$scope", 6) == 0) {
             pos += 6;
@@ -504,21 +519,27 @@ std::vector<uint32_t> VCDParser::get_signal_ids_by_names(const std::vector<std::
     std::vector<uint32_t> result;
     result.reserve(signal_names.size());
     
-    // Build name->ID map for efficient lookup
-    std::unordered_map<std::string, uint32_t> name_to_id;
-    name_to_id.reserve(signals_.size());
+    // Build name -> VCD id map (keep every alias name; aliases share a vcd_id).
+    std::unordered_map<std::string, std::string> name_to_vcdid;
+    name_to_vcdid.reserve(signals_.size());
     for (const auto& sig : signals_) {
-        name_to_id[sig.name] = sig.id;
+        name_to_vcdid[sig.name] = sig.vcd_id;
     }
-    
-    // Find signal IDs (skip signals not found)
+
+    // Resolve each name to the CANONICAL signal id that carries the value
+    // changes for its vcd_id. A VCD aliases connected nets to one vcd_id, but
+    // the deltas only reference one signal id per vcd_id (vcd_id_to_signal_).
+    // Returning an alias' own signal id instead yields a constant series — the
+    // bug that made --fast-*-signals report all-zero for an aliased port.
     for (const auto& name : signal_names) {
-        auto it = name_to_id.find(name);
-        if (it != name_to_id.end()) {
-            result.push_back(it->second);
+        auto nit = name_to_vcdid.find(name);
+        if (nit == name_to_vcdid.end()) continue;
+        auto cit = vcd_id_to_signal_.find(nit->second);
+        if (cit != vcd_id_to_signal_.end()) {
+            result.push_back(cit->second);
         }
     }
-    
+
     return result;
 }
 

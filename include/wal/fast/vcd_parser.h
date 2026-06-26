@@ -105,11 +105,15 @@ public:
      * @return Vector of signal IDs (signals not found are skipped)
      */
     std::vector<uint32_t> get_signal_ids_by_names(const std::vector<std::string>& signal_names) const;
-    
+
+    /** @brief Trace timescale, e.g. "1ps" / "10ns" (default "1ns" if absent). */
+    const std::string& get_timescale() const { return timescale_; }
+
 private:
     void parse_header(const char* data, const char* end, size_t& pos);
     void parse_data(const char* data, const char* end, size_t& pos);
-    
+
+    std::string timescale_ = "1ns";             // From $timescale / FST metadata
     std::vector<SignalInfo> signals_;           // All signal metadata
     std::vector<uint32_t> signal_ids_;          // Active signal IDs (after filtering)
     std::unordered_map<std::string, uint32_t> vcd_id_to_signal_;  // VCD ID -> signal ID

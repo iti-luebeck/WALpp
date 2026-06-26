@@ -79,6 +79,21 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
                 ++i;
                 if (i + 1 < args.size()) fast_output_file = args[++i];
             }
+        } else if (arg == "--fast-values-signals") {
+            fast_values_signals = true;
+            if (i + 1 < args.size()) fast_signals_file = args[++i];
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
+        } else if (arg == "--fast-list") {
+            fast_list = true;
+            if (i + 1 < args.size()) fast_vcd_file = args[++i];
+            if (i + 1 < args.size() && args[i + 1] == "-o") {
+                ++i;
+                if (i + 1 < args.size()) fast_output_file = args[++i];
+            }
         } else if (arg == "-e" || arg == "--eval") {
             eval_mode = true;
             if (i + 1 < args.size()) {
@@ -154,6 +169,9 @@ void CLI::print_usage() {
               << "  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)\n"
               << "  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)\n"
               << "  --fast-hw-signals LIST FILE -o OUT  Hamming Weight (signal list)\n"
+              << "  --fast-values-signals LIST FILE -o OUT  Raw value-change rows (timestamp,index,value)\n"
+              << "                                      for the listed signals (1-bit AND buses)\n"
+              << "  --fast-list FILE -o OUT             List signals (width name) + a # timescale header\n"
               << "\n"
               << "INPUT MODES:\n"
               << "  --pipe FILE                 Read trace data from named pipe file\n"
@@ -275,7 +293,7 @@ int CLI::run_fast_mode() {
                 std::cerr << "Parsing VCD with scope filter: " << fast_scope << "...\n";
                 parser.parse(fast_vcd_file, fast_scope);
             }
-        } else if (fast_hd_signals || fast_hw_signals) {
+        } else if (fast_hd_signals || fast_hw_signals || fast_values_signals) {
             if (fast_signals_file.empty()) {
                 std::cerr << "Error: Signal list file required for signal list operations\n";
                 return 1;
@@ -312,7 +330,7 @@ int CLI::run_fast_mode() {
         
         // Read signal list if needed
         std::vector<std::string> signal_names;
-        if (fast_hd_signals || fast_hw_signals) {
+        if (fast_hd_signals || fast_hw_signals || fast_values_signals) {
             std::ifstream sigfile(fast_signals_file);
             if (!sigfile) {
                 std::cerr << "Error: Could not open signal list file: " << fast_signals_file << "\n";
@@ -335,6 +353,42 @@ int CLI::run_fast_mode() {
             std::cerr << "Loaded " << signal_names.size() << " signal names from list\n";
         }
         
+        // --fast-list: emit the timescale + (width, name) for every signal. The
+        // companion timing tools resolve a substring against this and convert
+        // tick timestamps to ns. (No op; written and returned here.)
+        if (fast_list) {
+            std::ofstream out(fast_output_file);
+            if (!out) {
+                std::cerr << "Error: Could not open output file: " << fast_output_file << "\n";
+                return 1;
+            }
+            out << "# timescale " << parser.get_timescale() << "\n";
+            for (uint32_t id : parser.get_signal_ids()) {
+                const auto& info = parser.get_signal_info(id);
+                out << info.width << " " << info.name << "\n";
+            }
+            std::cerr << "Listed " << parser.num_signals() << " signals to " << fast_output_file << "\n";
+            return 0;
+        }
+
+        // --fast-values-signals: raw per-signal value-change rows
+        // "timestamp,list-index,value" (+ a "# timescale ..." header), for bus
+        // value queries where a popcount (HW/HD) is not the value.
+        if (fast_values_signals) {
+            fast_vcd::ValueRows rows = ops.values_signals(signal_names);
+            std::ofstream out(fast_output_file);
+            if (!out) {
+                std::cerr << "Error: Could not open output file: " << fast_output_file << "\n";
+                return 1;
+            }
+            out << "# timescale " << parser.get_timescale() << "\n";
+            for (const auto& [ts, idx, val] : rows) {
+                out << ts << "," << idx << "," << val << "\n";
+            }
+            std::cerr << "Wrote " << rows.size() << " value rows to " << fast_output_file << "\n";
+            return 0;
+        }
+
         if (fast_hd_all) {
             std::cerr << "Computing Hamming Distance (all signals)...\n";
             results = ops.hamming_distance_all();
@@ -399,8 +453,8 @@ int CLI::run() {
     }
     
     // Check for fast mode first (highest priority)
-    if (fast_hd_all || fast_hd_scope || fast_hw_all || fast_hw_scope || 
-        fast_hd_signals || fast_hw_signals) {
+    if (fast_hd_all || fast_hd_scope || fast_hw_all || fast_hw_scope ||
+        fast_hd_signals || fast_hw_signals || fast_values_signals || fast_list) {
         return run_fast_mode();
     }
     
