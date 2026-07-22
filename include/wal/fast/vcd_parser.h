@@ -113,6 +113,18 @@ private:
     void parse_header(const char* data, const char* end, size_t& pos);
     void parse_data(const char* data, const char* end, size_t& pos);
 
+    // DeltaTimestamp::changes stores values as a fixed int64_t for cache-friendly
+    // delta encoding (the whole point of Fast Mode). Signals wider than 64 bits
+    // are silently truncated to their low 64 bits by the bit-accumulation loops
+    // in vcd_parser.cpp -- this can't be fixed without widening that core data
+    // structure (a bigger change than a bugfix), so instead we detect it and
+    // warn once per parse rather than returning silently-wrong values. Raw/
+    // interpreted mode (VCDTrace::parse_bit_value) handles arbitrary widths
+    // correctly via string-valued Values and should be used instead when a
+    // design has signals wider than 64 bits.
+    void warn_if_wide_signals();
+    bool warned_wide_signal_truncation_ = false;
+
     std::string timescale_ = "1ns";             // From $timescale / FST metadata
     std::vector<SignalInfo> signals_;           // All signal metadata
     std::vector<uint32_t> signal_ids_;          // Active signal IDs (after filtering)

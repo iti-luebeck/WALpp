@@ -133,24 +133,40 @@ Value VCDTrace::parse_bit_value(const std::string& bits) {
     if (bits.empty()) {
         return Value(0);
     }
-    
+
     if (bits.length() == 1) {
         // Single bit: 0, 1, x, or z - fast path
         char c = bits[0];
         return Value((c == '1') ? 1 : 0);
     }
-    
-    // Multi-bit value: parse as binary - optimized loop
-    int64_t value = 0;
-    const char* ptr = bits.data();
-    const char* end = ptr + bits.length();
-    
-    while (ptr < end) {
-        value = (value << 1) | ((*ptr == '1') ? 1 : 0);
-        ++ptr;
+
+    // Values up to 64 bits fit in int64_t -- keep the fast integer path.
+    // Wider values (e.g. wide testbench/string registers, or real >64-bit
+    // hardware buses) must NOT be accumulated into an int64_t: left-shifting
+    // past bit 63 silently discards the high bits, corrupting the value
+    // (this previously caused e.g. a 1024-bit signal to be truncated to its
+    // low 64 bits with no indication anything was wrong -- caught via a
+    // WAL++-vs-Python-WAL cross-check that found Hamming Weight results
+    // differing by orders of magnitude on the same trace). For these,
+    // return a string Value holding the exact bit pattern as parsed;
+    // downstream consumers (e.g. HammingOperators::count_ones /
+    // value_to_binary_string) already handle string-typed Values, counting
+    // '1' characters directly and correctly, including any 'x'/'z' states
+    // (treated as non-set, consistent with the single-bit fast path above).
+    if (bits.length() <= 64) {
+        int64_t value = 0;
+        const char* ptr = bits.data();
+        const char* end = ptr + bits.length();
+
+        while (ptr < end) {
+            value = (value << 1) | ((*ptr == '1') ? 1 : 0);
+            ++ptr;
+        }
+
+        return Value(value);
     }
-    
-    return Value(value);
+
+    return Value(bits);
 }
 
 void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_idx) {

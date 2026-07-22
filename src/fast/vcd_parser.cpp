@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cstring>
+#include <iostream>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -111,15 +112,46 @@ void VCDParser::parse(const std::string& filename, const std::string& scope_filt
         }
     }
     
+    warn_if_wide_signals();
+
     // Reserve space for deltas (estimate ~64K timestamps)
     deltas_.reserve(65536);
-    
+
     // Parse value changes with delta encoding
     parse_data(data, end, pos);
-    
+
     // Cleanup
     munmap(const_cast<char*>(data), file_size);
     close(fd);
+}
+
+void VCDParser::warn_if_wide_signals() {
+    // DeltaTimestamp::changes stores values as int64_t for cache-friendly delta
+    // encoding; the bit-accumulation loops in parse_data()/parse_fst() below
+    // silently truncate any signal wider than 64 bits to its low 64 bits. That
+    // can't be fixed without widening this whole data structure, so instead we
+    // detect it up front (signal width is known from the header/hierarchy
+    // before any values are parsed) and warn once, rather than returning
+    // silently-wrong Hamming Weight/Distance sums for designs with wide buses.
+    // Raw/interpreted mode (VCDTrace::parse_bit_value) handles arbitrary
+    // widths correctly and should be used instead when this matters.
+    if (warned_wide_signal_truncation_) return;
+    size_t wide_count = 0;
+    int max_width = 0;
+    for (uint32_t id : signal_ids_) {
+        const auto& sig = signals_[id];
+        if (sig.width > 64) {
+            ++wide_count;
+            if (sig.width > max_width) max_width = sig.width;
+        }
+    }
+    if (wide_count > 0) {
+        std::cerr << "WARNING: Fast Mode: " << wide_count << " signal(s) wider than 64 bits "
+                  << "(max " << max_width << " bits) will be truncated to their low 64 bits "
+                  << "for Hamming Weight/Distance computation. Use raw/interpreted mode "
+                  << "(without --fast-*) for correct results on wide signals.\n";
+        warned_wide_signal_truncation_ = true;
+    }
 }
 
 void VCDParser::parse_header(const char* data, const char* end, size_t& pos) {
@@ -615,6 +647,8 @@ void VCDParser::parse_fst(const std::string& filename, const std::string& scope_
                     break;
             }
         }
+
+        warn_if_wide_signals();
 
         // ----------------------------------------------------------------
         // 2. Collect value-change events into delta timestamps
