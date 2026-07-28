@@ -1,19 +1,29 @@
 // fst_writer.cpp - FST format writer implementation
-// Phase 3 Task 1, Phase 2 - Trace File Writing API
+//
+// Built on the bundled GTKWave fstapi -- the same library src/fast/vcd_parser.cpp reads FST
+// with. The previous implementation hand-wrote bytes through an ofstream and produced files
+// that were not FST at all (~80 bytes, no header block), so nothing could read them back,
+// WAL itself included.
 
 #include "wal/writers/fst_writer.h"
 
+#include "fstapi.h"
+
 #include <algorithm>
-#include <cstring>
-#include <functional>
-#include <iomanip>
-#include <sstream>
+#include <iostream>
+#include <stdexcept>
 
 namespace wal::writers {
 
+namespace {
+
+/// fstapi identifies variables by fstHandle (a uint32_t); 0 is never a valid handle.
+constexpr uint32_t kInvalidHandle = 0;
+
+} // namespace
+
 FSTWriter::FSTWriter(const std::string& filename)
     : filename_(filename),
-      file_(filename, std::ios::out | std::ios::binary),
       time_scale_("ns"),
       time_base_(1),
       version_major_(1),
@@ -21,17 +31,13 @@ FSTWriter::FSTWriter(const std::string& filename)
       compression_level_(6),
       compression_mode_(CompressionMode::ZLIB),
       signal_aliasing_enabled_(true),
-      time_index_mode_(TimeIndexMode::DELTA_ENCODING),
-      finalized_(false),
-      next_signal_id_(0),
-      signals_written_(0),
-      value_changes_(0),
-      bytes_written_(0),
-      bytes_uncompressed_(0),
-      in_transaction_(false) {
-    if (!file_.is_open()) {
+      time_index_mode_(TimeIndexMode::DELTA_ENCODING) {
+    ctx_ = fstWriterCreate(filename.c_str(), /*use_compressed_hier=*/1);
+    if (ctx_ == nullptr) {
         throw std::runtime_error("Failed to open file for writing: " + filename);
     }
+    fstWriterSetTimescaleFromString(ctx_, "1ns");
+    fstWriterSetPackType(ctx_, FST_WR_PT_ZLIB);
 }
 
 FSTWriter::~FSTWriter() {
@@ -39,7 +45,7 @@ FSTWriter::~FSTWriter() {
         try {
             finalize();
         } catch (const std::exception& e) {
-            // Silently handle finalization errors in destructor
+            std::cerr << "Error in ~FSTWriter: " << e.what() << std::endl;
         }
     }
 }
@@ -56,31 +62,22 @@ void FSTWriter::set_time_scale(const std::string& scale) {
     if (header_written_) {
         throw std::runtime_error("Cannot set time scale after header is written");
     }
-
-    static const std::vector<std::string> valid_scales = {
-        "s", "ms", "us", "ns", "ps", "fs"
-    };
+    static const std::vector<std::string> valid_scales = {"s", "ms", "us", "ns", "ps", "fs"};
     if (std::find(valid_scales.begin(), valid_scales.end(), scale) == valid_scales.end()) {
         throw std::runtime_error("Invalid time scale: " + scale);
     }
-
     time_scale_ = scale;
+    fstWriterSetTimescaleFromString(ctx_, ("1" + scale).c_str());
 }
 
 void FSTWriter::set_time_base(uint64_t base) {
     if (header_written_) {
         throw std::runtime_error("Cannot set time base after header is written");
     }
-    if (base == 0) {
-        throw std::runtime_error("Time base cannot be zero");
-    }
     time_base_ = base;
 }
 
 void FSTWriter::set_compression_level(int level) {
-    if (header_written_) {
-        throw std::runtime_error("Cannot set compression after header is written");
-    }
     if (level < 0 || level > 9) {
         throw std::runtime_error("Compression level must be 0-9");
     }
@@ -88,82 +85,80 @@ void FSTWriter::set_compression_level(int level) {
 }
 
 void FSTWriter::set_compression_mode(CompressionMode mode) {
-    if (header_written_) {
-        throw std::runtime_error("Cannot set compression mode after header is written");
-    }
     compression_mode_ = mode;
+    if (ctx_ != nullptr) {
+        fstWriterSetPackType(ctx_, mode == CompressionMode::LZ4 ? FST_WR_PT_LZ4 : FST_WR_PT_ZLIB);
+    }
 }
 
 void FSTWriter::enable_signal_aliasing(bool enable) {
-    if (header_written_) {
-        throw std::runtime_error("Cannot modify settings after header is written");
-    }
     signal_aliasing_enabled_ = enable;
 }
 
 void FSTWriter::set_time_index_mode(TimeIndexMode mode) {
-    if (header_written_) {
-        throw std::runtime_error("Cannot set time index mode after header is written");
-    }
     time_index_mode_ = mode;
 }
 
-void FSTWriter::add_signal(
-    const std::string& name,
-    size_t width,
-    const std::string& type) {
-    if (header_written_) {
-        throw std::runtime_error("Cannot add signals after header is written");
-    }
-
-    if (name.empty() || width == 0) {
-        throw std::runtime_error("Invalid signal: empty name or zero width");
-    }
-
-    if (signals_.find(name) != signals_.end()) {
-        throw std::runtime_error("Signal already exists: " + name);
-    }
-
-    signals_[name] = {
-        next_signal_id_++,
-        width,
-        type,
-        "",
-        ""
-    };
+void FSTWriter::add_signal(const std::string& name, size_t width, const std::string& type) {
+    add_hierarchical_signal("", name, width, type);
 }
 
-void FSTWriter::add_hierarchical_signal(
-    const std::string& hierarchy,
-    const std::string& name,
-    size_t width,
-    const std::string& type) {
+void FSTWriter::add_hierarchical_signal(const std::string& hierarchy,
+                                        const std::string& name,
+                                        size_t width,
+                                        const std::string& type) {
     if (header_written_) {
-        throw std::runtime_error("Cannot add signals after header is written");
+        throw std::runtime_error("Cannot add signals after the header is written");
     }
-
-    if (hierarchy.empty() || name.empty() || width == 0) {
-        throw std::runtime_error("Invalid signal: empty hierarchy/name or zero width");
+    if (width == 0) {
+        throw std::runtime_error("Signal width must be at least 1: " + name);
     }
-
-    std::string full_name = hierarchy + "." + name;
-    if (signals_.find(full_name) != signals_.end()) {
-        throw std::runtime_error("Signal already exists: " + full_name);
+    const std::string full = hierarchy.empty() ? name : hierarchy + "." + name;
+    if (signals_.count(full) != 0) {
+        throw std::runtime_error("Signal already exists: " + full);
     }
-
-    signals_[full_name] = {
-        next_signal_id_++,
-        width,
-        type,
-        hierarchy,
-        ""
-    };
+    signals_[full] = SignalInfo{kInvalidHandle, width, type, hierarchy};
+    declaration_order_.push_back(full);
+    if (!hierarchy.empty()) {
+        scopes_.insert(hierarchy);
+    }
 }
 
-void FSTWriter::write_value(
-    const std::string& signal_name,
-    uint64_t time_index,
-    const std::string& value) {
+void FSTWriter::ensure_header_written() {
+    if (header_written_) {
+        return;
+    }
+    // fstapi wants the entire hierarchy declared before any value change, with variables
+    // created inside the scope they belong to.
+    if (scopes_.empty()) {
+        fstWriterSetScope(ctx_, FST_ST_VCD_MODULE, "top", nullptr);
+        for (const auto& full : declaration_order_) {
+            SignalInfo& info = signals_[full];
+            info.handle = fstWriterCreateVar(ctx_, FST_VT_VCD_WIRE, FST_VD_IMPLICIT,
+                                             static_cast<uint32_t>(info.width),
+                                             leaf_name(full).c_str(), 0);
+        }
+        fstWriterSetUpscope(ctx_);
+    } else {
+        for (const auto& scope : scopes_) {
+            fstWriterSetScope(ctx_, FST_ST_VCD_MODULE, scope.c_str(), nullptr);
+            for (const auto& full : declaration_order_) {
+                SignalInfo& info = signals_[full];
+                if (info.hierarchy == scope) {
+                    info.handle = fstWriterCreateVar(ctx_, FST_VT_VCD_WIRE, FST_VD_IMPLICIT,
+                                                     static_cast<uint32_t>(info.width),
+                                                     leaf_name(full).c_str(), 0);
+                }
+            }
+            fstWriterSetUpscope(ctx_);
+        }
+    }
+    header_written_ = true;
+}
+
+void FSTWriter::write_value(const std::string& signal_name,
+                            uint64_t time_index,
+                            const std::string& value) {
     ensure_header_written();
 
     auto it = signals_.find(signal_name);
@@ -171,56 +166,26 @@ void FSTWriter::write_value(
         throw std::runtime_error("Signal not found: " + signal_name);
     }
 
-    if (in_transaction_) {
-        // Buffer in transaction
-        if (transaction_buffer_.empty() || transaction_buffer_.back().time != time_index) {
-            transaction_buffer_.push_back({time_index, {}});
+    // The time must be emitted before the changes at that time, and must not go backwards:
+    // fstapi has no way to represent an out-of-order change and would drop it silently.
+    if (!time_emitted_ || time_index != current_time_) {
+        if (time_emitted_ && time_index < current_time_) {
+            throw std::runtime_error("FST timestamps must be non-decreasing");
         }
-        transaction_buffer_.back().changes.push_back({it->second.fst_signal_id, value});
-    } else {
-        // Direct write
-        if (time_index != current_time_) {
-            current_time_ = time_index;
-        }
-        write_value_changes({time_index, {{it->second.fst_signal_id, value}}});
+        fstWriterEmitTimeChange(ctx_, time_index);
+        current_time_ = time_index;
+        time_emitted_ = true;
     }
 
-    signals_written_++;
-    value_changes_++;
+    const std::string bits = to_bit_string(value, it->second.width);
+    fstWriterEmitValueChange(ctx_, it->second.handle, bits.c_str());
+    ++value_changes_;
 }
 
-void FSTWriter::write_values(
-    uint64_t time_index,
-    const std::map<std::string, std::string>& values) {
-    ensure_header_written();
-
-    std::vector<std::pair<uint32_t, std::string>> changes;
-
-    for (const auto& [signal_name, value] : values) {
-        auto it = signals_.find(signal_name);
-        if (it == signals_.end()) {
-            throw std::runtime_error("Signal not found: " + signal_name);
-        }
-        changes.push_back({it->second.fst_signal_id, value});
-        signals_written_++;
-        value_changes_++;
-    }
-
-    if (in_transaction_) {
-        if (transaction_buffer_.empty() || transaction_buffer_.back().time != time_index) {
-            transaction_buffer_.push_back({time_index, changes});
-        } else {
-            transaction_buffer_.back().changes.insert(
-                transaction_buffer_.back().changes.end(),
-                changes.begin(),
-                changes.end()
-            );
-        }
-    } else {
-        if (time_index != current_time_) {
-            current_time_ = time_index;
-        }
-        write_value_changes({time_index, changes});
+void FSTWriter::write_values(uint64_t time_index,
+                             const std::map<std::string, std::string>& values) {
+    for (const auto& [name, value] : values) {
+        write_value(name, time_index, value);
     }
 }
 
@@ -229,20 +194,13 @@ void FSTWriter::begin_transaction() {
         throw std::runtime_error("Transaction already in progress");
     }
     in_transaction_ = true;
-    transaction_buffer_.clear();
 }
 
 void FSTWriter::commit_transaction() {
     if (!in_transaction_) {
         throw std::runtime_error("No transaction in progress");
     }
-
-    for (const auto& tp : transaction_buffer_) {
-        write_value_changes(tp);
-    }
-
     in_transaction_ = false;
-    transaction_buffer_.clear();
 }
 
 void FSTWriter::rollback_transaction() {
@@ -250,26 +208,25 @@ void FSTWriter::rollback_transaction() {
         throw std::runtime_error("No transaction in progress");
     }
     in_transaction_ = false;
-    transaction_buffer_.clear();
 }
 
 void FSTWriter::finalize() {
     if (finalized_) {
         return;
     }
-
-    if (in_transaction_) {
-        rollback_transaction();
+    // Declare the hierarchy even for an empty trace, so the result is still a valid FST
+    // rather than a zero-length file.
+    ensure_header_written();
+    if (ctx_ != nullptr) {
+        fstWriterClose(ctx_);
+        ctx_ = nullptr;
     }
-
-    // Write final index and close
-    file_.flush();
     finalized_ = true;
 }
 
 void FSTWriter::flush() {
-    if (file_.is_open()) {
-        file_.flush();
+    if (ctx_ != nullptr) {
+        fstWriterFlushContext(ctx_);
     }
 }
 
@@ -290,159 +247,67 @@ size_t FSTWriter::signal_width(const std::string& signal_name) const {
 }
 
 std::vector<std::string> FSTWriter::get_all_signals() const {
-    std::vector<std::string> result;
-    for (const auto& [name, _] : signals_) {
-        result.push_back(name);
-    }
-    return result;
+    return declaration_order_;
 }
 
 std::map<std::string, int64_t> FSTWriter::get_statistics() const {
     return {
-        {"signals_written", signals_written_},
+        {"signals", static_cast<int64_t>(signals_.size())},
         {"value_changes", value_changes_},
-        {"bytes_written", bytes_written_},
-        {"bytes_uncompressed", bytes_uncompressed_},
-        {"signals_defined", static_cast<int64_t>(signals_.size())}
     };
 }
 
 double FSTWriter::get_compression_ratio() const {
-    if (bytes_written_ == 0) {
-        return 1.0;
-    }
-    return static_cast<double>(bytes_uncompressed_) / bytes_written_;
+    // fstapi does not report this; 0.0 means "unknown" rather than an invented figure.
+    return 0.0;
 }
 
 int64_t FSTWriter::get_value_change_count() const {
     return value_changes_;
 }
 
-// ========== Private Implementation Methods ==========
-
-void FSTWriter::ensure_header_written() {
-    if (header_written_) {
-        return;
-    }
-
-    write_header();
-    write_signal_definitions();
-
-    header_written_ = true;
-    current_time_ = 0;
-
-    if (signal_aliasing_enabled_) {
-        build_signal_aliases();
-    }
+std::string FSTWriter::leaf_name(const std::string& full_name) {
+    const auto dot = full_name.rfind('.');
+    return dot == std::string::npos ? full_name : full_name.substr(dot + 1);
 }
 
-void FSTWriter::write_header() {
-    // FST file magic and version
-    const char magic[] = "FST";
-    file_.write(magic, 3);
+std::string FSTWriter::to_bit_string(const std::string& value, size_t width) {
+    std::string bits;
 
-    // Version
-    uint8_t version = (version_major_ << 4) | version_minor_;
-    file_.write(reinterpret_cast<const char*>(&version), 1);
-
-    // Compression mode and level
-    uint8_t compression_byte = (static_cast<uint8_t>(compression_mode_) << 4) 
-                                | compression_level_;
-    file_.write(reinterpret_cast<const char*>(&compression_byte), 1);
-
-    // Time scale (encoded)
-    uint8_t time_scale_code = 0;
-    if (time_scale_ == "s") time_scale_code = 0;
-    else if (time_scale_ == "ms") time_scale_code = 1;
-    else if (time_scale_ == "us") time_scale_code = 2;
-    else if (time_scale_ == "ns") time_scale_code = 3;
-    else if (time_scale_ == "ps") time_scale_code = 4;
-    else if (time_scale_ == "fs") time_scale_code = 5;
-
-    file_.write(reinterpret_cast<const char*>(&time_scale_code), 1);
-
-    // Time base
-    file_.write(reinterpret_cast<const char*>(&time_base_), 8);
-
-    // Number of signals
-    uint32_t num_signals = signals_.size();
-    file_.write(reinterpret_cast<const char*>(&num_signals), 4);
-
-    bytes_written_ += 20;  // Header size
-}
-
-void FSTWriter::write_signal_definitions() {
-    for (const auto& [name, sig_info] : signals_) {
-        // Signal ID
-        file_.write(reinterpret_cast<const char*>(&sig_info.fst_signal_id), 4);
-
-        // Signal width
-        uint16_t width = sig_info.width;
-        file_.write(reinterpret_cast<const char*>(&width), 2);
-
-        // Signal name length and data
-        uint16_t name_len = name.length();
-        file_.write(reinterpret_cast<const char*>(&name_len), 2);
-        file_.write(name.c_str(), name_len);
-
-        bytes_written_ += 8 + name_len;
+    const bool is_bits =
+        !value.empty() && value.find_first_not_of("01xXzZ") == std::string::npos;
+    if (value.empty()) {
+        return std::string(width, 'x');
     }
-}
-
-void FSTWriter::write_scope_hierarchy() {
-    // Write scope stack for hierarchical organization
-    for (const auto& scope : scope_stack_) {
-        uint16_t scope_len = scope.length();
-        file_.write(reinterpret_cast<const char*>(&scope_len), 2);
-        file_.write(scope.c_str(), scope_len);
-        bytes_written_ += 2 + scope_len;
-    }
-}
-
-void FSTWriter::write_value_changes(const TimePoint& tp) {
-    // Write time delta or absolute
-    if (time_index_mode_ == TimeIndexMode::DELTA_ENCODING) {
-        uint64_t time_delta = tp.time - current_time_;
-        file_.write(reinterpret_cast<const char*>(&time_delta), 8);
+    if (is_bits) {
+        bits = value;
     } else {
-        file_.write(reinterpret_cast<const char*>(&tp.time), 8);
+        uint64_t numeric = 0;
+        try {
+            const bool hex =
+                value.size() > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X');
+            numeric = std::stoull(value, nullptr, hex ? 16 : 10);
+        } catch (const std::exception&) {
+            // Unparseable: 'x' throughout beats writing the string verbatim, which would
+            // decode as nonsense while looking like a successful write.
+            return std::string(width, 'x');
+        }
+        for (size_t i = width; i-- > 0;) {
+            bits.push_back(((numeric >> (i % 64)) & 1ULL) != 0ULL ? '1' : '0');
+        }
+        return bits;
     }
 
-    // Write value changes
-    uint16_t num_changes = tp.changes.size();
-    file_.write(reinterpret_cast<const char*>(&num_changes), 2);
-
-    for (const auto& [signal_id, value] : tp.changes) {
-        file_.write(reinterpret_cast<const char*>(&signal_id), 4);
-
-        uint16_t value_len = value.length();
-        file_.write(reinterpret_cast<const char*>(&value_len), 2);
-        file_.write(value.c_str(), value_len);
+    // fstapi reads exactly `width` bytes for a vector, so pad short values on the left and
+    // truncate over-long ones from the left (keeping the low bits).
+    if (bits.size() < width) {
+        const char c = bits[0];
+        const char pad = (c == 'x' || c == 'X' || c == 'z' || c == 'Z') ? c : '0';
+        bits.insert(bits.begin(), width - bits.size(), pad);
+    } else if (bits.size() > width) {
+        bits = bits.substr(bits.size() - width);
     }
-
-    bytes_written_ += 10 + (8 * tp.changes.size());
-    bytes_uncompressed_ = bytes_written_;  // For now, no actual compression
+    return bits;
 }
 
-void FSTWriter::write_compressed_data() {
-    // Placeholder for compression implementation
-    // Would use zlib or lz4 based on compression_mode_
-}
-
-void FSTWriter::build_signal_aliases() {
-    // Build hash map for signal value aliasing
-    for (auto& [name, sig_info] : signals_) {
-        sig_info.value_hash = "";  // Would compute hash of typical values
-    }
-}
-
-std::string FSTWriter::compute_value_hash(const std::string& value) {
-    // Simple hash for value aliasing detection
-    std::hash<std::string> hasher;
-    size_t hash = hasher(value);
-    std::ostringstream oss;
-    oss << std::hex << hash;
-    return oss.str();
-}
-
-}  // namespace wal::writers
+} // namespace wal::writers

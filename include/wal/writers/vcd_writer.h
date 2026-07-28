@@ -104,6 +104,10 @@ private:
     bool header_written_ = false;
     bool finalized_;
     uint64_t current_time_ = 0;
+    /// False until the first `#<time>` marker has been emitted. Without this, values
+    /// written at time 0 would be emitted with no timestamp at all, because
+    /// current_time_ already reads 0.
+    bool time_emitted_ = false;
     bool in_transaction_;
 
     // Statistics
@@ -117,6 +121,12 @@ private:
     void write_flat_signals(std::ostringstream& oss);
     void write_hierarchical_signals(std::ostringstream& oss);
     void write_timestamp_if_needed(uint64_t time_index);
+    /// Leaf name of a (possibly dotted) hierarchical signal name: VCD `$var` declarations
+    /// carry the name *within* the enclosing scope, not the full path.
+    static std::string leaf_name(const std::string& full_name);
+    /// Normalise a caller-supplied value to the VCD bit representation for `width` bits.
+    /// Accepts binary (with x/z), `0x`-prefixed hex, or decimal.
+    static std::string to_bit_string(const std::string& value, size_t width);
     void write_value_line(
         const std::string& signal_id,
         const std::string& value,

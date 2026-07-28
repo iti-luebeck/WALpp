@@ -1,4 +1,5 @@
 #include "wal/trace/fst_trace.h"
+#include "wal/writers/fst_writer.h"
 #include "wal/trace/trace_container.h"
 #include <iostream>
 #include <fstream>
@@ -7,85 +8,24 @@
 
 using namespace wal;
 
-// Helper function to create a minimal FST test file
+// Build the fixture with WAL's own FSTWriter.
+//
+// This used to hand-write a byte sequence invented to look like FST. It was not FST -- the
+// real GTKWave reader rejected it, so this whole file failed on "cannot open" and had been
+// doing so for as long as the writer was broken. Generating the fixture with FSTWriter
+// makes the test exercise a genuine FST *and* keeps reader and writer honest about each
+// other: if either drifts, this fails.
 std::string create_test_fst_file(const std::string& filename) {
-    std::ofstream file(filename, std::ios::binary);
-    
-    // Write FST header
-    file.put(0xFF); file.put(0x00); file.put(0xFF); file.put(0x00);  // Magic
-    file.put(0x01);  // Version
-    file.put(0x09);  // Timescale power (10^-9, nanosecond)
-    file.put(0x00);  // Timescale unit
-    
-    // Start time (0) and end time (100) encoded as VLI
-    file.put(0x00);  // Start time = 0
-    file.put(0xE4); file.put(0x00);  // End time = 100 (VLI encoded)
-    
-    // Hierarchy section
-    // Scope: start (type=1)
-    file.put(0x01);  // Scope type
-    file.put(0x07);  // Scope class (wire)
-    file.put(0x03); file.put('t'); file.put('o'); file.put('p');  // String "top"
-    
-    // Variable: signal_a (wire_id=0, width=8)
-    file.put(0x03);  // Variable type
-    file.put(0x00);  // var_type
-    file.put(0x08);  // width = 8 (single byte)
-    file.put(0x08); file.put('s'); file.put('i'); file.put('g'); 
-    file.put('n'); file.put('a'); file.put('l'); 
-    file.put('_'); file.put('a');  // String "signal_a"
-    file.put(0x00);  // wire_id = 0
-    
-    // Variable: signal_b (wire_id=1, width=16)
-    file.put(0x03);  // Variable type
-    file.put(0x00);  // var_type
-    file.put(0x10);  // width = 16
-    file.put(0x08); file.put('s'); file.put('i'); file.put('g'); 
-    file.put('n'); file.put('a'); file.put('l'); 
-    file.put('_'); file.put('b');  // String "signal_b"
-    file.put(0x01);  // wire_id = 1
-    
-    // End scope (type=2)
-    file.put(0x02);
-    
-    // End of hierarchy
-    file.put(0x00);
-    
-    // Value changes section
-    // Timestamp 0
-    file.put(0xFF);  // Timestamp change
-    file.put(0x00);  // timestamp = 0
-    
-    // Set signal_a to 0x55 at time 0
-    file.put(0x10);  // Vector value change
-    file.put(0x00);  // wire_id = 0
-    file.put(0x08); file.put('0'); file.put('1'); file.put('0'); file.put('1');  // "0101"
-    file.put('0'); file.put('1'); file.put('0'); file.put('1');  // "0101" (full 8 bits)
-    
-    // Set signal_b to 0x1234 at time 0
-    file.put(0x10);  // Vector value change
-    file.put(0x01);  // wire_id = 1
-    file.put(0x10);  // 16 bits
-    file.put('0'); file.put('0'); file.put('0'); file.put('1');
-    file.put('0'); file.put('0'); file.put('1'); file.put('0');
-    file.put('0'); file.put('0'); file.put('1'); file.put('1');
-    file.put('0'); file.put('1'); file.put('0'); file.put('0');
-    
-    // Timestamp 50
-    file.put(0xFF);  // Timestamp change
-    file.put(0x32);  // timestamp = 50
-    
-    // Set signal_a to 0xAA
-    file.put(0x10);  // Vector value change
-    file.put(0x00);  // wire_id = 0
-    file.put(0x08);  // 8 bits
-    file.put('1'); file.put('0'); file.put('1'); file.put('0');
-    file.put('1'); file.put('0'); file.put('1'); file.put('0');
-    
-    // End of changes
-    file.put(0x00);
-    
-    file.close();
+    wal::writers::FSTWriter w(filename);
+    w.set_time_scale("ns");
+    w.add_signal("signal_a", 8);
+    w.add_signal("signal_b", 16);
+
+    w.write_value("signal_a", 0, "01010101");           // 0x55
+    w.write_value("signal_b", 0, "0001001000110100");   // 0x1234
+    w.write_value("signal_a", 50, "10101010");          // 0xAA
+    w.finalize();
+
     return filename;
 }
 

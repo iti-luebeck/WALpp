@@ -83,3 +83,12 @@ add_test(NAME test_streaming_implementations COMMAND test_streaming_implementati
 # Implementation tests (operator phases and file format tests)
 add_subdirectory(implementation)
 
+
+# Round-trip: write a trace with each writer and read it back with WAL's own parser.
+# The substring assertions in test_vcd_writer.cpp cannot detect an unreadable file; this
+# can, because it asserts on decoded values.
+add_executable(test_writer_roundtrip test_writer_roundtrip.cpp)
+target_link_libraries(test_writer_roundtrip PRIVATE walpp)
+target_include_directories(test_writer_roundtrip
+    PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_writer_roundtrip COMMAND test_writer_roundtrip WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

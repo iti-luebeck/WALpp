@@ -205,7 +205,8 @@ void VCDWriter::finalize() {
         rollback_transaction();
     }
 
-    file_ << "$end" << std::endl;
+    // No trailing "$end" here: nothing is open at this point. Emitting one leaves a
+    // dangling keyword after the last value change, which strict readers reject.
     file_.flush();
 
     finalized_ = true;
@@ -289,23 +290,32 @@ void VCDWriter::write_header() {
     oss << "1" << time_scale_ << std::endl;
     oss << "$end" << std::endl;
 
-    // $scope and $var sections
+    // $scope and $var sections. Both paths close every scope they open: an unbalanced
+    // $scope leaves the declaration section malformed and readers reject the file.
     if (!scopes_.empty()) {
         write_hierarchical_signals(oss);
+        for (size_t i = 0; i < scopes_.size(); ++i) {
+            oss << "$upscope $end" << std::endl;
+        }
     } else {
         write_flat_signals(oss);
+        oss << "$upscope $end" << std::endl;
     }
 
-    // $upscope to close all scopes
-    for (size_t i = 0; i < scopes_.size(); ++i) {
-        oss << "$upscope" << std::endl;
-        oss << "$end" << std::endl;
-    }
+    // MANDATORY: without $enddefinitions a reader cannot tell where declarations stop and
+    // value changes begin, so it finds no signals at all.
+    oss << "$enddefinitions $end" << std::endl;
 
-    // Initial values
+    // Initial values, AFTER $enddefinitions (a $dumpvars inside the declaration section is
+    // not valid VCD). Scalars are `x<id>`; vectors must be `bx <id>` -- writing `x<id>` for
+    // a vector silently corrupts the identifier.
     oss << "$dumpvars" << std::endl;
     for (const auto& [_, sig_info] : signals_) {
-        oss << "x" << sig_info.signal_id << std::endl;  // Initial value is 'x' (unknown)
+        if (sig_info.width == 1) {
+            oss << "x" << sig_info.signal_id << std::endl;
+        } else {
+            oss << "bx " << sig_info.signal_id << std::endl;
+        }
     }
     oss << "$end" << std::endl;
 
@@ -315,43 +325,39 @@ void VCDWriter::write_header() {
 }
 
 void VCDWriter::write_flat_signals(std::ostringstream& oss) {
-    oss << "$scope" << std::endl;
-    oss << "module" << std::endl;
-    oss << "top" << std::endl;
-    oss << "$end" << std::endl;
+    oss << "$scope module top $end" << std::endl;
 
     for (const auto& [name, sig_info] : signals_) {
-        oss << "$var" << std::endl;
-        oss << sig_info.type << " " << sig_info.width << " "
-            << sig_info.signal_id << " " << name << std::endl;
-        oss << "$end" << std::endl;
+        oss << "$var " << sig_info.type << " " << sig_info.width << " "
+            << sig_info.signal_id << " " << leaf_name(name) << " $end" << std::endl;
     }
 }
 
 void VCDWriter::write_hierarchical_signals(std::ostringstream& oss) {
     for (const auto& scope : scopes_) {
-        oss << "$scope" << std::endl;
-        oss << "module" << std::endl;
-        oss << scope << std::endl;
-        oss << "$end" << std::endl;
+        oss << "$scope module " << scope << " $end" << std::endl;
 
-        // Write signals in this scope
+        // Signals in this scope. The $var name is the LEAF: the enclosing $scope already
+        // supplies the path, so declaring "top.cpu.pc" inside scope "top.cpu" would make
+        // the signal's full name "top.cpu.top.cpu.pc" once a reader reassembles it.
         for (const auto& [name, sig_info] : signals_) {
             if (sig_info.hierarchy == scope) {
-                oss << "$var" << std::endl;
-                oss << sig_info.type << " " << sig_info.width << " "
-                    << sig_info.signal_id << " " << name << std::endl;
-                oss << "$end" << std::endl;
+                oss << "$var " << sig_info.type << " " << sig_info.width << " "
+                    << sig_info.signal_id << " " << leaf_name(name) << " $end" << std::endl;
             }
         }
     }
 }
 
 void VCDWriter::write_timestamp_if_needed(uint64_t time_index) {
-    if (time_index != current_time_) {
+    // `!time_emitted_` matters: current_time_ starts at 0, so a trace whose first values
+    // are at time 0 would otherwise get no `#0` marker and readers would attribute those
+    // changes to no timestamp at all.
+    if (!time_emitted_ || time_index != current_time_) {
         file_ << "#" << time_index << std::endl;
         bytes_written_ += 20;  // Rough estimate
         current_time_ = time_index;
+        time_emitted_ = true;
     }
 }
 
@@ -361,17 +367,64 @@ void VCDWriter::write_value_line(
     size_t width) {
     std::ostringstream oss;
 
+    const std::string bits = to_bit_string(value, width);
     if (width == 1) {
-        // Single-bit value
-        oss << value.back() << signal_id << std::endl;
+        // Single-bit value: `<value><id>` with no space.
+        oss << (bits.empty() ? 'x' : bits.back()) << signal_id << std::endl;
     } else {
-        // Multi-bit value
-        oss << "b" << value << " " << signal_id << std::endl;
+        // Multi-bit value: `b<bits> <id>`.
+        oss << "b" << bits << " " << signal_id << std::endl;
     }
 
     std::string line = oss.str();
     file_ << line;
     bytes_written_ += line.length();
+}
+
+std::string VCDWriter::leaf_name(const std::string& full_name) {
+    const auto dot = full_name.rfind('.');
+    return dot == std::string::npos ? full_name : full_name.substr(dot + 1);
+}
+
+std::string VCDWriter::to_bit_string(const std::string& value, size_t width) {
+    if (value.empty()) {
+        return "x";
+    }
+
+    // Already a bit string (the common case): pass through, minus any leading zeros, since
+    // VCD vectors are written without them.
+    const bool is_bits = value.find_first_not_of("01xXzZ") == std::string::npos;
+    if (is_bits) {
+        const auto first = value.find_first_not_of('0');
+        return first == std::string::npos ? "0" : value.substr(first);
+    }
+
+    // Otherwise accept the hex/decimal forms the API documents and convert. An
+    // unparseable value becomes 'x' rather than being written verbatim -- emitting a
+    // decimal string after `b` would produce a file that looks fine and decodes wrongly.
+    uint64_t numeric = 0;
+    try {
+        const bool hex = value.size() > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X');
+        numeric = std::stoull(value, nullptr, hex ? 16 : 10);
+    } catch (const std::exception&) {
+        return "x";
+    }
+
+    if (numeric == 0) {
+        return "0";
+    }
+    std::string bits;
+    const size_t bit_count = (width == 0 || width > 64) ? 64 : width;
+    bool leading = true;
+    for (size_t i = bit_count; i-- > 0;) {
+        const bool bit = ((numeric >> i) & 1ULL) != 0ULL;
+        if (leading && !bit) {
+            continue;
+        }
+        leading = false;
+        bits.push_back(bit ? '1' : '0');
+    }
+    return bits.empty() ? "0" : bits;
 }
 
 }  // namespace wal::writers

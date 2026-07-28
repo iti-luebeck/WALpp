@@ -9,6 +9,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -118,22 +119,25 @@ public:
     int64_t get_value_change_count() const;
 
 private:
+    /// Per-signal state. `handle` is the fstapi variable handle; FST identifies variables
+    /// by handle rather than by the VCD-style short identifier.
     struct SignalInfo {
-        uint32_t fst_signal_id;
+        uint32_t handle;       // fstHandle
         size_t width;
         std::string type;
         std::string hierarchy;
-        std::string value_hash;  // For aliasing detection
     };
 
-    struct TimePoint {
-        uint64_t time;
-        std::vector<std::pair<uint32_t, std::string>> changes;  // signal_id, value
-    };
+    void ensure_header_written();
+    /// Exactly `width` characters of '0'/'1'/'x'/'z' -- fstapi reads that many bytes for a
+    /// vector, so (unlike VCD) the value must be zero-padded rather than trimmed.
+    static std::string to_bit_string(const std::string& value, size_t width);
+    static std::string leaf_name(const std::string& full_name);
 
     // File and metadata
     std::string filename_;
-    std::ofstream file_;
+    /// fstapi writer context (void* to keep fstapi.h out of this public header).
+    void* ctx_ = nullptr;
 
     // Configuration
     std::string time_scale_;
@@ -147,36 +151,18 @@ private:
 
     // Signal management
     std::map<std::string, SignalInfo> signals_;
-    std::map<std::string, uint32_t> signal_aliases_;  // For aliasing
-    std::vector<std::string> scope_stack_;
-    uint32_t next_signal_id_;
+    std::vector<std::string> declaration_order_;
+    std::set<std::string> scopes_;
 
     // State tracking
     bool header_written_ = false;
-    bool finalized_;
+    bool finalized_ = false;
+    bool time_emitted_ = false;
     uint64_t current_time_ = 0;
-    bool in_transaction_;
-    std::vector<TimePoint> transaction_buffer_;
-
-    // Compression
-    std::vector<uint8_t> uncompressed_data_;
-    std::vector<uint8_t> compressed_data_;
+    bool in_transaction_ = false;
 
     // Statistics
-    int64_t signals_written_;
-    int64_t value_changes_;
-    int64_t bytes_written_;
-    int64_t bytes_uncompressed_;
-
-    // Private helper methods
-    void ensure_header_written();
-    void write_header();
-    void write_scope_hierarchy();
-    void write_signal_definitions();
-    void write_value_changes(const TimePoint& tp);
-    void write_compressed_data();
-    void build_signal_aliases();
-    std::string compute_value_hash(const std::string& value);
+    int64_t value_changes_ = 0;
 };
 
 }  // namespace wal::writers
