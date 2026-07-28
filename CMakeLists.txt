@@ -43,6 +43,18 @@ if(BUILD_PYTHON_MODULE)
     message(STATUS "pybind11 found: ${pybind11_INCLUDE_DIR}")
 endif()
 
+# zlib is a hard requirement: the bundled fstapi.h includes <zlib.h> unconditionally,
+# so it must be found *before* the fstapi target and linked into it.
+find_package(ZLIB QUIET)
+if(NOT ZLIB_FOUND)
+    message(FATAL_ERROR
+        "zlib development headers not found, but they are required to build the bundled "
+        "GTKWave fstapi (third_party/fstapi/fstapi.h includes <zlib.h>).\n"
+        "  Debian/Ubuntu: apt-get install zlib1g-dev\n"
+        "  RHEL/Rocky/CentOS/Fedora: dnf install zlib-devel\n"
+        "  macOS (Homebrew): brew install zlib")
+endif()
+
 # Bundled GTKWave fstapi for standard FST format support
 add_library(fstapi STATIC
     third_party/fstapi/fstapi.c
@@ -55,10 +67,9 @@ set_target_properties(fstapi PROPERTIES LINKER_LANGUAGE C)
 target_compile_options(fstapi PRIVATE -w -fPIC
     -DFST_CONFIG_INCLUDE=\"fst_config.h\")
 find_package(Threads REQUIRED)
+# ZLIB is PUBLIC: fstapi.h exposes <zlib.h> to every consumer of this target
+target_link_libraries(fstapi PUBLIC ZLIB::ZLIB)
 target_link_libraries(fstapi PRIVATE Threads::Threads m)
-
-# Optional: Find zlib for compression
-find_package(ZLIB QUIET)
 
 # ============================================================================
 # Main Library
@@ -135,11 +146,9 @@ target_link_libraries(walpp PRIVATE fstapi)
 target_include_directories(walpp PRIVATE third_party/fstapi)
 target_compile_definitions(walpp PRIVATE HAVE_FST_SUPPORT)
 
-# Link zlib if found
-if(ZLIB_FOUND)
-    target_link_libraries(walpp PRIVATE ZLIB::ZLIB)
-    target_compile_definitions(walpp PRIVATE HAVE_ZLIB)
-endif()
+# Link zlib (guaranteed present -- see the FATAL_ERROR above)
+target_link_libraries(walpp PRIVATE ZLIB::ZLIB)
+target_compile_definitions(walpp PRIVATE HAVE_ZLIB)
 
 # Link pthread for coroutines support
 find_package(Threads REQUIRED)
@@ -345,7 +354,7 @@ set(CPACK_SOURCE_IGNORE_FILES
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "WAL++ Maintainer <maintainer@walpp.org>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libreadline8, libpython3.10, libstdc++6 (>= 10)")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libreadline8, libpython3.10, libstdc++6 (>= 10), zlib1g")
 set(CPACK_DEBIAN_PACKAGE_SUGGESTS "python3-pip")
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/cmake/debian/postinst")
@@ -353,7 +362,7 @@ set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/cmake/debian
 # RPM (CentOS/RedHat/Fedora) specific settings
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 set(CPACK_RPM_PACKAGE_GROUP "Development/Tools")
-set(CPACK_RPM_PACKAGE_REQUIRES "readline >= 6.0, python3 >= 3.8")
+set(CPACK_RPM_PACKAGE_REQUIRES "readline >= 6.0, python3 >= 3.8, zlib")
 set(CPACK_RPM_PACKAGE_SUGGESTS "python3-pip")
 set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
 set(CPACK_RPM_PACKAGE_RELEASE "1")
