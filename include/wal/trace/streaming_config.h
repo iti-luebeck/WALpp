@@ -17,7 +17,7 @@ struct StreamingConfig {
      * - true: Use StreamingVCDTrace/StreamingCSVTrace/StreamingFSTTrace
      * - false: Use regular VCDTrace/CSVTrace/FSTTrace (full load)
      */
-    bool enabled = true;
+    bool enabled = false;
     
     /**
      * Threshold in bytes to automatically enable streaming
