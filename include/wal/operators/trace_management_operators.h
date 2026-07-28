@@ -152,20 +152,39 @@ public:
                 throw EvalError("set-index: index must be an integer");
             }
 
-            // Note: set-index is complex - would need TraceContainer support
-            // For now, returns the index
-            return Value(evaluated[0].to_int());
+            // Seek every loaded trace. Until TraceContainer grew set_index() this
+            // operator silently did nothing but echo its argument, so every subsequent
+            // get-signal read index 0 -- a whole analysis could look plausible and be
+            // answering about the wrong cycle throughout.
+            const auto idx = static_cast<int>(evaluated[0].to_int());
+            eval.get_traces()->set_index(idx);
+            return Value(static_cast<int64_t>(idx));
         });
 
         // get-index - Get current time index
-        registry.register_operator("get-index", [](SEval& /*eval*/, const std::vector<Value>& args) -> Value {
-            if (args.size() != 0) {
-                throw EvalError("get-index expects 0 arguments, got " + std::to_string(args.size()));
+        registry.register_operator("get-index", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() > 1) {
+                throw EvalError("get-index expects 0 or 1 arguments (trace id), got " +
+                              std::to_string(args.size()));
             }
 
-            // Note: Would return actual index from TraceContainer
-            // For now, returns 0
-            return Value(static_cast<int64_t>(0));
+            const auto indices = eval.get_traces()->indices();
+            if (indices.empty()) {
+                return Value(static_cast<int64_t>(0));
+            }
+            if (args.size() == 1) {
+                auto evaluated = eval.eval_args(args);
+                if (!evaluated[0].is_string()) {
+                    throw EvalError("get-index: trace id must be a string");
+                }
+                const auto it = indices.find(evaluated[0].to_string());
+                if (it == indices.end()) {
+                    throw EvalError("get-index: no such trace: " + evaluated[0].to_string());
+                }
+                return Value(static_cast<int64_t>(it->second));
+            }
+            // Traces are stepped and sought together, so any of them answers for all.
+            return Value(static_cast<int64_t>(indices.begin()->second));
         });
 
         // ═══════════════════════════════════════════════════════════════

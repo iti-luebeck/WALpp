@@ -139,6 +139,26 @@ std::string TraceContainer::step(int steps, const std::string& tid) {
     return "";
 }
 
+std::string TraceContainer::set_index(int idx, const std::string& tid) {
+    if (traces.empty()) {
+        return "";  // No traces loaded, silently succeed
+    }
+
+    if (!tid.empty()) {
+        auto it = traces.find(tid);
+        if (it != traces.end() && it->second) {
+            it->second->set_index(idx);
+        }
+    } else {
+        for (auto& [_, trace] : traces) {
+            if (trace) {
+                trace->set_index(idx);
+            }
+        }
+    }
+    return "";
+}
+
 std::unordered_map<std::string, int> TraceContainer::indices() const {
     std::unordered_map<std::string, int> result;
     for (const auto& [tid, trace] : traces) {

@@ -181,6 +181,21 @@ public:
     std::string step(int steps = 1, const std::string& tid = "");
 
     /**
+     * Seek all traces to an absolute time index
+     * 
+     * The counterpart of step(), which is relative. Random access is what a
+     * waveform query language needs most: `(set-index 4096)` should not have to be
+     * expressed as a step from wherever the traces happen to be.
+     * 
+     * Out-of-range indices are clamped by the individual traces.
+     * 
+     * @param idx Absolute time index
+     * @param tid Optional specific trace to seek (empty=all)
+     * @return Empty string on success, or trace ID if seeking failed
+     */
+    std::string set_index(int idx, const std::string& tid = "");
+
+    /**
      * Get current time index of all traces
      * 
      * @return Map from trace ID to current time index
