@@ -17,6 +17,30 @@ extern "C" {
 namespace fast_vcd {
 
 // ---------------------------------------------------------------------------
+// Wide-signal (>64 bits) bit-string decoding, shared by the VCD and FST paths
+// ---------------------------------------------------------------------------
+namespace {
+
+// Converts an MSB-first binary value string, e.g. "101", into fixed-size word
+// storage (low word first) for signals too wide for a single int64_t. VCD/FST
+// may omit leading zeros (the string can be shorter than `width`); missing
+// high-order bits are implicit zeros, and 'x'/'z' are treated as 0 -- the
+// same convention the narrow (<=64-bit) path already uses.
+std::vector<uint64_t> parse_wide_bits(const char* start, const char* end, int width) {
+    size_t num_words = (static_cast<size_t>(width) + 63) / 64;
+    std::vector<uint64_t> words(num_words, 0);
+    size_t bit_index = 0;
+    for (const char* p = end - 1; p >= start; --p, ++bit_index) {
+        if (*p == '1') {
+            words[bit_index / 64] |= (uint64_t(1) << (bit_index % 64));
+        }
+    }
+    return words;
+}
+
+} // anonymous namespace
+
+// ---------------------------------------------------------------------------
 // FST fast-path: callback state and value-change function
 // ---------------------------------------------------------------------------
 namespace {
@@ -24,6 +48,7 @@ namespace {
 struct FSTFastState {
     std::unordered_map<fstHandle, uint32_t>* handle_to_sig_id;
     std::vector<DeltaTimestamp>*             deltas;
+    const std::vector<SignalInfo>*           signals;  // for per-signal width lookup
     uint64_t prev_time  = 0;
     bool     has_prev   = false;
 };
@@ -35,6 +60,10 @@ static void fst_fast_change_cb(void* user_data,
 {
     auto* s = static_cast<FSTFastState*>(user_data);
 
+    auto it = s->handle_to_sig_id->find(handle);
+    if (it == s->handle_to_sig_id->end()) return;
+    uint32_t sig_id = it->second;
+
     // Start a new delta when the timestamp advances
     if (!s->has_prev || time != s->prev_time) {
         s->deltas->emplace_back(static_cast<int64_t>(time));
@@ -43,17 +72,22 @@ static void fst_fast_change_cb(void* user_data,
         s->prev_time = time;
     }
 
+    const int width = (*s->signals)[sig_id].width;
+    if (width > 64) {
+        const char* vstart = reinterpret_cast<const char*>(value);
+        const char* vend = vstart;
+        while (*vend) ++vend;
+        s->deltas->back().wide_changes.emplace_back(sig_id, parse_wide_bits(vstart, vend, width));
+        return;
+    }
+
     // Parse binary value string: "0","1","x","z","0110..." → int64_t
     int64_t val = 0;
     for (const unsigned char* p = value; *p; ++p) {
         val <<= 1;
         if (*p == '1') val |= 1;
     }
-
-    auto it = s->handle_to_sig_id->find(handle);
-    if (it != s->handle_to_sig_id->end()) {
-        s->deltas->back().changes.emplace_back(it->second, val);
-    }
+    s->deltas->back().changes.emplace_back(sig_id, val);
 }
 
 } // anonymous namespace
@@ -112,8 +146,6 @@ void VCDParser::parse(const std::string& filename, const std::string& scope_filt
         }
     }
     
-    warn_if_wide_signals();
-
     // Reserve space for deltas (estimate ~64K timestamps)
     deltas_.reserve(65536);
 
@@ -123,35 +155,6 @@ void VCDParser::parse(const std::string& filename, const std::string& scope_filt
     // Cleanup
     munmap(const_cast<char*>(data), file_size);
     close(fd);
-}
-
-void VCDParser::warn_if_wide_signals() {
-    // DeltaTimestamp::changes stores values as int64_t for cache-friendly delta
-    // encoding; the bit-accumulation loops in parse_data()/parse_fst() below
-    // silently truncate any signal wider than 64 bits to its low 64 bits. That
-    // can't be fixed without widening this whole data structure, so instead we
-    // detect it up front (signal width is known from the header/hierarchy
-    // before any values are parsed) and warn once, rather than returning
-    // silently-wrong Hamming Weight/Distance sums for designs with wide buses.
-    // Raw/interpreted mode (VCDTrace::parse_bit_value) handles arbitrary
-    // widths correctly and should be used instead when this matters.
-    if (warned_wide_signal_truncation_) return;
-    size_t wide_count = 0;
-    int max_width = 0;
-    for (uint32_t id : signal_ids_) {
-        const auto& sig = signals_[id];
-        if (sig.width > 64) {
-            ++wide_count;
-            if (sig.width > max_width) max_width = sig.width;
-        }
-    }
-    if (wide_count > 0) {
-        std::cerr << "WARNING: Fast Mode: " << wide_count << " signal(s) wider than 64 bits "
-                  << "(max " << max_width << " bits) will be truncated to their low 64 bits "
-                  << "for Hamming Weight/Distance computation. Use raw/interpreted mode "
-                  << "(without --fast-*) for correct results on wide signals.\n";
-        warned_wide_signal_truncation_ = true;
-    }
 }
 
 void VCDParser::parse_header(const char* data, const char* end, size_t& pos) {
@@ -368,12 +371,12 @@ void VCDParser::parse_data(const char* data, const char* end, size_t& pos) {
                 // Binary value: b<bits> <id>
                 if (data[pos] == 'b') {
                     pos++;
-                    int64_t value = 0;
+                    const char* bit_start = data + pos;
                     while (pos < static_cast<size_t>(end - data) &&
                            data[pos] != ' ' && data[pos] != '\t') {
-                        value = (value << 1) | (data[pos] == '1' ? 1 : 0);
                         pos++;
                     }
+                    const char* bit_end = data + pos;
                     while (pos < static_cast<size_t>(end - data) &&
                            (data[pos] == ' ' || data[pos] == '\t')) pos++;
                     const char* id_start = data + pos;
@@ -383,8 +386,19 @@ void VCDParser::parse_data(const char* data, const char* end, size_t& pos) {
                     std::string vcd_id(id_start, data + pos - id_start);
                     if (filtered_vcd_ids_.empty() || filtered_vcd_ids_.count(vcd_id)) {
                         auto it = vcd_id_to_signal_.find(vcd_id);
-                        if (it != vcd_id_to_signal_.end())
-                            initial_values_[it->second] = value;
+                        if (it != vcd_id_to_signal_.end()) {
+                            uint32_t sig_id = it->second;
+                            if (signals_[sig_id].width > 64) {
+                                initial_wide_values_[sig_id] =
+                                    parse_wide_bits(bit_start, bit_end, signals_[sig_id].width);
+                            } else {
+                                int64_t value = 0;
+                                for (const char* p = bit_start; p < bit_end; ++p) {
+                                    value = (value << 1) | (*p == '1' ? 1 : 0);
+                                }
+                                initial_values_[sig_id] = value;
+                            }
+                        }
                     }
                     continue;
                 }
@@ -462,41 +476,47 @@ void VCDParser::parse_data(const char* data, const char* end, size_t& pos) {
         // Binary value change: b<bits> <id>
         if (data[pos] == 'b') {
             pos++;
-            
-            // Parse binary value
-            int64_t value = 0;
-            while (pos < static_cast<size_t>(end - data) && 
+
+            // Locate the bit-string span; decode after we know the signal's width
+            const char* bit_start = data + pos;
+            while (pos < static_cast<size_t>(end - data) &&
                    data[pos] != ' ' && data[pos] != '\t') {
-                if (data[pos] == '1') {
-                    value = (value << 1) | 1;
-                } else {
-                    value = value << 1;
-                }
                 pos++;
             }
-            
+            const char* bit_end = data + pos;
+
             // Skip whitespace
-            while (pos < static_cast<size_t>(end - data) && 
+            while (pos < static_cast<size_t>(end - data) &&
                    (data[pos] == ' ' || data[pos] == '\t')) pos++;
-            
+
             // Parse VCD ID
             const char* id_start = data + pos;
-            while (pos < static_cast<size_t>(end - data) && 
-                   data[pos] != ' ' && data[pos] != '\t' && 
+            while (pos < static_cast<size_t>(end - data) &&
+                   data[pos] != ' ' && data[pos] != '\t' &&
                    data[pos] != '\n' && data[pos] != '\r') {
                 pos++;
             }
-            
+
             std::string vcd_id(id_start, data + pos - id_start);
-            
+
             // Check if we're tracking this signal
             if (filtered_vcd_ids_.empty() || filtered_vcd_ids_.count(vcd_id)) {
                 auto it = vcd_id_to_signal_.find(vcd_id);
                 if (it != vcd_id_to_signal_.end()) {
-                    current_delta->changes.emplace_back(it->second, value);
+                    uint32_t sig_id = it->second;
+                    if (signals_[sig_id].width > 64) {
+                        current_delta->wide_changes.emplace_back(
+                            sig_id, parse_wide_bits(bit_start, bit_end, signals_[sig_id].width));
+                    } else {
+                        int64_t value = 0;
+                        for (const char* p = bit_start; p < bit_end; ++p) {
+                            value = (value << 1) | (*p == '1' ? 1 : 0);
+                        }
+                        current_delta->changes.emplace_back(sig_id, value);
+                    }
                 }
             }
-            
+
             continue;
         }
         
@@ -648,8 +668,6 @@ void VCDParser::parse_fst(const std::string& filename, const std::string& scope_
             }
         }
 
-        warn_if_wide_signals();
-
         // ----------------------------------------------------------------
         // 2. Collect value-change events into delta timestamps
         // ----------------------------------------------------------------
@@ -658,6 +676,7 @@ void VCDParser::parse_fst(const std::string& filename, const std::string& scope_
         FSTFastState cb_state;
         cb_state.handle_to_sig_id = &handle_to_sig_id;
         cb_state.deltas           = &deltas_;
+        cb_state.signals          = &signals_;
 
         fstReaderSetFacProcessMaskAll(ctx);
         fstReaderIterBlocks(ctx, fst_fast_change_cb, &cb_state, nullptr);

@@ -1,5 +1,6 @@
 #include "wal/fast/hamming_ops.h"
 #include <algorithm>
+#include <iostream>
 #include <tuple>
 #include <unordered_map>
 
@@ -61,6 +62,26 @@ namespace {
 inline int64_t popcount64(int64_t v) {
     return __builtin_popcountll(static_cast<uint64_t>(v));
 }
+
+// Wide (>64-bit) signal support: values are stored as fixed-size word vectors
+// (see DeltaTimestamp::wide_changes), so weight/distance are just a popcount
+// (XOR-popcount for distance) summed word by word.
+int64_t popcount_words(const std::vector<uint64_t>& words) {
+    int64_t total = 0;
+    for (uint64_t w : words) total += __builtin_popcountll(w);
+    return total;
+}
+
+int64_t popcount_xor_words(const std::vector<uint64_t>& a, const std::vector<uint64_t>& b) {
+    size_t n = std::max(a.size(), b.size());
+    int64_t total = 0;
+    for (size_t i = 0; i < n; ++i) {
+        uint64_t wa = i < a.size() ? a[i] : 0;
+        uint64_t wb = i < b.size() ? b[i] : 0;
+        total += __builtin_popcountll(wa ^ wb);
+    }
+    return total;
+}
 }  // namespace
 
 Result HammingOps::hamming_distance_all() const {
@@ -97,6 +118,15 @@ Result HammingOps::hamming_distance_all() const {
         if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
 
+    // Wide (>64-bit) signals, tracked separately by signal id (see hamming_ops.h).
+    std::unordered_map<uint32_t, std::vector<uint64_t>> wide_state;
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        if (sig_id_to_idx.count(sid)) wide_state[sid] = words;
+    }
+    for (const auto& [sig_id, words] : deltas[0].wide_changes) {
+        if (sig_id_to_idx.count(sig_id)) wide_state[sig_id] = words;
+    }
+
     // Emit HD from delta[1] onward. Unchanged signals contribute popcount(0)=0
     // to the XOR-based distance regardless, so only the signals actually
     // touched by this timestamp's delta need to be diffed -- no need to scan
@@ -110,6 +140,18 @@ Result HammingOps::hamming_distance_all() const {
                 size_t idx = it->second;
                 local_hd += popcount64(curr_state[idx] ^ value);
                 curr_state[idx] = value;
+            }
+        }
+        for (const auto& [sig_id, words] : deltas[i].wide_changes) {
+            if (sig_id_to_idx.count(sig_id)) {
+                auto wit = wide_state.find(sig_id);
+                if (wit != wide_state.end()) {
+                    local_hd += popcount_xor_words(wit->second, words);
+                    wit->second = words;
+                } else {
+                    local_hd += popcount_words(words);  // implicit previous value: all-zero
+                    wide_state[sig_id] = words;
+                }
             }
         }
         results.emplace_back(deltas[i].timestamp, local_hd);
@@ -145,6 +187,15 @@ Result HammingOps::hamming_distance_scope(const std::string& scope_prefix) const
         if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
 
+    // See hamming_distance_all() for the wide-signal (>64-bit) handling too.
+    std::unordered_map<uint32_t, std::vector<uint64_t>> wide_state;
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        if (sig_id_to_idx.count(sid)) wide_state[sid] = words;
+    }
+    for (const auto& [sig_id, words] : deltas[0].wide_changes) {
+        if (sig_id_to_idx.count(sig_id)) wide_state[sig_id] = words;
+    }
+
     // See hamming_distance_all() for why this only touches changed signals.
     for (size_t i = 1; i < deltas.size(); i++) {
         int64_t local_hd = 0;
@@ -154,6 +205,18 @@ Result HammingOps::hamming_distance_scope(const std::string& scope_prefix) const
                 size_t idx = it->second;
                 local_hd += popcount64(curr_state[idx] ^ value);
                 curr_state[idx] = value;
+            }
+        }
+        for (const auto& [sig_id, words] : deltas[i].wide_changes) {
+            if (sig_id_to_idx.count(sig_id)) {
+                auto wit = wide_state.find(sig_id);
+                if (wit != wide_state.end()) {
+                    local_hd += popcount_xor_words(wit->second, words);
+                    wit->second = words;
+                } else {
+                    local_hd += popcount_words(words);
+                    wide_state[sig_id] = words;
+                }
             }
         }
         results.emplace_back(deltas[i].timestamp, local_hd);
@@ -189,6 +252,15 @@ Result HammingOps::hamming_weight_all() const {
     }
     int64_t running_weight = calculate_hw(state);  // one full scan, up front only
 
+    // Wide (>64-bit) signals, tracked separately by signal id (see hamming_ops.h).
+    std::unordered_map<uint32_t, std::vector<uint64_t>> wide_state;
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        if (sig_id_to_idx.count(sid)) {
+            running_weight += popcount_words(words);
+            wide_state[sid] = words;
+        }
+    }
+
     // Process each timestamp incrementally: update only the running weight's
     // delta for the specific signals that changed, instead of recomputing
     // popcount over the entire (potentially huge) state vector every
@@ -201,6 +273,18 @@ Result HammingOps::hamming_weight_all() const {
                 running_weight -= popcount64(state[idx]);
                 state[idx] = value;
                 running_weight += popcount64(value);
+            }
+        }
+        for (const auto& [sig_id, words] : deltas[i].wide_changes) {
+            if (sig_id_to_idx.count(sig_id)) {
+                auto wit = wide_state.find(sig_id);
+                if (wit != wide_state.end()) {
+                    running_weight -= popcount_words(wit->second);
+                    wit->second = words;
+                } else {
+                    wide_state[sig_id] = words;
+                }
+                running_weight += popcount_words(wide_state[sig_id]);
             }
         }
 
@@ -232,6 +316,14 @@ Result HammingOps::hamming_weight_scope(const std::string& scope_prefix) const {
     }
     int64_t running_weight = calculate_hw(state);
 
+    std::unordered_map<uint32_t, std::vector<uint64_t>> wide_state;
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        if (sig_id_to_idx.count(sid)) {
+            running_weight += popcount_words(words);
+            wide_state[sid] = words;
+        }
+    }
+
     for (size_t i = 0; i < deltas.size(); i++) {
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
@@ -240,6 +332,18 @@ Result HammingOps::hamming_weight_scope(const std::string& scope_prefix) const {
                 running_weight -= popcount64(state[idx]);
                 state[idx] = value;
                 running_weight += popcount64(value);
+            }
+        }
+        for (const auto& [sig_id, words] : deltas[i].wide_changes) {
+            if (sig_id_to_idx.count(sig_id)) {
+                auto wit = wide_state.find(sig_id);
+                if (wit != wide_state.end()) {
+                    running_weight -= popcount_words(wit->second);
+                    wit->second = words;
+                } else {
+                    wide_state[sig_id] = words;
+                }
+                running_weight += popcount_words(wide_state[sig_id]);
             }
         }
         results.emplace_back(deltas[i].timestamp, running_weight);
@@ -275,6 +379,15 @@ Result HammingOps::hamming_distance_signals(const std::vector<std::string>& sign
         if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
 
+    // See hamming_distance_all() for the wide-signal (>64-bit) handling too.
+    std::unordered_map<uint32_t, std::vector<uint64_t>> wide_state;
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        if (sig_id_to_idx.count(sid)) wide_state[sid] = words;
+    }
+    for (const auto& [sig_id, words] : deltas[0].wide_changes) {
+        if (sig_id_to_idx.count(sig_id)) wide_state[sig_id] = words;
+    }
+
     // See hamming_distance_all() for why this only touches changed signals.
     for (size_t i = 1; i < deltas.size(); i++) {
         int64_t local_hd = 0;
@@ -284,6 +397,18 @@ Result HammingOps::hamming_distance_signals(const std::vector<std::string>& sign
                 size_t idx = it->second;
                 local_hd += popcount64(curr_state[idx] ^ value);
                 curr_state[idx] = value;
+            }
+        }
+        for (const auto& [sig_id, words] : deltas[i].wide_changes) {
+            if (sig_id_to_idx.count(sig_id)) {
+                auto wit = wide_state.find(sig_id);
+                if (wit != wide_state.end()) {
+                    local_hd += popcount_xor_words(wit->second, words);
+                    wit->second = words;
+                } else {
+                    local_hd += popcount_words(words);
+                    wide_state[sig_id] = words;
+                }
             }
         }
         results.emplace_back(deltas[i].timestamp, local_hd);
@@ -314,6 +439,14 @@ Result HammingOps::hamming_weight_signals(const std::vector<std::string>& signal
     }
     int64_t running_weight = calculate_hw(state);
 
+    std::unordered_map<uint32_t, std::vector<uint64_t>> wide_state;
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        if (sig_id_to_idx.count(sid)) {
+            running_weight += popcount_words(words);
+            wide_state[sid] = words;
+        }
+    }
+
     for (size_t i = 0; i < deltas.size(); i++) {
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
@@ -322,6 +455,18 @@ Result HammingOps::hamming_weight_signals(const std::vector<std::string>& signal
                 running_weight -= popcount64(state[idx]);
                 state[idx] = value;
                 running_weight += popcount64(value);
+            }
+        }
+        for (const auto& [sig_id, words] : deltas[i].wide_changes) {
+            if (sig_id_to_idx.count(sig_id)) {
+                auto wit = wide_state.find(sig_id);
+                if (wit != wide_state.end()) {
+                    running_weight -= popcount_words(wit->second);
+                    wit->second = words;
+                } else {
+                    wide_state[sig_id] = words;
+                }
+                running_weight += popcount_words(wide_state[sig_id]);
             }
         }
         results.emplace_back(deltas[i].timestamp, running_weight);
@@ -343,11 +488,28 @@ ValueRows HammingOps::values_signals(const std::vector<std::string>& signal_name
         id_to_idx.emplace(signal_ids[i], i);
     }
 
+    // Warn about signals >64 bits wide: ValueRows' int64_t column can't hold
+    // their full value, so (unlike Hamming Weight/Distance, which use the
+    // exact multi-word DeltaTimestamp::wide_changes path) rows for these
+    // signals below are truncated to the low 64 bits.
+    size_t wide_count = 0;
+    for (uint32_t id : signal_ids) {
+        if (parser_.is_wide_signal(id)) ++wide_count;
+    }
+    if (wide_count > 0) {
+        std::cerr << "WARNING: " << wide_count << " requested signal(s) wider than 64 bits "
+                  << "will be truncated to their low 64 bits in raw value output.\n";
+    }
+
     // Initial values at t=0 for tracked signals.
     const auto& init = parser_.get_initial_values();
     for (const auto& [sid, val] : init) {
         auto it = id_to_idx.find(sid);
         if (it != id_to_idx.end()) rows.emplace_back(0, it->second, val);
+    }
+    for (const auto& [sid, words] : parser_.get_initial_wide_values()) {
+        auto it = id_to_idx.find(sid);
+        if (it != id_to_idx.end()) rows.emplace_back(0, it->second, words.empty() ? 0 : static_cast<int64_t>(words[0]));
     }
 
     // One row per change of a tracked signal (the actual decoded value).
@@ -356,6 +518,11 @@ ValueRows HammingOps::values_signals(const std::vector<std::string>& signal_name
         for (const auto& [sig_id, value] : d.changes) {
             auto it = id_to_idx.find(sig_id);
             if (it != id_to_idx.end()) rows.emplace_back(d.timestamp, it->second, value);
+        }
+        for (const auto& [sig_id, words] : d.wide_changes) {
+            auto it = id_to_idx.find(sig_id);
+            if (it != id_to_idx.end())
+                rows.emplace_back(d.timestamp, it->second, words.empty() ? 0 : static_cast<int64_t>(words[0]));
         }
     }
     return rows;

@@ -71,16 +71,23 @@ public:
     }
 
     /**
-     * Calculate Hamming distance between two binary strings
+     * Calculate Hamming distance between two binary strings.
+     * Compares by set-bit-ness (only '1' counts as set), not raw character
+     * equality: a literal '!=' would count every 'x'-vs-'0' position as a
+     * difference, even though 'x'/'z' are treated as an unset bit everywhere
+     * else in this file (count_ones() above) and in WAL++'s Fast Mode -- that
+     * mismatch previously produced a spurious full-width distance spike on
+     * every wide signal's first resolve from its initial all-x value to a
+     * concrete one (the common reset-then-load case).
      */
     static int hamming_distance(const std::string& s1, const std::string& s2) {
         size_t max_len = std::max(s1.length(), s2.length());
         std::string padded1 = pad_to_length(s1, max_len);
         std::string padded2 = pad_to_length(s2, max_len);
-        
+
         int distance = 0;
         for (size_t i = 0; i < max_len; ++i) {
-            if (padded1[i] != padded2[i]) {
+            if ((padded1[i] == '1') != (padded2[i] == '1')) {
                 distance++;
             }
         }
@@ -270,11 +277,39 @@ public:
                     const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
 
                     if (num_steps > 0) {
-                        // Rolling state: current integer value per identifier
+                        // Rolling state, split by representation for speed on the
+                        // common (int-typed, <=64-bit) case: current_state for
+                        // ints, current_str_state for signals too wide for
+                        // int64_t (see VCDTrace::parse_bit_value).
+                        //
+                        // A single identifier can flip between the two across
+                        // timestamps: parse_bit_value types a value by how many
+                        // bits were written on *that* VCD line, not by the
+                        // signal's declared width, and VCD is allowed to omit
+                        // leading zeros -- so the same wide signal can show up
+                        // int-typed on a line where its value happens to fit in
+                        // 64 bits. Looking a changed value up in only its own
+                        // type's map and treating a miss as "previously zero"
+                        // (as a first, simpler fix here did) silently overcounts
+                        // distance at exactly those crossover timestamps. The
+                        // int64_to_bits fallback below handles that crossover
+                        // correctly at the (rare) cost of one string conversion,
+                        // without giving up the int/int fast path otherwise.
                         std::unordered_map<std::string, int64_t> current_state;
+                        std::unordered_map<std::string, std::string> current_str_state;
                         for (const auto& [id, val] : vcd_trace->get_initial_values()) {
                             if (val.is_int()) current_state[id] = val.to_int();
+                            else if (val.is_string()) current_str_state[id] = val.to_string();
                         }
+
+                        auto int64_to_bits = [](int64_t v) {
+                            std::string bits(64, '0');
+                            uint64_t u = static_cast<uint64_t>(v);
+                            for (int i = 0; i < 64; ++i) {
+                                if (u & (uint64_t(1) << i)) bits[63 - i] = '1';
+                            }
+                            return bits;
+                        };
 
                         for (size_t idx = 0; idx < num_steps; ++idx) {
                             const auto& ts = time_steps[idx];
@@ -283,14 +318,31 @@ public:
                                 // Distance = XOR over changed signals only
                                 int64_t total_distance = 0;
                                 for (const auto& [id, new_val] : ts.signal_values) {
-                                    if (!new_val.is_int()) continue;
-                                    int64_t new_int = new_val.to_int();
-                                    auto old_it = current_state.find(id);
-                                    int64_t old_int = (old_it != current_state.end())
-                                                      ? old_it->second : 0;
-                                    uint64_t diff = static_cast<uint64_t>(new_int) ^
-                                                    static_cast<uint64_t>(old_int);
-                                    total_distance += __builtin_popcountll(diff);
+                                    if (new_val.is_int()) {
+                                        int64_t new_int = new_val.to_int();
+                                        auto old_it = current_state.find(id);
+                                        if (old_it != current_state.end()) {
+                                            uint64_t diff = static_cast<uint64_t>(new_int) ^
+                                                            static_cast<uint64_t>(old_it->second);
+                                            total_distance += __builtin_popcountll(diff);
+                                        } else {
+                                            auto old_str_it = current_str_state.find(id);
+                                            total_distance += (old_str_it != current_str_state.end())
+                                                ? hamming_distance(old_str_it->second, int64_to_bits(new_int))
+                                                : __builtin_popcountll(static_cast<uint64_t>(new_int));
+                                        }
+                                    } else if (new_val.is_string()) {
+                                        const std::string& new_str = new_val.to_string();
+                                        auto old_it = current_str_state.find(id);
+                                        if (old_it != current_str_state.end()) {
+                                            total_distance += hamming_distance(old_it->second, new_str);
+                                        } else {
+                                            auto old_int_it = current_state.find(id);
+                                            total_distance += (old_int_it != current_state.end())
+                                                ? hamming_distance(int64_to_bits(old_int_it->second), new_str)
+                                                : count_ones(new_str);
+                                        }
+                                    }
                                 }
 
                                 auto result_tuple = std::make_shared<WList>();
@@ -299,9 +351,18 @@ public:
                                 results.push_back(Value(result_tuple));
                             }
 
-                            // Apply changes to rolling state AFTER computing distance
+                            // Apply changes to rolling state AFTER computing distance.
+                            // A signal that changed representation this step moves
+                            // fully to the new map so a stale entry in the old one
+                            // can't be mistaken for "still current" later.
                             for (const auto& [id, new_val] : ts.signal_values) {
-                                if (new_val.is_int()) current_state[id] = new_val.to_int();
+                                if (new_val.is_int()) {
+                                    current_state[id] = new_val.to_int();
+                                    current_str_state.erase(id);
+                                } else if (new_val.is_string()) {
+                                    current_str_state[id] = new_val.to_string();
+                                    current_state.erase(id);
+                                }
                             }
                         }
                     }
@@ -435,32 +496,43 @@ public:
                         }
                     }
 
+                    // Running weight of the *entire* current scoped state,
+                    // seeded from $dumpvars and updated incrementally -- see
+                    // hamming-weight-all-signals-all-timestamps. Weight is a
+                    // property of the whole state, not just the signals that
+                    // happen to change a given timestep, so it must be
+                    // accumulated across timestamps rather than recomputed
+                    // from only ts.signal_values each time (what this used to
+                    // do, which is really a per-step delta, not a weight).
+                    std::unordered_map<std::string, Value> current_state;
+                    int64_t running_hw = 0;
+                    for (const auto& [id, val] : vcd_trace->get_initial_values()) {
+                        if (!scoped_identifiers.count(id)) continue;
+                        current_state[id] = val;
+                        if (val.is_int()) running_hw += __builtin_popcountll(static_cast<uint64_t>(val.to_int()));
+                        else if (val.is_string()) running_hw += count_ones(val.to_string());
+                    }
+
                     for (size_t idx = 0; idx < num_steps; ++idx) {
                         const auto& ts = time_steps[idx];
-                        int64_t total_hamming_weight = 0;
 
-                        for (const auto& [identifier, value] : ts.signal_values) {
-                            // Only count if this identifier is in our scoped set
-                            if (scoped_identifiers.find(identifier) == scoped_identifiers.end()) {
-                                continue;
-                            }
+                        for (const auto& [identifier, new_val] : ts.signal_values) {
+                            if (!scoped_identifiers.count(identifier)) continue;
 
-                            if (value.is_int()) {
-                                int64_t val = value.to_int();
-                                if (val > 0) {
-                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
-                                } else if (val < 0) {
-                                    total_hamming_weight += __builtin_popcountll(static_cast<uint64_t>(val));
-                                }
-                            } else if (value.is_string()) {
-                                const std::string& str = value.to_string();
-                                total_hamming_weight += count_ones(str);
+                            auto old_it = current_state.find(identifier);
+                            if (old_it != current_state.end()) {
+                                const Value& old_val = old_it->second;
+                                if (old_val.is_int()) running_hw -= __builtin_popcountll(static_cast<uint64_t>(old_val.to_int()));
+                                else if (old_val.is_string()) running_hw -= count_ones(old_val.to_string());
                             }
+                            if (new_val.is_int()) running_hw += __builtin_popcountll(static_cast<uint64_t>(new_val.to_int()));
+                            else if (new_val.is_string()) running_hw += count_ones(new_val.to_string());
+                            current_state[identifier] = new_val;
                         }
 
                         auto result_tuple = std::make_shared<WList>();
                         result_tuple->push_back(Value(ts.timestamp));
-                        result_tuple->push_back(Value(total_hamming_weight));
+                        result_tuple->push_back(Value(running_hw));
                         results.push_back(Value(result_tuple));
                     }
                 } else {
@@ -530,40 +602,45 @@ public:
                     throw EvalError("hamming-distance-scope: could not access trace");
                 }
 
-                // Create a new filtered VCD trace with parse-time filtering
                 auto vcd_trace = std::dynamic_pointer_cast<VCDTrace>(trace);
                 if (!vcd_trace) {
                     throw EvalError("hamming-distance-scope: only VCD traces are currently supported");
                 }
 
-                // Create a new VCD trace with scope filter
-                auto filtered_trace = std::make_shared<VCDTrace>(
-                    "filtered_" + trace_ids[0],
-                    vcd_trace->get_filename(),
-                    trace_container,
-                    scope_prefix  // This triggers parse-time filtering!
-                );
-                filtered_trace->load();
-
-                // Check if any signals were loaded
-                auto filtered_signals = filtered_trace->get_all_signals();
-                if (filtered_signals.empty()) {
-                    throw EvalError("hamming-distance-scope: no signals found with scope prefix '" 
+                // Filter the already-loaded main trace's signals by scope
+                // prefix -- same approach as hamming-weight-scope, and the
+                // same data hamming-distance-all-signals-all-timestamps uses
+                // unfiltered. A second, independently re-parsed VCDTrace
+                // (scope_filter passed at construction) used to be built
+                // here instead; that path produced wrong results for wide
+                // (>64-bit) signals in scope for reasons not fully isolated,
+                // so this now reuses the one trace/parse already verified
+                // correct rather than trusting a second one.
+                auto all_signals = trace->get_all_signals();
+                std::vector<std::string> scoped_signals;
+                for (const auto& signal : all_signals) {
+                    if (signal.length() >= scope_prefix.length() &&
+                        signal.substr(0, scope_prefix.length()) == scope_prefix) {
+                        scoped_signals.push_back(signal);
+                    }
+                }
+                if (scoped_signals.empty()) {
+                    throw EvalError("hamming-distance-scope: no signals found with scope prefix '"
                         + scope_prefix + "'");
                 }
 
-                int max_index = filtered_trace->get_max_index();
+                int max_index = vcd_trace->get_max_index();
                 std::vector<Value> results;
                 results.reserve(max_index);
 
-                const auto& time_steps = filtered_trace->get_time_steps();
-                const auto& signal_info = filtered_trace->get_signal_info();
+                const auto& time_steps = vcd_trace->get_time_steps();
+                const auto& signal_info = vcd_trace->get_signal_info();
                 const size_t num_steps = std::min(static_cast<size_t>(max_index + 1), time_steps.size());
 
-                // Build vector of identifiers for all loaded signals (already filtered!)
+                // Build vector of identifiers for the scoped signals
                 std::vector<std::string> identifiers;
-                identifiers.reserve(filtered_signals.size());
-                for (const auto& sig_name : filtered_signals) {
+                identifiers.reserve(scoped_signals.size());
+                for (const auto& sig_name : scoped_signals) {
                     auto it = signal_info.find(sig_name);
                     if (it != signal_info.end()) {
                         identifiers.push_back(it->second.identifier);
@@ -571,71 +648,110 @@ public:
                 }
 
                 if (num_steps > 0 && !identifiers.empty()) {
-                    // Sequential HD calculation
+                    // Rolling state persists across timestamps -- see
+                    // hamming-distance-all-signals-all-timestamps for why
+                    // rebuilding it fresh each iteration (as this used to,
+                    // via std::move(curr_*) below) is wrong: any identifier
+                    // that goes even one timestamp without changing was
+                    // dropped from prev_*_values and then miscounted as
+                    // brand new next time it changed, overcounting distance.
+                    // Also seeded from $dumpvars up front, for the same
+                    // reason: without it, a signal only ever seen at t=0
+                    // that first appears in identifiers' delta stream much
+                    // later would be missing a real previous value too.
+                    //
+                    // Split by representation (int vs. string) purely for
+                    // speed on the common <=64-bit case; a signal can flip
+                    // representation across timestamps (VCD omits leading
+                    // zeros, and VCDTrace types a value by how many bits were
+                    // written on that line, not the signal's declared width),
+                    // so a miss in one map falls back to the other rather
+                    // than assuming "previously zero".
                     std::unordered_map<std::string, int64_t> prev_int_values;
                     std::unordered_map<std::string, std::string> prev_str_values;
                     prev_int_values.reserve(identifiers.size());
                     prev_str_values.reserve(identifiers.size());
 
+                    std::unordered_set<std::string> scoped_ids(identifiers.begin(), identifiers.end());
+                    for (const auto& [id, val] : vcd_trace->get_initial_values()) {
+                        if (!scoped_ids.count(id)) continue;
+                        if (val.is_int()) prev_int_values[id] = val.to_int();
+                        else if (val.is_string()) prev_str_values[id] = val.to_string();
+                    }
+
+                    auto int64_to_bits = [](int64_t v) {
+                        std::string bits(64, '0');
+                        uint64_t u = static_cast<uint64_t>(v);
+                        for (int i = 0; i < 64; ++i) {
+                            if (u & (uint64_t(1) << i)) bits[63 - i] = '1';
+                        }
+                        return bits;
+                    };
+
                     for (size_t idx = 0; idx < num_steps; ++idx) {
                         const auto& ts = time_steps[idx];
-                        int64_t total_distance = 0;
 
-                        std::unordered_map<std::string, int64_t> curr_int_values;
-                        std::unordered_map<std::string, std::string> curr_str_values;
-                        curr_int_values.reserve(identifiers.size());
-                        curr_str_values.reserve(identifiers.size());
+                        if (idx > 0) {
+                            int64_t total_distance = 0;
 
-                        // Iterate only the filtered identifiers
-                        for (const auto& identifier : identifiers) {
-                            auto value_it = ts.signal_values.find(identifier);
-                            if (value_it == ts.signal_values.end()) {
-                                continue;
-                            }
-                            
-                            const auto& value = value_it->second;
+                            // Iterate ts.signal_values (unique per identifier)
+                            // filtered by scope membership, not the
+                            // `identifiers` vector: many signal *names* can
+                            // alias the same VCD identifier (routine in
+                            // gate-level netlists), so identifiers can contain
+                            // the same id more than once, and looking each one
+                            // up in ts.signal_values re-added that one real
+                            // change's distance once per alias -- see
+                            // hamming-weight-scope, which avoids this the same
+                            // way.
+                            for (const auto& [identifier, value] : ts.signal_values) {
+                                if (!scoped_ids.count(identifier)) continue;
 
-                            if (value.is_int()) {
-                                int64_t curr_val = value.to_int();
-                                curr_int_values[identifier] = curr_val;
-
-                                if (idx > 0) {
+                                if (value.is_int()) {
+                                    int64_t curr_val = value.to_int();
                                     auto prev_it = prev_int_values.find(identifier);
                                     if (prev_it != prev_int_values.end()) {
                                         uint64_t diff = static_cast<uint64_t>(curr_val) ^ static_cast<uint64_t>(prev_it->second);
                                         total_distance += __builtin_popcountll(diff);
                                     } else {
-                                        if (curr_val > 0) {
-                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
-                                        } else if (curr_val < 0) {
-                                            total_distance += __builtin_popcountll(static_cast<uint64_t>(curr_val));
-                                        }
+                                        auto prev_str_it = prev_str_values.find(identifier);
+                                        total_distance += (prev_str_it != prev_str_values.end())
+                                            ? hamming_distance(prev_str_it->second, int64_to_bits(curr_val))
+                                            : __builtin_popcountll(static_cast<uint64_t>(curr_val));
                                     }
-                                }
-                            } else if (value.is_string()) {
-                                const std::string& curr_str = value.to_string();
-                                curr_str_values[identifier] = curr_str;
-
-                                if (idx > 0) {
+                                } else if (value.is_string()) {
+                                    const std::string& curr_str = value.to_string();
                                     auto prev_it = prev_str_values.find(identifier);
                                     if (prev_it != prev_str_values.end()) {
                                         total_distance += hamming_distance(prev_it->second, curr_str);
                                     } else {
-                                        total_distance += count_ones(curr_str);
+                                        auto prev_int_it = prev_int_values.find(identifier);
+                                        total_distance += (prev_int_it != prev_int_values.end())
+                                            ? hamming_distance(int64_to_bits(prev_int_it->second), curr_str)
+                                            : count_ones(curr_str);
                                     }
                                 }
                             }
-                        }
 
-                        if (idx > 0) {
                             auto result_tuple = std::make_shared<WList>();
                             result_tuple->push_back(Value(ts.timestamp));
                             result_tuple->push_back(Value(total_distance));
                             results.push_back(Value(result_tuple));
                         }
 
-                        prev_int_values = std::move(curr_int_values);
-                        prev_str_values = std::move(curr_str_values);
+                        // Apply this timestep's changes to state AFTER computing
+                        // distance (or unconditionally for idx==0, which only
+                        // completes the initial state alongside the $dumpvars seed).
+                        for (const auto& [identifier, value] : ts.signal_values) {
+                            if (!scoped_ids.count(identifier)) continue;
+                            if (value.is_int()) {
+                                prev_int_values[identifier] = value.to_int();
+                                prev_str_values.erase(identifier);
+                            } else if (value.is_string()) {
+                                prev_str_values[identifier] = value.to_string();
+                                prev_int_values.erase(identifier);
+                            }
+                        }
                     }
                 }
 

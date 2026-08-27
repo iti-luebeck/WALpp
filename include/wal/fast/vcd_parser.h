@@ -24,8 +24,14 @@ struct SignalInfo {
  */
 struct DeltaTimestamp {
     int64_t timestamp;
-    std::vector<std::pair<uint32_t, int64_t>> changes;  // (signal_id, new_value)
-    
+    std::vector<std::pair<uint32_t, int64_t>> changes;  // (signal_id, new_value), signals <=64 bits wide
+
+    // Signals >64 bits wide, stored as fixed-size word vectors (low word
+    // first) since a single int64_t can't hold their full value. Kept in a
+    // separate vector so the hot (>=99% of signals) narrow path above is
+    // completely unaffected in layout, size, or iteration cost.
+    std::vector<std::pair<uint32_t, std::vector<uint64_t>>> wide_changes;
+
     DeltaTimestamp() = default;
     DeltaTimestamp(int64_t ts) : timestamp(ts) {}
 };
@@ -75,11 +81,27 @@ public:
     /**
      * @brief Get initial signal values from $dumpvars / FST time-0 callback
      * Maps signal_id -> initial value. Signals absent have implicit value 0.
+     * Only covers signals <=64 bits wide; see get_initial_wide_values() for wider ones.
      */
     const std::unordered_map<uint32_t, int64_t>& get_initial_values() const {
         return initial_values_;
     }
-    
+
+    /**
+     * @brief Get initial values for signals >64 bits wide (see get_initial_values()).
+     * Maps signal_id -> word vector (low word first).
+     */
+    const std::unordered_map<uint32_t, std::vector<uint64_t>>& get_initial_wide_values() const {
+        return initial_wide_values_;
+    }
+
+    /**
+     * @brief Whether a signal's declared width exceeds 64 bits (see DeltaTimestamp::wide_changes).
+     */
+    bool is_wide_signal(uint32_t signal_id) const {
+        return signals_[signal_id].width > 64;
+    }
+
     /**
      * @brief Get number of signals
      */
@@ -113,25 +135,14 @@ private:
     void parse_header(const char* data, const char* end, size_t& pos);
     void parse_data(const char* data, const char* end, size_t& pos);
 
-    // DeltaTimestamp::changes stores values as a fixed int64_t for cache-friendly
-    // delta encoding (the whole point of Fast Mode). Signals wider than 64 bits
-    // are silently truncated to their low 64 bits by the bit-accumulation loops
-    // in vcd_parser.cpp -- this can't be fixed without widening that core data
-    // structure (a bigger change than a bugfix), so instead we detect it and
-    // warn once per parse rather than returning silently-wrong values. Raw/
-    // interpreted mode (VCDTrace::parse_bit_value) handles arbitrary widths
-    // correctly via string-valued Values and should be used instead when a
-    // design has signals wider than 64 bits.
-    void warn_if_wide_signals();
-    bool warned_wide_signal_truncation_ = false;
-
     std::string timescale_ = "1ns";             // From $timescale / FST metadata
     std::vector<SignalInfo> signals_;           // All signal metadata
     std::vector<uint32_t> signal_ids_;          // Active signal IDs (after filtering)
     std::unordered_map<std::string, uint32_t> vcd_id_to_signal_;  // VCD ID -> signal ID
     std::vector<DeltaTimestamp> deltas_;        // Delta-encoded timestamps
     std::unordered_set<std::string> filtered_vcd_ids_;  // VCD IDs to keep (if filtered)
-    std::unordered_map<uint32_t, int64_t> initial_values_;  // signal_id -> value at t=0
+    std::unordered_map<uint32_t, int64_t> initial_values_;  // signal_id -> value at t=0 (<=64 bits)
+    std::unordered_map<uint32_t, std::vector<uint64_t>> initial_wide_values_;  // signal_id -> words at t=0 (>64 bits)
 
     uint32_t next_signal_id_ = 0;
 };
