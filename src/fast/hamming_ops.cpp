@@ -45,7 +45,7 @@ int64_t HammingOps::calculate_hd(
 
 int64_t HammingOps::calculate_hw(const std::vector<int64_t>& state) const {
     int64_t weight = 0;
-    
+
     for (const auto& value : state) {
         if (value > 0) {
             weight += __builtin_popcountll(static_cast<uint64_t>(value));
@@ -53,9 +53,15 @@ int64_t HammingOps::calculate_hw(const std::vector<int64_t>& state) const {
             weight += __builtin_popcountll(static_cast<uint64_t>(value));
         }
     }
-    
+
     return weight;
 }
+
+namespace {
+inline int64_t popcount64(int64_t v) {
+    return __builtin_popcountll(static_cast<uint64_t>(v));
+}
+}  // namespace
 
 Result HammingOps::hamming_distance_all() const {
     const auto& signal_ids = parser_.get_signal_ids();
@@ -90,19 +96,23 @@ Result HammingOps::hamming_distance_all() const {
         auto it = sig_id_to_idx.find(sig_id);
         if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
-    std::vector<int64_t> prev_state = curr_state;
 
-    // Emit HD from delta[1] onward
+    // Emit HD from delta[1] onward. Unchanged signals contribute popcount(0)=0
+    // to the XOR-based distance regardless, so only the signals actually
+    // touched by this timestamp's delta need to be diffed -- no need to scan
+    // (or copy) the full state vector per timestamp, which is what made this
+    // O(timestamps * scope_size) before instead of O(timestamps * changes).
     for (size_t i = 1; i < deltas.size(); i++) {
+        int64_t local_hd = 0;
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
             if (it != sig_id_to_idx.end()) {
-                curr_state[it->second] = value;
+                size_t idx = it->second;
+                local_hd += popcount64(curr_state[idx] ^ value);
+                curr_state[idx] = value;
             }
         }
-
-        results.emplace_back(deltas[i].timestamp, calculate_hd(prev_state, curr_state));
-        prev_state = curr_state;
+        results.emplace_back(deltas[i].timestamp, local_hd);
     }
 
     return results;
@@ -134,15 +144,19 @@ Result HammingOps::hamming_distance_scope(const std::string& scope_prefix) const
         auto it = sig_id_to_idx.find(sig_id);
         if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
-    std::vector<int64_t> prev_state = curr_state;
 
+    // See hamming_distance_all() for why this only touches changed signals.
     for (size_t i = 1; i < deltas.size(); i++) {
+        int64_t local_hd = 0;
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
+            if (it != sig_id_to_idx.end()) {
+                size_t idx = it->second;
+                local_hd += popcount64(curr_state[idx] ^ value);
+                curr_state[idx] = value;
+            }
         }
-        results.emplace_back(deltas[i].timestamp, calculate_hd(prev_state, curr_state));
-        prev_state = curr_state;
+        results.emplace_back(deltas[i].timestamp, local_hd);
     }
 
     return results;
@@ -173,17 +187,24 @@ Result HammingOps::hamming_weight_all() const {
         auto it = sig_id_to_idx.find(sid);
         if (it != sig_id_to_idx.end()) state[it->second] = val;
     }
+    int64_t running_weight = calculate_hw(state);  // one full scan, up front only
 
-    // Process each timestamp incrementally
+    // Process each timestamp incrementally: update only the running weight's
+    // delta for the specific signals that changed, instead of recomputing
+    // popcount over the entire (potentially huge) state vector every
+    // timestamp -- this was the O(timestamps * scope_size) hot spot.
     for (size_t i = 0; i < deltas.size(); i++) {
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
             if (it != sig_id_to_idx.end()) {
-                state[it->second] = value;
+                size_t idx = it->second;
+                running_weight -= popcount64(state[idx]);
+                state[idx] = value;
+                running_weight += popcount64(value);
             }
         }
 
-        results.emplace_back(deltas[i].timestamp, calculate_hw(state));
+        results.emplace_back(deltas[i].timestamp, running_weight);
     }
 
     return results;
@@ -209,13 +230,19 @@ Result HammingOps::hamming_weight_scope(const std::string& scope_prefix) const {
         auto it = sig_id_to_idx.find(sid);
         if (it != sig_id_to_idx.end()) state[it->second] = val;
     }
+    int64_t running_weight = calculate_hw(state);
 
     for (size_t i = 0; i < deltas.size(); i++) {
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) state[it->second] = value;
+            if (it != sig_id_to_idx.end()) {
+                size_t idx = it->second;
+                running_weight -= popcount64(state[idx]);
+                state[idx] = value;
+                running_weight += popcount64(value);
+            }
         }
-        results.emplace_back(deltas[i].timestamp, calculate_hw(state));
+        results.emplace_back(deltas[i].timestamp, running_weight);
     }
 
     return results;
@@ -247,15 +274,19 @@ Result HammingOps::hamming_distance_signals(const std::vector<std::string>& sign
         auto it = sig_id_to_idx.find(sig_id);
         if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
     }
-    std::vector<int64_t> prev_state = curr_state;
 
+    // See hamming_distance_all() for why this only touches changed signals.
     for (size_t i = 1; i < deltas.size(); i++) {
+        int64_t local_hd = 0;
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) curr_state[it->second] = value;
+            if (it != sig_id_to_idx.end()) {
+                size_t idx = it->second;
+                local_hd += popcount64(curr_state[idx] ^ value);
+                curr_state[idx] = value;
+            }
         }
-        results.emplace_back(deltas[i].timestamp, calculate_hd(prev_state, curr_state));
-        prev_state = curr_state;
+        results.emplace_back(deltas[i].timestamp, local_hd);
     }
 
     return results;
@@ -281,13 +312,19 @@ Result HammingOps::hamming_weight_signals(const std::vector<std::string>& signal
         auto it = sig_id_to_idx.find(sid);
         if (it != sig_id_to_idx.end()) state[it->second] = val;
     }
+    int64_t running_weight = calculate_hw(state);
 
     for (size_t i = 0; i < deltas.size(); i++) {
         for (const auto& [sig_id, value] : deltas[i].changes) {
             auto it = sig_id_to_idx.find(sig_id);
-            if (it != sig_id_to_idx.end()) state[it->second] = value;
+            if (it != sig_id_to_idx.end()) {
+                size_t idx = it->second;
+                running_weight -= popcount64(state[idx]);
+                state[idx] = value;
+                running_weight += popcount64(value);
+            }
         }
-        results.emplace_back(deltas[i].timestamp, calculate_hw(state));
+        results.emplace_back(deltas[i].timestamp, running_weight);
     }
 
     return results;
