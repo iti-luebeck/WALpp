@@ -5,8 +5,9 @@ Python Bindings Test Suite for WAL++
 Tests the pybind11 Python module for WAL++
 """
 
+import os
 import sys
-sys.path.insert(0, '/Users/rmeyer/Projects/walpp/build/lib')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'build', 'lib'))
 
 try:
     import wal_cpp as wal

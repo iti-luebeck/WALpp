@@ -79,7 +79,7 @@ npm install -g @mermaid-js/mermaid-cli
 
 ### Generate
 ```bash
-cd /Users/rmeyer/Projects/walpp
+cd walpp  # repository root
 doxygen Doxyfile
 ```
 
@@ -172,7 +172,7 @@ The generated HTML documentation includes:
 ### "Doxyfile not found"
 Run from project root:
 ```bash
-cd /Users/rmeyer/Projects/walpp
+cd walpp  # repository root
 doxygen Doxyfile
 ```
 
