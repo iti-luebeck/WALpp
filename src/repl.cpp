@@ -8,8 +8,12 @@
 #include <cstring>
 #include <unistd.h>
 #include <cstdio>
-#include <readline/readline.h>
-#include <readline/history.h>
+#include <iostream>
+
+#ifdef WAL_HAVE_LIBEDIT
+// libedit's readline-compatible API (BSD-3-Clause), not GNU Readline (GPL)
+#include <editline/readline.h>
+#endif
 
 namespace wal {
 
@@ -77,6 +81,7 @@ bool REPL::load_file(const std::string& filename) {
     }
 }
 
+#ifdef WAL_HAVE_LIBEDIT
 std::string REPL::read_input(const std::string& prompt) {
     char* line = readline(prompt.c_str());
     if (!line) {
@@ -94,6 +99,19 @@ std::string REPL::read_input(const std::string& prompt) {
     
     return input;
 }
+#else
+// Fallback without libedit: plain line input, no editing or history recall
+std::string REPL::read_input(const std::string& prompt) {
+    std::cout << prompt << std::flush;
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        // EOF reached
+        running = false;
+        return "";
+    }
+    return input;
+}
+#endif
 
 void REPL::print_output(const Value& result) {
     // Skip printing nil values (commonly returned by print function)
@@ -207,7 +225,9 @@ void REPL::load_history() {
         while (std::getline(file, line)) {
             if (!line.empty()) {
                 history.push_back(line);
+#ifdef WAL_HAVE_LIBEDIT
                 add_history(line.c_str());
+#endif
             }
         }
     }

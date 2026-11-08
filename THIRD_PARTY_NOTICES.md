@@ -82,5 +82,5 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 These are fetched or found at build time and are not part of this repository:
 [pybind11](https://github.com/pybind/pybind11) (BSD 3-Clause, Python bindings),
-zlib, GNU Readline (GPL-3.0; optional, used only by the interactive REPL when found),
+zlib, libedit (BSD-3-Clause; optional, line editing in the interactive REPL),
 and for the documentation MkDocs and Material for MkDocs.

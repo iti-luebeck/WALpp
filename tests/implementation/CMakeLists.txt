@@ -67,12 +67,11 @@ add_executable(test_cli
 
 target_link_libraries(test_cli PRIVATE walpp)
 
-# Link readline if available
-if(readline_FOUND)
-    target_link_libraries(test_cli PRIVATE readline::readline)
-elseif(HAVE_READLINE)
-    target_include_directories(test_cli PRIVATE ${READLINE_INCLUDE_DIR})
-    target_link_libraries(test_cli PRIVATE ${READLINE_LIBRARY})
+# REPL line editing via libedit, as for the wal executable
+if(HAVE_LIBEDIT)
+    target_include_directories(test_cli PRIVATE ${LIBEDIT_INCLUDE_DIR})
+    target_link_libraries(test_cli PRIVATE ${LIBEDIT_LIBRARY})
+    target_compile_definitions(test_cli PRIVATE WAL_HAVE_LIBEDIT)
 endif()
 
 add_test(
@@ -90,12 +89,11 @@ add_executable(test_trace_integration_cli
 
 target_link_libraries(test_trace_integration_cli PRIVATE walpp Threads::Threads)
 
-# Link readline if available
-if(readline_FOUND)
-    target_link_libraries(test_trace_integration_cli PRIVATE readline::readline)
-elseif(HAVE_READLINE)
-    target_include_directories(test_trace_integration_cli PRIVATE ${READLINE_INCLUDE_DIR})
-    target_link_libraries(test_trace_integration_cli PRIVATE ${READLINE_LIBRARY})
+# REPL line editing via libedit, as for the wal executable
+if(HAVE_LIBEDIT)
+    target_include_directories(test_trace_integration_cli PRIVATE ${LIBEDIT_INCLUDE_DIR})
+    target_link_libraries(test_trace_integration_cli PRIVATE ${LIBEDIT_LIBRARY})
+    target_compile_definitions(test_trace_integration_cli PRIVATE WAL_HAVE_LIBEDIT)
 endif()
 
 add_test(

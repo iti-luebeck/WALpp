@@ -148,7 +148,7 @@ If you're familiar with WAL from wal-lang.org, WAL++ provides the same expressiv
 - **CMake** 3.20+
 - **Python** 3.8+ (for Python bindings)
 - **pybind11** (for Python bindings)
-- **Readline** (for interactive REPL)
+- **libedit** (optional, line editing in the interactive REPL; `libedit-dev` on Debian/Ubuntu, built into macOS)
 - **Optional**: pylibfst (for FST format support)
 
 ### Build from Source

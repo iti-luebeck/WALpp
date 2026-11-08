@@ -155,16 +155,23 @@ find_package(Threads REQUIRED)
 target_link_libraries(walpp PRIVATE Threads::Threads)
 
 # ============================================================================
-# Readline support for CLI/REPL
+# Line editing for the REPL: libedit (BSD-3-Clause)
 # ============================================================================
+# GNU Readline is GPL and would make distributed binaries GPL, so the REPL uses
+# libedit's readline-compatible API instead (macOS: part of the system;
+# Debian/Ubuntu: libedit-dev; Fedora/RHEL: libedit-devel). Without libedit the
+# REPL still works, just without line editing and history recall.
 
-find_package(readline QUIET)
-if(NOT readline_FOUND)
-    # Try finding readline manually
-    find_path(READLINE_INCLUDE_DIR readline/readline.h)
-    find_library(READLINE_LIBRARY readline)
-    if(READLINE_INCLUDE_DIR AND READLINE_LIBRARY)
-        set(HAVE_READLINE TRUE)
+option(WITH_LIBEDIT "Use libedit for line editing in the REPL" ON)
+if(WITH_LIBEDIT)
+    find_path(LIBEDIT_INCLUDE_DIR editline/readline.h)
+    find_library(LIBEDIT_LIBRARY edit)
+    if(LIBEDIT_INCLUDE_DIR AND LIBEDIT_LIBRARY)
+        set(HAVE_LIBEDIT TRUE)
+        message(STATUS "REPL line editing: libedit (${LIBEDIT_LIBRARY})")
+    else()
+        message(WARNING "libedit not found: the REPL is built without line editing. "
+                        "Install libedit-dev (Debian/Ubuntu) or libedit-devel (Fedora/RHEL).")
     endif()
 endif()
 
@@ -181,12 +188,10 @@ set(CLI_SOURCES
 add_executable(wal ${CLI_SOURCES})
 target_link_libraries(wal PRIVATE walpp)
 
-# Link readline if available
-if(readline_FOUND)
-    target_link_libraries(wal PRIVATE readline::readline)
-elseif(HAVE_READLINE)
-    target_include_directories(wal PRIVATE ${READLINE_INCLUDE_DIR})
-    target_link_libraries(wal PRIVATE ${READLINE_LIBRARY})
+if(HAVE_LIBEDIT)
+    target_include_directories(wal PRIVATE ${LIBEDIT_INCLUDE_DIR})
+    target_link_libraries(wal PRIVATE ${LIBEDIT_LIBRARY})
+    target_compile_definitions(wal PRIVATE WAL_HAVE_LIBEDIT)
 endif()
 
 
@@ -354,7 +359,7 @@ set(CPACK_SOURCE_IGNORE_FILES
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Rolf Meyer <r.meyer@uni-luebeck.de>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libreadline8, libpython3.10, libstdc++6 (>= 10), zlib1g")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libedit2, libpython3.10, libstdc++6 (>= 10), zlib1g")
 set(CPACK_DEBIAN_PACKAGE_SUGGESTS "python3-pip")
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/cmake/debian/postinst")
@@ -362,7 +367,7 @@ set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/cmake/debian
 # RPM (CentOS/RedHat/Fedora) specific settings
 set(CPACK_RPM_PACKAGE_LICENSE "BSD-3-Clause")
 set(CPACK_RPM_PACKAGE_GROUP "Development/Tools")
-set(CPACK_RPM_PACKAGE_REQUIRES "readline >= 6.0, python3 >= 3.8, zlib")
+set(CPACK_RPM_PACKAGE_REQUIRES "libedit, python3 >= 3.8, zlib")
 set(CPACK_RPM_PACKAGE_SUGGESTS "python3-pip")
 set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
 set(CPACK_RPM_PACKAGE_RELEASE "1")

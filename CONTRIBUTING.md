@@ -24,7 +24,9 @@ ctest --test-dir build --output-on-failure
 ```
 
 Requirements: a C++20 compiler (GCC 10+, Clang 11+),
-CMake 3.20+, zlib. Readline is optional (REPL line editing). For the Python
+CMake 3.20+, zlib. libedit is optional and gives the REPL line editing and
+history (macOS: built in; Debian/Ubuntu: `libedit-dev`; Fedora/RHEL: `libedit-devel`).
+WAL++ deliberately does not use GNU Readline, which is GPL. For the Python
 module add `-DBUILD_PYTHON_MODULE=ON` and install `pybind11`, or build the wheel
 with `python -m build --wheel`.
 

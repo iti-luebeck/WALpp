@@ -14,7 +14,7 @@ build:linux:
   image: gcc:latest
   before_script:
     - apt-get update -qq
-    - apt-get install -y cmake libreadline-dev zlib1g-dev python3-dev python3-pip
+    - apt-get install -y cmake libedit-dev zlib1g-dev python3-dev python3-pip
     - pip3 install --break-system-packages pybind11
   script:
     - mkdir -p ${BUILD_DIR}
@@ -41,7 +41,7 @@ test:linux:
     - build:linux
   before_script:
     - apt-get update -qq
-    - apt-get install -y cmake libreadline-dev zlib1g-dev python3-dev python3-pip
+    - apt-get install -y cmake libedit-dev zlib1g-dev python3-dev python3-pip
     - pip3 install --break-system-packages pybind11
   script:
     - cd ${BUILD_DIR}
@@ -65,7 +65,7 @@ package:ubuntu22:
     - build:linux
   before_script:
     - apt-get update -qq
-    - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev zlib1g-dev python3-dev python3-pip file dpkg-dev
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libedit-dev zlib1g-dev python3-dev python3-pip file dpkg-dev
     - pip3 install pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
@@ -90,7 +90,7 @@ package:ubuntu24:
     - build:linux
   before_script:
     - apt-get update -qq
-    - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev zlib1g-dev python3-dev python3-pip file dpkg-dev
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libedit-dev zlib1g-dev python3-dev python3-pip file dpkg-dev
     - pip3 install --break-system-packages pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
@@ -116,7 +116,7 @@ package:debian12:
     - build:linux
   before_script:
     - apt-get update -qq
-    - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libreadline-dev zlib1g-dev python3-dev python3-pip file dpkg-dev
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y cmake libedit-dev zlib1g-dev python3-dev python3-pip file dpkg-dev
     - pip3 install --break-system-packages pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
@@ -140,8 +140,9 @@ package:centos9:
   dependencies:
     - build:linux
   before_script:
-    - dnf install -y epel-release
-    - dnf install -y cmake gcc-c++ readline-devel zlib-devel python3-devel python3-pip rpm-build file
+    - dnf install -y epel-release dnf-plugins-core
+    - dnf config-manager --set-enabled crb   # libedit-devel lives in CRB
+    - dnf install -y cmake gcc-c++ libedit-devel zlib-devel python3-devel python3-pip rpm-build file
     - pip3 install pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
@@ -165,8 +166,9 @@ package:rocky9:
   dependencies:
     - build:linux
   before_script:
-    - dnf install -y epel-release
-    - dnf install -y cmake gcc-c++ readline-devel zlib-devel python3-devel python3-pip rpm-build file
+    - dnf install -y epel-release dnf-plugins-core
+    - dnf config-manager --set-enabled crb   # libedit-devel lives in CRB
+    - dnf install -y cmake gcc-c++ libedit-devel zlib-devel python3-devel python3-pip rpm-build file
     - pip3 install pybind11
   script:
     - pybind11_DIR=$(pybind11-config --cmakedir) cmake -S . -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DBUILD_PYTHON_MODULE=ON -DENABLE_TESTS=OFF
@@ -189,7 +191,7 @@ wheel:python:
   image: python:3.10-bullseye
   before_script:
     - apt-get update -qq
-    - apt-get install -y --no-install-recommends build-essential cmake ninja-build libreadline-dev zlib1g-dev
+    - apt-get install -y --no-install-recommends build-essential cmake ninja-build libedit-dev zlib1g-dev
     - pip install --no-cache-dir --upgrade pip build scikit-build-core pybind11 ninja cmake
   script:
     - python -m build --wheel --outdir dist
