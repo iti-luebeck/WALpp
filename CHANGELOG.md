@@ -6,7 +6,7 @@ All notable changes to WAL++ are recorded here. The format follows
 
 ## [Unreleased]
 
-## [1.0.0] - TBD
+## [1.2.2] - TBD
 
 First public release.
 

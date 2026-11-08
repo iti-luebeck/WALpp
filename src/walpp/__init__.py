@@ -16,4 +16,4 @@ for name in __all__:
 try:
     from .wal_cpp import __version__  # type: ignore
 except Exception:
-    __version__ = "1.0.0"
+    __version__ = "1.2.2"

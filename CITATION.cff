@@ -17,7 +17,7 @@ authors:
     affiliation: "Institute of Computer Engineering, Universität zu Lübeck"
 repository-code: "https://github.com/iti-luebeck/walpp"
 license: BSD-3-Clause
-version: 1.0.0
+version: 1.2.2
 keywords:
   - waveform analysis
   - VCD
@@ -39,18 +39,3 @@ keywords:
 #   year: 2026
 #   doi: "..."
 
-references:
-  - type: article
-    authors:
-      - family-names: Klemmer
-        given-names: Lucas
-      - family-names: Große
-        given-names: Daniel
-    title: "WAVING Goodbye to Manual Waveform Analysis in HDL Design With WAL"
-    journal: "IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems"
-    year: 2024
-    volume: 43
-    issue: 10
-    start: 3198
-    end: 3211
-    doi: 10.1109/TCAD.2024.3387312

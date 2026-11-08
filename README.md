@@ -1386,24 +1386,9 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and license tex
 
 ## Citing WAL++
 
-If you use WAL++ in your research, please cite it as given in [CITATION.cff](CITATION.cff)
-(GitHub shows it under "Cite this repository"). The traces used in the paper's
-evaluation are in [artifacts/](artifacts/).
-
-Please also cite the original WAL work:
-
-```bibtex
-@article{Klemmer2024WAVING,
-  author  = {Klemmer, Lucas and Gro{\ss}e, Daniel},
-  title   = {{WAVING} Goodbye to Manual Waveform Analysis in {HDL} Design With {WAL}},
-  journal = {IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems},
-  year    = {2024},
-  volume  = {43},
-  number  = {10},
-  pages   = {3198--3211},
-  doi     = {10.1109/TCAD.2024.3387312}
-}
-```
+If you use WAL++ in your research, please cite our paper as given in
+[CITATION.cff](CITATION.cff) (GitHub shows it under "Cite this repository").
+The traces used in the paper's evaluation are in [artifacts/](artifacts/).
 
 ---
 
@@ -1540,4 +1525,4 @@ WAL++ is fully compatible, but has minor implementation differences:
 ---
 
 **Last Updated**: November 8, 2025
-**Version**: 1.0.0
+**Version**: 1.2.2

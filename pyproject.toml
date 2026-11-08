@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "walpp"
-version = "1.0.0"
+version = "1.2.2"
 description = "WAL++: Waveform Analysis Language (C++20) with Python bindings"
 readme = "README.md"
 authors = [

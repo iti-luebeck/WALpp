@@ -329,6 +329,6 @@ PYBIND11_MODULE(wal_cpp, m) {
     // Module Information
     // ───────────────────────────────────────────────────────────────
     
-    m.attr("__version__") = "1.0.0";
+    m.attr("__version__") = "1.2.2";
     m.attr("__author__") = "WAL++ Development Team";
 }
