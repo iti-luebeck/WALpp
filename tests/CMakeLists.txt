@@ -63,7 +63,7 @@ target_include_directories(test_wal_executable
 )
 add_test(
     NAME test_wal_executable
-    COMMAND $<TARGET_FILE:test_wal_executable>
+    COMMAND $<TARGET_FILE:test_wal_executable> $<TARGET_FILE:wal>
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 

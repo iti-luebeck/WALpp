@@ -563,8 +563,8 @@ int main(int argc, char* argv[]) {
     std::cout << "║  Phase 3 Task 1 - End-to-End Executable Testing               ║\n";
     std::cout << "╚════════════════════════════════════════════════════════════════╝\n";
     
-    // Find WAL executable
-    std::string exe_path = "./wal";
+    // Find WAL executable: CTest passes its path; otherwise guess
+    std::string exe_path = argc > 1 ? argv[1] : "./wal";
     if (!file_exists(exe_path)) {
         exe_path = "./tests/../wal";
     }
