@@ -322,15 +322,15 @@ message(STATUS "")
 # ============================================================================
 
 set(CPACK_PACKAGE_NAME "walpp")
-set(CPACK_PACKAGE_VENDOR "WAL++ Project")
+set(CPACK_PACKAGE_VENDOR "Institute of Computer Engineering (ITI), Universitaet zu Luebeck")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Waveform Analysis Language - High-performance C++20 rewrite")
 set(CPACK_PACKAGE_DESCRIPTION "WAL++ is a powerful S-expression based language for analyzing digital simulation waveforms (VCD, FST, CSV). It provides 130+ operators, streaming support, and Python bindings.")
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/yourusername/walpp")
-set(CPACK_PACKAGE_CONTACT "maintainer@walpp.org")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/iti-luebeck/walpp")
+set(CPACK_PACKAGE_CONTACT "Rolf Meyer <r.meyer@uni-luebeck.de>")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
@@ -351,7 +351,7 @@ set(CPACK_SOURCE_IGNORE_FILES
 )
 
 # DEB (Debian/Ubuntu) specific settings
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "WAL++ Maintainer <maintainer@walpp.org>")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Rolf Meyer <r.meyer@uni-luebeck.de>")
 set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libreadline8, libpython3.10, libstdc++6 (>= 10), zlib1g")
@@ -360,7 +360,7 @@ set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/cmake/debian/postinst")
 
 # RPM (CentOS/RedHat/Fedora) specific settings
-set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_LICENSE "BSD-3-Clause")
 set(CPACK_RPM_PACKAGE_GROUP "Development/Tools")
 set(CPACK_RPM_PACKAGE_REQUIRES "readline >= 6.0, python3 >= 3.8, zlib")
 set(CPACK_RPM_PACKAGE_SUGGESTS "python3-pip")

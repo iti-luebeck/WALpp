@@ -4,7 +4,7 @@ A powerful, expressive language and toolkit for analyzing digital simulation wav
 
 **WAL++ is a high-performance C++20 rewrite of the [Waveform Analysis Language (WAL)](https://wal-lang.org), originally developed in Python.** It provides the same powerful S-expression syntax and 130+ operators, but with dramatically improved performance and memory efficiency for analyzing large-scale waveforms.
 
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
 ![Language](https://img.shields.io/badge/language-C%2B%2B20-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.8+-blue)
 [![WAL Official](https://img.shields.io/badge/WAL-wal--lang.org-0066cc)](https://wal-lang.org)
@@ -46,6 +46,7 @@ A powerful, expressive language and toolkit for analyzing digital simulation wav
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+- [Citing WAL++](#citing-wal)
 
 ---
 
@@ -154,7 +155,7 @@ If you're familiar with WAL from wal-lang.org, WAL++ provides the same expressiv
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/walpp.git
+git clone https://github.com/iti-luebeck/walpp.git
 cd walpp
 
 # Create build directory
@@ -1332,7 +1333,7 @@ wal -e '(concat "a" "b")' ; String concatenation
 
 ## Contributing
 
-Contributions are welcome! Please follow these guidelines:
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the details. In short:
 
 1. **Fork the repository**
 2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
@@ -1344,7 +1345,7 @@ Contributions are welcome! Please follow these guidelines:
 
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/walpp.git
+git clone https://github.com/iti-luebeck/walpp.git
 cd walpp
 
 # Create development environment
@@ -1376,35 +1377,43 @@ cmake --build build --target coverage
 
 ## License
 
-WAL++ is released under the MIT License. See LICENSE file for details.
+WAL++ is released under the BSD 3-Clause License, see [LICENSE](LICENSE).
 
-```
-MIT License
+WAL++ builds on [WAL](https://github.com/ics-jku/wal) by Lucas Klemmer (BSD 3-Clause) and
+bundles the FST, FastLZ and LZ4 libraries. The standard library in `lib/std/` and the
+examples and tests in `tests/examples/` and `tests/original/` are taken from WAL.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and license texts.
 
-Copyright (c) 2025 WAL++ Contributors
+## Citing WAL++
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+If you use WAL++ in your research, please cite it as given in [CITATION.cff](CITATION.cff)
+(GitHub shows it under "Cite this repository"). The traces used in the paper's
+evaluation are in [artifacts/](artifacts/).
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Please also cite the original WAL work:
+
+```bibtex
+@article{Klemmer2024WAVING,
+  author  = {Klemmer, Lucas and Gro{\ss}e, Daniel},
+  title   = {{WAVING} Goodbye to Manual Waveform Analysis in {HDL} Design With {WAL}},
+  journal = {IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems},
+  year    = {2024},
+  volume  = {43},
+  number  = {10},
+  pages   = {3198--3211},
+  doi     = {10.1109/TCAD.2024.3387312}
+}
 ```
 
 ---
 
 ## Resources
 
-- **GitHub Repository**: https://github.com/yourusername/walpp
-- **Issue Tracker**: https://github.com/yourusername/walpp/issues
-- **Discussions**: https://github.com/yourusername/walpp/discussions
-- **Documentation**: https://walpp.readthedocs.io
+- **GitHub Repository**: https://github.com/iti-luebeck/walpp
+- **Issue Tracker**: https://github.com/iti-luebeck/walpp/issues
 - **Examples**: See `examples/` directory in repository
 - **Official WAL Project**: https://wal-lang.org - The original Python implementation
-- **WAL GitHub**: https://github.com/wal-lang/wal - Official WAL repository
+- **WAL GitHub**: https://github.com/ics-jku/wal - Official WAL repository
 
 ---
 
@@ -1524,8 +1533,8 @@ WAL++ is fully compatible, but has minor implementation differences:
 ### Support and Resources
 
 - **Official WAL Project**: https://wal-lang.org
-- **WAL Repository**: https://github.com/wal-lang/wal
-- **WAL++ GitHub**: https://github.com/yourusername/walpp
+- **WAL Repository**: https://github.com/ics-jku/wal
+- **WAL++ GitHub**: https://github.com/iti-luebeck/walpp
 - **Report Issues**: File issues in WAL++ repository
 
 ---

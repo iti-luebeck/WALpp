@@ -12,21 +12,25 @@ name = "walpp"
 version = "1.0.0"
 description = "WAL++: Waveform Analysis Language (C++20) with Python bindings"
 readme = "README.md"
-authors = [{ name = "WAL++ Contributors" }]
+authors = [
+  { name = "Rolf Meyer", email = "r.meyer@uni-luebeck.de" },
+  { name = "Andrija Neskovic", email = "andrija.neskovic@uni-luebeck.de" },
+]
 license = { file = "LICENSE" }
 requires-python = ">=3.8"
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: C++",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: BSD License",
   "Operating System :: OS Independent",
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/walpp"
-Documentation = "https://wal-lang.org"
-Issues = "https://github.com/yourusername/walpp/issues"
+Homepage = "https://github.com/iti-luebeck/walpp"
+Documentation = "https://github.com/iti-luebeck/walpp#readme"
+"Original WAL" = "https://wal-lang.org"
+Issues = "https://github.com/iti-luebeck/walpp/issues"
 
 [project.scripts]
 wal = "walpp._cli:main"
