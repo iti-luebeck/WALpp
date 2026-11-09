@@ -1,0 +1,4 @@
+sailor_tb.dut.clock
+sailor_tb.BusIO_dummyDataBus_address
+sailor_tb.BusIO_dummyDataBus_isWrite
+sailor_tb.BusIO_dummyDataBus_valid

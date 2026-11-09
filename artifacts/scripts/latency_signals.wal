@@ -1,0 +1,20 @@
+; Python WAL (SCA-WAL) counterpart of
+;   wal --fast-values-signals signals/sailor_rtl_markers.txt <vcd>
+; used for the "constant-time extraction" row of the performance table
+; (see bench_ct_extraction.py). Prints one "index,signal,value" row per value
+; change of each of the four marker signals.
+;
+; Python WAL addresses a signal as '<trace-id>^<hierarchy path>; the CLI
+; option `-l` loads the first trace as t0.
+
+(alias clk 't0^TOP.SAILORBlackBoxAdapter.clock)
+(alias addr 't0^TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_address)
+(alias isw 't0^TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_isWrite)
+(alias vld 't0^TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_valid)
+
+; One `whenever` per signal, so that a row is printed only when that signal
+; changes -- the same rows WAL++ emits.
+(whenever (!= clk clk@-1) (printf "%d,0,%d\n" INDEX clk))
+(whenever (!= addr addr@-1) (printf "%d,1,%d\n" INDEX addr))
+(whenever (!= isw isw@-1) (printf "%d,2,%d\n" INDEX isw))
+(whenever (!= vld vld@-1) (printf "%d,3,%d\n" INDEX vld))

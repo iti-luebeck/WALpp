@@ -1,0 +1,4 @@
+TOP.SAILORBlackBoxAdapter.clock
+TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_address
+TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_isWrite
+TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_valid
