@@ -1,0 +1,17 @@
+label,instruction,bs,n,min,max,variance,verdict
+baseline,aes32dsi,0,1000,32,32,0.0,PASS
+baseline,aes32dsi,1,1000,32,32,0.0,PASS
+baseline,aes32dsi,2,1000,32,32,0.0,PASS
+baseline,aes32dsi,3,1000,32,32,0.0,PASS
+baseline,aes32dsmi,0,1000,35,35,0.0,PASS
+baseline,aes32dsmi,1,1000,35,35,0.0,PASS
+baseline,aes32dsmi,2,1000,35,35,0.0,PASS
+baseline,aes32dsmi,3,1000,35,35,0.0,PASS
+baseline,aes32esi,0,1000,32,32,0.0,PASS
+baseline,aes32esi,1,1000,32,32,0.0,PASS
+baseline,aes32esi,2,1000,32,32,0.0,PASS
+baseline,aes32esi,3,1000,32,32,0.0,PASS
+baseline,aes32esmi,0,1000,33,33,0.0,PASS
+baseline,aes32esmi,1,1000,33,33,0.0,PASS
+baseline,aes32esmi,2,1000,33,33,0.0,PASS
+baseline,aes32esmi,3,1000,33,33,0.0,PASS

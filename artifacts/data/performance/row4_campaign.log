@@ -1,0 +1,6 @@
+== row 4: full campaign extraction (plain, 1000 traces, sequential)
+note: trace lengths vary 8778..8850 cycles, truncating to 8778
+wrote (500, 8798) fixed, (500, 8778) random traces in 183.9s
+sanity check, all fixed-plaintext traces identical: True
+fixed (500, 8798) identical to published: True
+random (500, 8778) identical to published: True

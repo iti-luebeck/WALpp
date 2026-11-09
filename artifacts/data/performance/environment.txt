@@ -1,0 +1,5 @@
+date: 2026-11-09T19:21:29Z
+host: Apple M4 Max, 64 GB RAM, 16 cores
+os: macOS 27.0.1
+walpp: WAL++ v1.2.2 (source as released; built with CMAKE_BUILD_TYPE=Release)
+sca-wal: commit 94eea44, Python 3.9.5

@@ -1,0 +1,6 @@
+== row 1: constant-time extraction
+VCD: <test_run_dir>/SAILOR_32bit_rv32izktzkn_should_run_ct_probe/SAILORBlackBoxAdapter.vcd (1077.8 MB)
+WARNING: row counts differ (WAL++ 2564283, Python WAL 2564279)
+WAL++      : 2.49 s (2564283 rows)
+Python WAL : 301.91 s (2564279 rows)
+Speedup    : 121.0x

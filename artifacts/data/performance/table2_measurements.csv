@@ -1,0 +1,5 @@
+row,measurement,input,python_wal_paper_s,walpp_paper_s,speedup_paper,python_wal_rerun_s,walpp_rerun_s,speedup_rerun,notes
+1,constant-time extraction (N=16000),Workload A waveform (1077.8 MB),307.8,4.4,70,301.91,2.49,121,value changes of 4 marker signals; Python WAL emits 4 rows fewer (2564279 vs 2564283)
+2,Hamming-weight micro-benchmark,SCA-WAL AES-128 netlist trace (5.7 MB; 147400 signals),51.84,0.053,978,52.43,0.053,992,all-signals HW
+3,Hamming-weight campaign trace,Workload B plain random #0 (16.6 MB; 2108 signals),46.52,0.051,912,46.42,0.042,1105,all-signals HW
+4,full N=500 campaign extraction,1000 Workload B waveforms (plain),46520,172,271,,183.9,252,Python WAL = 1000 x row 3 (extrapolated; rerun uses 46.42 s x 1000); WAL++ sequential (--jobs 1); output identical to published traces

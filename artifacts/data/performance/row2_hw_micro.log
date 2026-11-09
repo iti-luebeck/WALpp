@@ -1,0 +1,5 @@
+== row 2: HW micro-benchmark (SCA-WAL AES netlist trace)
+VCD: artifacts/traces/netlist_aes_trace.vcd (5.7 MB)
+WAL++      : 0.053 s
+Python WAL : 52.43 s
+Speedup    : 992x

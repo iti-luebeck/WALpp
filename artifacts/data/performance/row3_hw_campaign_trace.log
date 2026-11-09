@@ -1,0 +1,5 @@
+== row 3: HW campaign trace
+VCD: <test_run_dir>/SAILOR_32bit_rv32i_should_run_cpa_single_r1_i0/SAILORBlackBoxAdapter.vcd (16.6 MB)
+WAL++      : 0.042 s
+Python WAL : 46.42 s
+Speedup    : 1105x
