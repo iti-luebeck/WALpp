@@ -1387,8 +1387,9 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and license tex
 ## Citing WAL++
 
 If you use WAL++ in your research, please cite our paper as given in
-[CITATION.cff](CITATION.cff) (GitHub shows it under "Cite this repository").
-The traces used in the paper's evaluation are in [artifacts/](artifacts/).
+[CITATION.cff](CITATION.cff) (GitHub shows it under "Cite this repository") or
+[CITATION.bib](CITATION.bib). The workloads, scripts, results and traces of the
+paper's evaluation are in [artifacts/](artifacts/).
 
 ---
 

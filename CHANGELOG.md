@@ -15,4 +15,4 @@ First public release.
 - Fast Hamming weight / Hamming distance operators (`--fast-hw-all`, `--fast-hd-all`),
   including signals wider than 64 bits
 - Python bindings (`walpp` package) and the `wal` command-line tool with REPL
-- Paper evaluation traces in `artifacts/`
+- Paper evaluation workloads, scripts, results and traces in `artifacts/`

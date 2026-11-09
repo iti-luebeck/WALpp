@@ -68,3 +68,4 @@ tests/data/test_stress_large.vcd
 
 # Unpacked paper artifacts (keep only the .xz files)
 artifacts/traces/*.vcd
+artifacts/traces/*.npy
