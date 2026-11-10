@@ -144,7 +144,9 @@ WAL++ on that waveform.
 | `rv64ui-p-simple.vcd.xz` | 69.8 MB | Chipyard SoC with one Rocket core (FPU, L1 caches, L2) running the `rv64ui-p-simple` test from riscv-tests, simulated with Verilator | `examples/hd_module.wal` (Rocket core scope); not used in the paper |
 
 Both AES traces use the fixed key `7369C667EC4AFF51ABBACD2946E3FBF2` of the
-SCA-WAL test patterns. Their testbench contains wide file-I/O registers
+SCA-WAL test patterns. The value of the testbench's `filename` register (the
+test-pattern file it read) has been shortened to a relative path; the traces
+are otherwise unchanged. Their testbench contains wide file-I/O registers
 (`filename`, `dumpfile`, `line`) that dominate an all-signals Hamming weight;
 use a scope such as `test_aes_128^uut` to restrict the sum to the AES core.
 
