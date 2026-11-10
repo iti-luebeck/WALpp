@@ -6,8 +6,6 @@ Welcome to the comprehensive Doxygen documentation for WAL++ (Waveform Analysis 
 
 ### Getting Started
 - **[API Quick Reference](API_QUICK_REFERENCE.md)** - Start here! Code samples for all major components
-- **[Building Documentation](DOXYGEN_GUIDE.md)** - How to generate Doxygen docs
-- **[Documentation Status](DOCUMENTATION_STATUS.md)** - Completion checklist and coverage metrics
 
 ### Core Components
 - **[Core API](@ref Core)** - Main Wal class, REPL, CLI
@@ -59,8 +57,6 @@ Welcome to the comprehensive Doxygen documentation for WAL++ (Waveform Analysis 
 - **`doxygen.yaml`** - YAML configuration for readability and tooling
 
 ### Guides
-- **`docs/DOXYGEN_GUIDE.md`** - Complete guide to Doxygen features and usage
-- **`docs/DOCUMENTATION_STATUS.md`** - Completion checklist and statistics
 - **`docs/API_QUICK_REFERENCE.md`** - Quick reference with code samples
 
 ### Generated (after running doxygen)
@@ -226,8 +222,7 @@ Update documentation by editing:
 ### Intermediate
 1. Study [Evaluator documentation](@ref evaluator)
 2. Explore [Operator Registry](@ref operator_registry)
-3. Read [DOXYGEN_GUIDE.md](DOXYGEN_GUIDE.md)
-4. Implement custom operators
+3. Implement custom operators
 
 ### Advanced
 1. Deep dive into source comments
