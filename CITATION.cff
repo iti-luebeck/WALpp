@@ -27,14 +27,13 @@ keywords:
   - Hamming distance
 
 # Accepted for publication in IEEE Embedded Systems Letters (SeHAS 2027).
-# TODO: add volume, issue, start/end pages and doi once published
+# TODO: add year, volume, issue, start/end pages and doi once published
 # (also in CITATION.bib).
 preferred-citation:
   type: article
   status: in-press
   title: "Security-Driven Verification of RISC-V Crypto Extensions: A Scalable Framework for Timing and Power Side-Channel Analysis"
   journal: "IEEE Embedded Systems Letters"
-  year: 2027
   authors:
     - given-names: Andrija
       family-names: Nešković
