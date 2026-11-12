@@ -155,8 +155,8 @@ If you're familiar with WAL from wal-lang.org, WAL++ provides the same expressiv
 
 ```bash
 # Clone the repository
-git clone https://github.com/iti-luebeck/walpp.git
-cd walpp
+git clone https://github.com/iti-luebeck/WALpp.git
+cd WALpp
 
 # Create build directory
 mkdir build && cd build
@@ -1345,8 +1345,8 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the detail
 
 ```bash
 # Clone and setup
-git clone https://github.com/iti-luebeck/walpp.git
-cd walpp
+git clone https://github.com/iti-luebeck/WALpp.git
+cd WALpp
 
 # Create development environment
 python -m venv venv
@@ -1395,8 +1395,8 @@ paper's evaluation are in [artifacts/](artifacts/).
 
 ## Resources
 
-- **GitHub Repository**: https://github.com/iti-luebeck/walpp
-- **Issue Tracker**: https://github.com/iti-luebeck/walpp/issues
+- **GitHub Repository**: https://github.com/iti-luebeck/WALpp
+- **Issue Tracker**: https://github.com/iti-luebeck/WALpp/issues
 - **Examples**: See `examples/` directory in repository
 - **Official WAL Project**: https://wal-lang.org - The original Python implementation
 - **WAL GitHub**: https://github.com/ics-jku/wal - Official WAL repository
@@ -1520,7 +1520,7 @@ WAL++ is fully compatible, but has minor implementation differences:
 
 - **Official WAL Project**: https://wal-lang.org
 - **WAL Repository**: https://github.com/ics-jku/wal
-- **WAL++ GitHub**: https://github.com/iti-luebeck/walpp
+- **WAL++ GitHub**: https://github.com/iti-luebeck/WALpp
 - **Report Issues**: File issues in WAL++ repository
 
 ---

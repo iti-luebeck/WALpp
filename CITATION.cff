@@ -15,7 +15,7 @@ authors:
     family-names: Neskovic
     email: andrija.neskovic@uni-luebeck.de
     affiliation: "Institute of Computer Engineering, Universität zu Lübeck"
-repository-code: "https://github.com/iti-luebeck/walpp"
+repository-code: "https://github.com/iti-luebeck/WALpp"
 license: BSD-3-Clause
 version: 1.2.2
 keywords:

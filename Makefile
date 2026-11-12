@@ -31,6 +31,7 @@ build:
 .PHONY: docs
 
 docs:
+	mkdir -p build/docs
 	rsync -am \
 	      --exclude="build" \
 				--exclude="ext" \

@@ -1,0 +1,56 @@
+name: Docs
+
+# Builds the documentation (doxide API reference + MkDocs site) and publishes
+# it to GitHub Pages. Requires Settings -> Pages -> Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install doxide
+        # Official package repository, see https://indii.org/download/
+        run: |
+          echo 'deb https://download.indii.org/deb noble main' | sudo tee /etc/apt/sources.list.d/indii.org.list
+          curl -fsSL https://download.indii.org/deb/Release.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/indii.org.gpg > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y doxide rsync
+
+      - name: Install MkDocs
+        run: pip install -r requirements.txt
+
+      - name: Build
+        run: make docs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

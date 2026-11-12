@@ -27,10 +27,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/iti-luebeck/walpp"
-Documentation = "https://github.com/iti-luebeck/walpp#readme"
+Homepage = "https://github.com/iti-luebeck/WALpp"
+Documentation = "https://iti-luebeck.github.io/WALpp/"
 "Original WAL" = "https://wal-lang.org"
-Issues = "https://github.com/iti-luebeck/walpp/issues"
+Issues = "https://github.com/iti-luebeck/WALpp/issues"
 
 [project.scripts]
 wal = "walpp._cli:main"

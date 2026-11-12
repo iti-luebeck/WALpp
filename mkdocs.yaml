@@ -1,6 +1,6 @@
 site_name: WAL++
-site_url: https://iti-luebeck.github.io/walpp/
-repo_url: https://github.com/iti-luebeck/walpp
+site_url: https://iti-luebeck.github.io/WALpp/
+repo_url: https://github.com/iti-luebeck/WALpp
 
 copyright: Copyright &copy; 2025-2026 Rolf Meyer, Andrija Neskovic, ITI, Universität zu Lübeck
 theme:

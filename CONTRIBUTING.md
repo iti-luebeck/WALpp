@@ -4,7 +4,7 @@ Thanks for your interest. Bug reports, questions and pull requests are welcome.
 
 ## Reporting a bug
 
-Open an issue at <https://github.com/iti-luebeck/walpp/issues> with:
+Open an issue at <https://github.com/iti-luebeck/WALpp/issues> with:
 
 - the WAL++ commit or version and your OS and compiler,
 - the command or WAL script you ran,
