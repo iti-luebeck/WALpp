@@ -28,7 +28,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/iti-luebeck/WALpp"
-Documentation = "https://iti-luebeck.github.io/WALpp/"
+Documentation = "https://walpp.iti.uni-luebeck.de/"
 "Original WAL" = "https://wal-lang.org"
 Issues = "https://github.com/iti-luebeck/WALpp/issues"
 
