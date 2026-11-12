@@ -250,12 +250,17 @@ endif()
 # Installation
 # ============================================================================
 
-# Install targets
-install(TARGETS walpp
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION bin
-)
+# The Python wheel (scikit-build-core, see pyproject.toml) links libwalpp
+# statically into wal_cpp and the wal CLI and only contains the walpp package;
+# the library, headers, WAL standard library and examples are installed for
+# regular CMake installs and the .deb/.rpm packages.
+if(NOT DEFINED SKBUILD_PLATLIB_DIR)
+    install(TARGETS walpp
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+    )
+endif()
 
 if(DEFINED SKBUILD_PLATLIB_DIR)
     # Place CLI inside the Python wheel under walpp/bin
@@ -282,21 +287,23 @@ if(BUILD_PYTHON_MODULE)
     endif()
 endif()
 
-# Install headers
-install(DIRECTORY include/wal
-    DESTINATION include
-)
+if(NOT DEFINED SKBUILD_PLATLIB_DIR)
+    # Install headers
+    install(DIRECTORY include/wal
+        DESTINATION include
+    )
 
-# Install library files
-install(DIRECTORY lib/std/
-    DESTINATION share/wal/lib/std
-)
+    # Install library files
+    install(DIRECTORY lib/std/
+        DESTINATION share/wal/lib/std
+    )
 
-# Install examples
-install(DIRECTORY examples/
-    DESTINATION share/wal/examples
-    OPTIONAL
-)
+    # Install examples
+    install(DIRECTORY examples/
+        DESTINATION share/wal/examples
+        OPTIONAL
+    )
+endif()
 
 # ============================================================================
 # Summary

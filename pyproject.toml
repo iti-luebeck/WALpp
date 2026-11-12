@@ -40,6 +40,10 @@ wal = "walpp._cli:main"
 cmake.args = [
   "-DBUILD_PYTHON_MODULE=ON",
   "-DENABLE_TESTS=OFF",
+  # Link libwalpp statically into the extension and the CLI, so the wheel
+  # does not depend on a separate libwalpp.so
+  "-DBUILD_SHARED_LIBS=OFF",
+  "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
 ]
 
 # Ensure install passes through so the extension lands under walpp/
