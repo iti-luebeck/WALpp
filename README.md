@@ -1395,6 +1395,7 @@ paper's evaluation are in [artifacts/](artifacts/).
 
 ## Resources
 
+- **Documentation**: https://www.iti.uni-luebeck.de/docs/walpp/
 - **GitHub Repository**: https://github.com/iti-luebeck/WALpp
 - **Issue Tracker**: https://github.com/iti-luebeck/WALpp/issues
 - **Examples**: See `examples/` directory in repository

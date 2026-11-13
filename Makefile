@@ -37,6 +37,9 @@ docs:
 				--exclude="ext" \
 				--exclude=".*" \
 				--include='*.md' \
+				--include='/LICENSE' \
+				--include='/CITATION.cff' \
+				--include='/CITATION.bib' \
 				--include='*.png' \
 				--include="*.css" \
 				--include="*.js" \

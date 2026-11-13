@@ -3,6 +3,7 @@ stages:
   - test
   - package
   - wheel
+  - docs
 
 variables:
   CMAKE_BUILD_TYPE: Release
@@ -203,3 +204,46 @@ wheel:python:
   only:
     - main
     - tags
+
+# Documentation site, the same build as .github/workflows/docs.yml: `make docs` copies the
+# Markdown into build/docs, doxide adds the API pages, mkdocs renders build/site.
+docs:build:
+  stage: docs
+  image: ubuntu:24.04
+  needs: []
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq curl gpg make rsync python3-pip
+    - curl -fsSL https://download.indii.org/deb/Release.key | gpg --dearmor > /etc/apt/trusted.gpg.d/indii.org.gpg
+    - echo "deb https://download.indii.org/deb noble main" > /etc/apt/sources.list.d/indii.org.list
+    - apt-get update -qq
+    - apt-get install -y -qq doxide
+    - pip install -q --break-system-packages -r requirements.txt
+  script:
+    - make docs
+  artifacts:
+    name: "walpp-docs-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - build/site/
+    expire_in: 1 week
+
+# Published at https://www.iti.uni-luebeck.de/docs/walpp/ from the institute's assets VM. The key
+# in DOCS_DEPLOY_KEY can only write into that one directory there (rrsync), and the variable is
+# protected, so only the protected branch github-release deploys.
+docs:deploy:
+  stage: docs
+  image: ubuntu:24.04
+  needs: ["docs:build"]
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq openssh-client rsync
+  script:
+    - chmod 600 "$DOCS_DEPLOY_KEY"
+    - rsync -rlt --delete --chmod=D755,F644
+        -e "ssh -i $DOCS_DEPLOY_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$DOCS_DEPLOY_KNOWN_HOSTS"
+        build/site/ deploy@141.83.108.99:/
+  environment:
+    name: docs
+    url: https://www.iti.uni-luebeck.de/docs/walpp/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "github-release"

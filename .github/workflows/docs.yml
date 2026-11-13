@@ -1,9 +1,10 @@
 name: Docs
 
 # Builds the documentation (doxide API reference + MkDocs site). The site is
-# hosted at https://walpp.iti.uni-luebeck.de/; this workflow only checks that
-# it builds and attaches the result to the run as the artifact "walpp-docs"
-# (contents of build/site) for deployment on that server.
+# hosted at https://www.iti.uni-luebeck.de/docs/walpp/ and deployed from the
+# institute's GitLab (job docs:deploy in .gitlab-ci.yml); this workflow only
+# checks that it builds and attaches the result to the run as the artifact
+# "walpp-docs" (contents of build/site).
 
 on:
   push:
