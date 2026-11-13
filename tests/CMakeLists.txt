@@ -92,3 +92,28 @@ target_link_libraries(test_writer_roundtrip PRIVATE walpp)
 target_include_directories(test_writer_roundtrip
     PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_writer_roundtrip COMMAND test_writer_roundtrip WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ============================================================================
+# Upstream WAL conformance (ics-jku/wal test suite, run against WAL++)
+# ============================================================================
+# Runs the vendored upstream test files in tests/original/ against the real
+# WAL++ engine through its Python bindings. Before this, those files ran against
+# a Python re-implementation in tests/original/wal/ and were not registered here
+# at all, so they said nothing about WAL++.
+#
+# Failures are expected while operator parity is in progress, so the test is a
+# ratchet rather than a pass/fail: it fails only if FEWER than MIN_PASS upstream
+# tests pass. Raise MIN_PASS as parity work lands.
+if(BUILD_PYTHON_MODULE)
+    set(WALPP_CONFORMANCE_MIN_PASS 18 CACHE STRING
+        "Minimum number of upstream WAL tests that must pass")
+    add_test(
+        NAME test_upstream_conformance
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/conformance/run_conformance.py
+                --min-pass ${WALPP_CONFORMANCE_MIN_PASS}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(test_upstream_conformance PROPERTIES
+        ENVIRONMENT "WALPP_BUILD_DIR=$<TARGET_FILE_DIR:wal_cpp>")
+endif()

@@ -4,6 +4,7 @@
 #include "wal/evaluator.h"
 #include "wal/trace/trace_container.h"
 #include <algorithm>
+#include "wal/signal_resolve.h"
 
 namespace wal::operators {
 
@@ -206,7 +207,9 @@ public:
             std::string signal_name = evaluated[0].to_string();
 
             try {
-                return Value(eval.get_traces()->contains(signal_name));
+                // Any accepted spelling counts as existing (see signal_resolve.h).
+                std::string resolved;
+                return Value(resolve_signal_name(eval.get_traces(), signal_name, resolved));
             } catch (const std::exception&) {
                 return Value(false);
             }
@@ -227,7 +230,9 @@ public:
             std::string signal_name = evaluated[0].to_string();
 
             try {
-                int width = eval.get_traces()->signal_width(signal_name);
+                std::string resolved = signal_name;
+                resolve_signal_name(eval.get_traces(), signal_name, resolved);
+                int width = eval.get_traces()->signal_width(resolved);
                 return Value(static_cast<int64_t>(width));
             } catch (const std::exception& e) {
                 throw EvalError("signal-width: " + std::string(e.what()));
@@ -258,7 +263,13 @@ public:
             }
 
             try {
-                return eval.get_traces()->signal_value(signal_name, offset);
+                // Accept every spelling of a hierarchical name (see signal_resolve.h):
+                // the interpreter's `^`, the fast paths' and upstream WAL's `.`, and an
+                // upstream `tid^path`. Falls through to the name as written, so an
+                // unresolvable name still yields the trace layer's own error.
+                std::string resolved = signal_name;
+                resolve_signal_name(eval.get_traces(), signal_name, resolved);
+                return eval.get_traces()->signal_value(resolved, offset);
             } catch (const std::exception& e) {
                 throw EvalError("get-signal: " + std::string(e.what()));
             }

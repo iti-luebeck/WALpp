@@ -225,6 +225,102 @@ WAL++ `wal` on the same trace and compares stdout.
 This is the only way "all operators from WAL" ends in something checkable. It also pays
 for itself immediately: the pair in Finding 3 is already a passing conformance case.
 
+## Progress: Tier 1 items 1 and 2 are done
+
+Implemented in `include/wal/signal_resolve.h` plus the evaluator and parser:
+
+- **Bare-signal resolution.** A symbol that is not a bound variable now resolves to a
+  signal. Variables always win, so no existing program changes meaning.
+- **`@` offset notation.** `tb.clk@-1` desugars in the parser to the accessor WAL++
+  already had, `(get-signal "tb.clk" -1)`. An integer or an identifier is accepted after
+  `@`, so `sig@INDEX` will work once `INDEX` exists.
+- **`get-signal`, `signal?` and `signal-width`** accept every spelling too, which closes
+  the dotted-vs-caret trap: `(signal? "tb.dut.counter")` used to return `false` on a
+  trace that plainly contained it.
+
+Verified on `counter.vcd`, differentially against upstream:
+
+| | upstream | WAL++ |
+|---|---|---|
+| `tb.dut.counter` at index 40 | 15 | 15 |
+| `tb.clk`, `tb.clk@-1` at index 40 | 0, 1 | 0, 1 |
+| rising clock edges over the trace | 40 | 40 |
+
+All 21 pre-existing tests still pass.
+
+### The `^` conflict, and how it is handled for now
+
+Upstream spells a signal `[tid^]dotted.path[@offset]`: `^` separates a **trace id**, and
+`.` joins the hierarchy. Confirmed both ways: `a^tb.dut.counter` works after loading
+under id `a`, and `tb^dut^counter` is an error upstream.
+
+WAL++ uses `^` to join the hierarchy, and its own `--fast-*` modes use `.`. So the three
+conventions disagree, and WAL++ disagrees with itself.
+
+The resolver accepts all of them rather than picking a winner, so nothing breaks today.
+**The real decision is still open:** converging on upstream's meaning of `^` would make
+the interpreter consistent with upstream *and* with WAL++'s own fast paths, at the cost
+of breaking any script or Python caller using `^` as a hierarchy separator. That is a
+release-gated choice, not a code change to make quietly.
+
+## Upstream conformance: a measured baseline
+
+`tests/original/` turned out to be upstream's test suite vendored verbatim. Two things
+were wrong with it:
+
+- `tests/original/wal/` calls itself a shim but is a **~690-line Python interpreter** of
+  its own (`_eval_define`, `_eval_let`, `_eval_lambda`, ...). It `CDLL`s `libwalpp`,
+  warns if that fails, and evaluates in Python regardless. Its own README reports
+  "18/30 tests passing". So passing those tests said nothing about WAL++.
+- They were **not registered with CTest**, so they never ran at all.
+
+`tests/conformance/` now provides a real adapter: upstream's `from wal.core import Wal`
+resolves to WAL++'s pybind11 module, with values converted to Python natives.
+`run_conformance.py` runs the upstream files against the actual engine and groups the
+failures into a to-do list. It is wired into CTest as a **ratchet**
+(`WALPP_CONFORMANCE_MIN_PASS`, currently 18): it fails only if *fewer* tests pass than
+the baseline, so parity cannot regress and the number can only be raised.
+
+**Baseline: 18 of 77 upstream tests pass.** `test_parser.py` and `test_varresolve.py`
+are excluded, since they assert on upstream's lark parse tree and its internal
+resolution pass rather than on behavior.
+
+The failures confirm the tier ordering, and add names the operator diff missed because
+they are special variables rather than builtins:
+
+```
+ 6x MAX-INDEX    3x set     3x do      2x alias    2x fn      2x groups
+ 2x LOCAL-SCOPES 2x in-scope 2x SCOPES 2x SIGNALS  2x TRACE-NAME
+ 1x each: when unless cond printf whenever find second in array seta geta
+          atom? int? list? string? symbol? convert/bin int->string string->int
+          symbol-add
+```
+
+`LOCAL-SCOPES` and `TRACE-NAME` were not in the 66-builtin diff; the special-variable
+set is larger than first probed and needs its own enumeration.
+
+### Semantic divergences, not just missing names
+
+Four failures are genuine behavior differences and deserve decisions of their own:
+
+- `(+ 1 "hi")` concatenates upstream; WAL++ raises *Expected number, got "hi"*.
+- `(!= 3 3 3)` is n-ary upstream; WAL++ requires exactly 2 arguments.
+- Three assertion mismatches (`True != False`, `False != 1`, `2 != 3`) are unexplained
+  so far and should be investigated individually before any operator is added.
+
+These matter more than the missing-name count: an absent operator fails loudly, while a
+differing one returns a plausible wrong answer.
+
+## Incidental findings
+
+- **`include/wal/operators/trace_operators.h` is dead code.** Only
+  `trace_management_operators.h` is included by the evaluator, yet both register the same
+  ten trace operators. Editing the wrong one costs a build cycle to notice. It should be
+  deleted or the duplication resolved.
+- **The `print` operator and the `-e` echo disagree on booleans**: `print` renders
+  `#t`/`#f`, the `-e` result printer renders `true`/`false`. Minor, but it is the same
+  two-printers problem as the list-echo defect.
+
 ## Not in this branch
 
 The `-e` printer fix and `-e` accumulation (shared `value_printer.h`, plus three

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <vector>
 #include <functional>
+#include "wal/signal_resolve.h"
 
 namespace wal {
 
@@ -169,7 +170,13 @@ inline void register_trace_operators(OperatorRegistry& registry) {
         }
 
         try {
-            return eval.get_traces()->signal_value(signal_name, offset);
+            // Accept every spelling of a hierarchical name (see signal_resolve.h):
+            // the interpreter's `^`, the fast paths' and upstream's `.`, and an
+            // upstream `tid^path`. Falls through to the name as written so that an
+            // unresolvable name still produces the trace layer's own error.
+            std::string resolved = signal_name;
+            resolve_signal_name(eval.get_traces(), signal_name, resolved);
+            return eval.get_traces()->signal_value(resolved, offset);
         } catch (const std::exception& e) {
             throw EvalError("get-signal: " + std::string(e.what()));
         }

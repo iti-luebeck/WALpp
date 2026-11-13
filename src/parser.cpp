@@ -142,6 +142,49 @@ Value Parser::parse_atom() {
         return parse_number(token);
     }
 
+    // `signal@offset` notation (upstream WAL): the value of a signal at an index
+    // relative to the current one, as in `tb.clk@-1`. `@` is not a token delimiter,
+    // so the whole thing arrives here as one symbol token and is desugared to the
+    // accessor WAL++ already has: (get-signal "tb.clk" -1).
+    //
+    // Only desugared when the part after `@` is an integer or a plain identifier, so
+    // a signal name that merely contains an `@` is still read as a symbol.
+    auto at = token.find('@');
+    if (at != std::string::npos && at > 0 && at + 1 < token.length()) {
+        std::string name = token.substr(0, at);
+        std::string offset = token.substr(at + 1);
+
+        bool is_int = true;
+        size_t start = (offset[0] == '-' || offset[0] == '+') ? 1 : 0;
+        if (start >= offset.length()) {
+            is_int = false;
+        }
+        for (size_t i = start; i < offset.length() && is_int; ++i) {
+            if (!std::isdigit(static_cast<unsigned char>(offset[i]))) is_int = false;
+        }
+
+        bool is_ident = !is_int;
+        for (size_t i = 0; i < offset.length() && is_ident; ++i) {
+            char oc = offset[i];
+            if (!(std::isalnum(static_cast<unsigned char>(oc)) || oc == '_' || oc == '-')) {
+                is_ident = false;
+            }
+        }
+
+        if (is_int || is_ident) {
+            std::vector<Value> call;
+            call.push_back(Value(std::make_shared<Symbol>("get-signal")));
+            call.push_back(Value(name));
+            if (is_int) {
+                call.push_back(Value(static_cast<int64_t>(std::stoll(offset))));
+            } else {
+                // e.g. `sig@INDEX`: evaluated at run time
+                call.push_back(Value(std::make_shared<Symbol>(offset)));
+            }
+            return Value(std::make_shared<WList>(call));
+        }
+    }
+
     // Otherwise it's a symbol
     return Value(std::make_shared<Symbol>(token));
 }

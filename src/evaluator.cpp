@@ -1,5 +1,6 @@
 #include "wal/evaluator.h"
 #include "wal/parser.h"
+#include "wal/signal_resolve.h"
 #include "wal/operators/core_math_operators.h"
 #include "wal/operators/base_operators.h"
 #include "wal/operators/bitwise_operators.h"
@@ -111,10 +112,25 @@ Value SEval::eval(const Value& expr) {
         return expr;
     }
     
-    // Symbol lookup
+    // Symbol lookup.
+    //
+    // A symbol that is not a bound variable may name a signal. Upstream WAL exposes
+    // signals as ordinary variables, so `tb.dut.counter` evaluates to that signal's
+    // value at the current index, and published WAL programs rely on it. Variables
+    // win: a binding always shadows a signal of the same name, so this fallback can
+    // never change the meaning of an existing program.
     if (expr.is_symbol()) {
         auto sym = expr.to_symbol();
-        return current_environment->get(sym->get_name());
+        const std::string& name = sym->get_name();
+        try {
+            return current_environment->get(name);
+        } catch (const EvalError&) {
+            std::string resolved;
+            if (resolve_signal_name(traces, name, resolved)) {
+                return traces->signal_value(resolved, 0);
+            }
+            throw;  // not a variable and not a signal: report the original error
+        }
     }
     
     // List evaluation - function call or special form
