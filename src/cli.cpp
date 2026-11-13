@@ -1,6 +1,7 @@
 #include "wal/cli.h"
 #include "wal/core.h"
 #include "wal/repl.h"
+#include "wal/value_printer.h"
 #include "wal/trace/streaming_config.h"
 #include "wal/fast/vcd_parser.h"
 #include "wal/fast/hamming_ops.h"
@@ -97,7 +98,9 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
         } else if (arg == "-e" || arg == "--eval") {
             eval_mode = true;
             if (i + 1 < args.size()) {
-                eval_expr = args[++i];
+                // Accumulate: several -e run in order and share one interpreter,
+                // so (define ...) in an earlier -e is visible to a later one.
+                eval_exprs.push_back(args[++i]);
             }
         } else if (arg == "-f" || arg == "--file") {
             file_mode = true;
@@ -474,27 +477,29 @@ int CLI::run() {
     }
     
     // Eval mode
-    if (eval_mode && !eval_expr.empty()) {
-        try {
-            Value result = wal_instance->eval_str(eval_expr);
-            
-            // Print result
-            if (result.is_nil()) {
-                std::cout << "nil" << std::endl;
-            } else if (result.is_bool()) {
-                std::cout << (result.to_bool() ? "true" : "false") << std::endl;
-            } else if (result.is_int()) {
-                std::cout << result.to_int() << std::endl;
-            } else if (result.is_float()) {
-                std::cout << result.to_float() << std::endl;
-            } else if (result.is_string()) {
-                std::cout << result.to_string() << std::endl;
+    if (eval_mode && !eval_exprs.empty()) {
+        for (const auto& expr : eval_exprs) {
+            try {
+                Value result = wal_instance->eval_str(expr);
+
+                // Print result. Unlike the REPL, -e echoes nil, so a caller can
+                // tell "evaluated to nothing" from "produced no output". Strings
+                // print bare so a shell can consume them. Lists and symbols are
+                // printed by the shared renderer: they used to fall off the end
+                // of this chain and vanish, which made `-e '(signal-names)'`
+                // look like an empty trace.
+                if (result.is_nil()) {
+                    std::cout << "nil" << std::endl;
+                } else {
+                    print_value(result, std::cout, /*quote_strings=*/false);
+                    std::cout << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error: " << e.what() << std::endl;
+                return 1;
             }
-            return 0;
-        } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << std::endl;
-            return 1;
         }
+        return 0;
     }
     
     // File mode

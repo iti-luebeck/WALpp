@@ -37,6 +37,14 @@
   mask-image: linear-gradient(to bottom, #000 55%, transparent);
 }
 
+/* The trail fill fades old signal towards the page colour in 1% steps, and 8-bit rounding
+ * stops it short: on the dark page the stage settles visibly darker than the page. Blending
+ * of the whole stage (the layer alone would only blend inside the stage) keeps only what is
+ * brighter (dark) or darker (light) than the page, so the signals
+ * stay and the residue vanishes. */
+[data-md-color-scheme="default"] .bc-parallax { mix-blend-mode: darken; }
+[data-md-color-scheme="slate"]   .bc-parallax { mix-blend-mode: lighten; }
+
 [data-md-color-scheme="default"] .bc-parallax { --bc-grid-color: rgba(3, 126, 230, 0.14); }
 [data-md-color-scheme="slate"]   .bc-parallax { --bc-grid-color: rgba(8, 219, 244, 0.12); }
 
@@ -83,29 +91,37 @@
   to { opacity: 0; }
 }
 
-/* --- hero panel ---------------------------------------------------------- */
+/* --- hero ----------------------------------------------------------------- */
 
-/* NOTE: these rules are deliberately qualified with `.md-typeset`. The hero is
- * injected inside Material's typeset container, whose h1/p/a rules would
- * otherwise win on specificity and repaint the text in the body colour - which
- * renders the title grey-on-grey and makes the primary button's label vanish. */
+/* Logo, name and tagline stand straight on the signals, without a panel. The text takes
+ * the scheme's colours: navy and blue on the light page, white and cyan on the dark one.
+ *
+ * NOTE: these rules are deliberately qualified with `.md-typeset`. The hero is
+ * injected inside Material's typeset container, whose h1/p rules would otherwise
+ * win on specificity and repaint the text in the body colour. */
 
 .bc-hero {
   position: relative;
   z-index: 2;
-  min-height: 460px;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   text-align: center;
-  padding: 4rem 2rem 5rem;
+  padding: 3rem 1rem 4rem;
   margin-top: -1rem;
-  border-radius: 12px;
-  background: rgba(15, 28, 46, 0.72);  /* logo navy */
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+[data-md-color-scheme="default"] .bc-hero {
+  --bc-title: var(--walpp-navy);
+  --bc-tagline: var(--walpp-blue-dark);
+  --bc-halo: rgba(255, 255, 255, 0.9);
+}
+[data-md-color-scheme="slate"] .bc-hero {
+  --bc-title: #ffffff;
+  --bc-tagline: var(--walpp-cyan);
+  --bc-halo: rgba(11, 22, 36, 0.9);
 }
 
 .md-typeset .bc-hero__title {
@@ -113,67 +129,23 @@
   font-size: 3.5rem;
   font-weight: 700;
   line-height: 1.15;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: var(--bc-title);
+  /* A soft halo in the page colour keeps the letters clear of the lines behind them. */
+  text-shadow: 0 0 12px var(--bc-halo), 0 0 4px var(--bc-halo);
 }
 
 .md-typeset .bc-hero__tagline {
-  margin: 0 0 1em;
+  margin: 0;
   font-size: 1.5rem;
-  font-weight: 300;
-  color: #08dbf4;  /* logo cyan, on the dark hero panel */
+  font-weight: 400;
+  color: var(--bc-tagline);
+  text-shadow: 0 0 10px var(--bc-halo), 0 0 3px var(--bc-halo);
 }
 
-.md-typeset .bc-hero__description {
-  max-width: 46rem;
-  margin: 0 0 2.5rem;
-  font-size: 1.1rem;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.94);
-}
-
-.bc-hero__buttons {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.md-typeset .bc-hero__button {
-  display: inline-block;
-  padding: 0.875rem 2rem;
-  font-size: 1rem;
-  font-weight: 600;
-  text-decoration: none;
-  border-radius: 0.25rem;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-}
-
-.md-typeset .bc-hero__button--primary {
-  background: #037ee6;  /* logo blue; the primary navy would vanish on the panel */
-  color: #ffffff;
-}
-
-.md-typeset .bc-hero__button--secondary {
-  background: transparent;
-  color: #ffffff;
-  border: 2px solid rgba(255, 255, 255, 0.75);
-}
-
-.md-typeset .bc-hero__button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
-}
-
-.md-typeset .bc-hero__button--primary:hover {
-  background: #0794e9;
-  color: #ffffff;
-}
-
-.md-typeset .bc-hero__button--secondary:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: #ffffff;
+.md-typeset .bc-hero__logo {
+  width: 9rem;
+  margin: 0 0 1rem;
+  filter: drop-shadow(0 0 10px var(--bc-halo));
 }
 
 /* --- page integration ---------------------------------------------------- */
@@ -186,16 +158,17 @@ body.bc-homepage .md-content,
 }
 
 /* The navigation and the table of contents sit beside the hero, right over the signals.
- * A frosted panel in the page colour keeps them readable and the animation visible. */
+ * A frosted panel in the page colour keeps them readable; the signals show through blurred. */
 body.bc-homepage .md-sidebar {
   z-index: 1;
 }
 
 body.bc-homepage .md-sidebar__scrollwrap {
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--md-default-bg-color) 82%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-default-bg-color) 60%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 /* Keep the header above the parallax stage.
@@ -215,31 +188,23 @@ body.bc-homepage .md-header {
   display: none;
 }
 
-.md-typeset .bc-hero__logo {
-  width: 9rem;
-  margin: 0 0 1rem;
-}
-
 /* --- responsive ---------------------------------------------------------- */
 
 @media screen and (max-width: 76.1875em) {
   .bc-parallax { max-height: 600px; }
-  .bc-hero__title { font-size: 2.5rem; }
-  .bc-hero__tagline { font-size: 1.25rem; }
+  .md-typeset .bc-hero__title { font-size: 2.5rem; }
+  .md-typeset .bc-hero__tagline { font-size: 1.25rem; }
 }
 
 @media screen and (max-width: 45em) {
   .bc-parallax { max-height: 500px; }
 
   .bc-hero {
-    min-height: 380px;
-    padding: 3rem 1.5rem 3.5rem;
+    min-height: 340px;
+    padding: 2.5rem 1rem 3rem;
   }
-  .bc-hero__title { font-size: 2rem; }
-  .bc-hero__tagline { font-size: 1.1rem; }
-  .bc-hero__description { font-size: 1rem; }
-  .bc-hero__buttons { flex-direction: column; width: 100%; }
-  .bc-hero__button { width: 100%; }
+  .md-typeset .bc-hero__title { font-size: 2rem; }
+  .md-typeset .bc-hero__tagline { font-size: 1.1rem; }
 }
 
 /* Respect a reduced-motion preference: keep the layout, drop the animation. */

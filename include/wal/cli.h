@@ -51,7 +51,7 @@ private:
     std::string fast_output_file;
     std::string fast_signals_file;
     
-    std::string eval_expr;
+    std::vector<std::string> eval_exprs;   // every -e, in command-line order
     std::string filename;
     std::string trace_file;
     std::string pipe_file;
