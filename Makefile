@@ -48,6 +48,9 @@ docs:
 				--include='*/' \
 				--exclude='*' \
 				./ build/docs/
+	# The site has its own table of contents; drop the README's, which GitHub readers need.
+	awk '/^## Table of Contents$$/{skip=1; next} skip && /^## /{skip=0} !skip' \
+		build/docs/README.md > build/docs/README.md.tmp && mv build/docs/README.md.tmp build/docs/README.md
 	bash build-docs.sh
 #	mkdocs build
 #	python3 docs/convert_headers.py --force --include-slash-comments
