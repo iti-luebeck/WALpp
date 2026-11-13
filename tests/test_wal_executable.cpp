@@ -553,6 +553,177 @@ void test_expression_evaluation(ExecutableTestSuite& suite, const std::string& e
     suite.add_result(result);
 }
 
+// -----------------------------------------------------------------------------
+// Regression tests for two long-standing `-e` defects.
+//
+// Both were invisible for a long time because they fail silently: the CLI
+// printed nothing rather than erroring, and the second -e simply replaced the
+// first. Documentation was written around the broken behaviour. These tests
+// exist so that cannot happen again quietly.
+// -----------------------------------------------------------------------------
+
+// Test 13: -e must print list and symbol results, not just scalars.
+// Regression: cli.cpp's result printer handled nil/bool/int/float/string and
+// stopped, so a list fell off the end of the chain and nothing was printed at
+// all -- `wal -l t.vcd -e '(signal-names)'` looked like an empty trace.
+void test_eval_prints_lists(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "-e prints list and symbol results";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+
+        auto [rc1, out1] = run_command(exe_path + " -e '(list 1 2 3)' 2>&1");
+        if (out1.find("(1 2 3)") == std::string::npos) {
+            result.passed = false;
+            result.message += "list not printed (got: '" + out1 + "'); ";
+        }
+
+        auto [rc2, out2] = run_command(exe_path + " -e '(quote foo)' 2>&1");
+        if (out2.find("foo") == std::string::npos) {
+            result.passed = false;
+            result.message += "symbol not printed (got: '" + out2 + "'); ";
+        }
+
+        // Nested lists must render too, and strings inside a list stay quoted
+        // so the output reads back as the list it came from.
+        auto [rc3, out3] = run_command(exe_path + " -e '(list 1 (list \"a\" 2))' 2>&1");
+        if (out3.find("(1 (\"a\" 2))") == std::string::npos) {
+            result.passed = false;
+            result.message += "nested list wrong (got: '" + out3 + "'); ";
+        }
+
+        // A real trace query: this is the README's own way to list signals.
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (file_exists(vcd)) {
+            auto [rc4, out4] = run_command(exe_path + " -l " + vcd + " -e '(signal-names)' 2>&1");
+            if (out4.find("counter") == std::string::npos) {
+                result.passed = false;
+                result.message += "(signal-names) printed no names (got: '" + out4 + "'); ";
+            }
+        }
+
+        // A top-level string still prints bare, so shells can consume it.
+        auto [rc5, out5] = run_command(exe_path + " -e '(concat \"a\" \"b\")' 2>&1");
+        if (out5.find("\"") != std::string::npos) {
+            result.passed = false;
+            result.message += "top-level string should not be quoted (got: '" + out5 + "'); ";
+        }
+
+        if (result.passed) result.message = "lists, symbols, nesting and strings all render";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 14: every -e must run, in order, sharing one interpreter.
+// Regression: eval_expr was a single std::string that each -e overwrote, so
+// only the last one ever ran and no state was shared between them.
+void test_multiple_eval_flags(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "-e accumulates: all run in order, sharing state";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+
+        // Both must appear, first one first.
+        auto [rc1, out1] = run_command(exe_path + " -e '(print \"one\")' -e '(print \"two\")' 2>&1");
+        size_t p1 = out1.find("one");
+        size_t p2 = out1.find("two");
+        if (p1 == std::string::npos || p2 == std::string::npos) {
+            result.passed = false;
+            result.message += "not every -e ran (got: '" + out1 + "'); ";
+        } else if (p1 > p2) {
+            result.passed = false;
+            result.message += "-e ran out of order; ";
+        }
+
+        // State defined in an earlier -e must be visible to a later one.
+        auto [rc2, out2] = run_command(exe_path + " -e '(define x 5)' -e '(+ x 2)' 2>&1");
+        if (out2.find("7") == std::string::npos) {
+            result.passed = false;
+            result.message += "state not shared across -e (got: '" + out2 + "'); ";
+        }
+
+        if (result.passed) result.message = "all -e evaluated in order on one interpreter";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 15: set-index/get-index must actually move the cursor.
+// Regression: both were no-op stubs -- set-index echoed its argument and
+// get-index returned a hardcoded 0, so a script could walk a trace and read
+// index 0's values at every stop with no error anywhere.
+void test_index_navigation(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "set-index/get-index move the trace cursor";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found: " + vcd;
+        } else {
+            result.passed = true;
+
+            // get-index must report back what set-index was given.
+            auto [rc1, out1] = run_command(
+                exe_path + " -l " + vcd + " -e '(begin (set-index 40) (get-index))' 2>&1");
+            if (out1.find("40") == std::string::npos) {
+                result.passed = false;
+                result.message += "get-index did not report 40 (got: '" + out1 + "'); ";
+            }
+
+            // Reading at two different indices must not give the same answer,
+            // which is exactly what the stub did.
+            auto [rc2, out2] = run_command(
+                exe_path + " -l " + vcd +
+                " -e '(begin (set-index 0) (get-signal \"tb^dut^counter\"))' 2>&1");
+            auto [rc3, out3] = run_command(
+                exe_path + " -l " + vcd +
+                " -e '(begin (set-index 40) (get-signal \"tb^dut^counter\"))' 2>&1");
+            if (out2 == out3) {
+                result.passed = false;
+                result.message += "same value at index 0 and 40 -- cursor not moving; ";
+            }
+
+            // Stepping must move too.
+            auto [rc4, out4] = run_command(
+                exe_path + " -l " + vcd + " -e '(begin (step 5) (get-index))' 2>&1");
+            if (out4.find("5") == std::string::npos) {
+                result.passed = false;
+                result.message += "step did not move the cursor (got: '" + out4 + "'); ";
+            }
+
+            if (result.passed) result.message = "set-index, get-index and step all move the cursor";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -589,7 +760,7 @@ int main(int argc, char* argv[]) {
     // Create test suite
     ExecutableTestSuite suite("WAL Executable Integration Tests", exe_path);
     
-    std::cout << "\nRunning " << 12 << " test cases...\n";
+    std::cout << "\nRunning " << 15 << " test cases...\n";
     std::cout << std::string(80, '-') << "\n";
     
     // Run all tests
@@ -605,6 +776,9 @@ int main(int argc, char* argv[]) {
     test_large_file_processing(suite, exe_path);
     test_repl_mode_startup(suite, exe_path);
     test_expression_evaluation(suite, exe_path);
+    test_eval_prints_lists(suite, exe_path);
+    test_multiple_eval_flags(suite, exe_path);
+    test_index_navigation(suite, exe_path);
     
     // Print results
     suite.print_summary();

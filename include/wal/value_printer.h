@@ -1,0 +1,60 @@
+#pragma once
+
+#include "ast.h"
+#include <iostream>
+#include <ostream>
+
+namespace wal {
+
+/**
+ * @brief Render a Value the way the REPL and `-e` both display results.
+ *
+ * This is the single implementation behind REPL::print_output and the CLI's
+ * `-e` result printing. It used to be duplicated: the REPL copy handled lists
+ * and symbols, the `-e` copy stopped at strings, so `wal -e '(signal-names)'`
+ * printed nothing at all while the same expression printed fine in the REPL.
+ *
+ * @param result  the value to render
+ * @param os      stream to write to
+ * @param quote_strings  wrap a *top-level* string in double quotes (REPL style).
+ *        Strings nested inside a list are always quoted, so that a printed list
+ *        reads back as the list it came from. The CLI passes false to keep
+ *        `wal -e '(concat "a" "b")'` emitting bare text that a shell can consume.
+ *
+ * nil is NOT handled here, because the two callers disagree on purpose: the REPL
+ * stays silent (nil is what `print` returns, and echoing it would double every
+ * line), while `-e` emits "nil" so a script can tell "evaluated to nothing" from
+ * "produced no output". Each caller checks is_nil() before calling this.
+ */
+inline void print_value(const Value& result, std::ostream& os, bool quote_strings) {
+    if (result.is_bool()) {
+        os << (result.to_bool() ? "true" : "false");
+    } else if (result.is_int()) {
+        os << result.to_int();
+    } else if (result.is_float()) {
+        os << result.to_float();
+    } else if (result.is_string()) {
+        if (quote_strings) {
+            os << "\"" << result.to_string() << "\"";
+        } else {
+            os << result.to_string();
+        }
+    } else if (result.is_symbol()) {
+        os << "'" << result.to_symbol()->get_name();
+    } else if (result.is_list()) {
+        auto list = result.to_list();
+        os << "(";
+        for (size_t i = 0; i < list->size(); ++i) {
+            if (i > 0) os << " ";
+            // Elements are always quoted/prefixed, so the output re-reads as a list.
+            print_value((*list)[i], os, true);
+        }
+        os << ")";
+    } else if (result.is_nil()) {
+        os << "nil";
+    } else {
+        os << "<#value>";
+    }
+}
+
+} // namespace wal

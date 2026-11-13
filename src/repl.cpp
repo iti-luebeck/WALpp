@@ -1,5 +1,6 @@
 #include "wal/repl.h"
 #include "wal/core.h"
+#include "wal/value_printer.h"
 #include "wal/trace/trace.h"
 #include <iostream>
 #include <sstream>
@@ -117,34 +118,10 @@ void REPL::print_output(const Value& result) {
     // Skip printing nil values (commonly returned by print function)
     if (result.is_nil()) {
         return;
-    } else if (result.is_bool()) {
-        std::cout << (result.to_bool() ? "true" : "false") << std::endl;
-    } else if (result.is_int()) {
-        std::cout << result.to_int() << std::endl;
-    } else if (result.is_float()) {
-        std::cout << result.to_float() << std::endl;
-    } else if (result.is_string()) {
-        std::cout << "\"" << result.to_string() << "\"" << std::endl;
-    } else if (result.is_symbol()) {
-        std::cout << "'" << result.to_symbol()->get_name() << std::endl;
-    } else if (result.is_list()) {
-        auto list = result.to_list();
-        std::cout << "(";
-        for (size_t i = 0; i < list->size(); ++i) {
-            if (i > 0) std::cout << " ";
-            const auto& elem = (*list)[i];
-            if (elem.is_string()) {
-                std::cout << "\"" << elem.to_string() << "\"";
-            } else if (elem.is_symbol()) {
-                std::cout << "'" << elem.to_symbol()->get_name();
-            } else {
-                print_output(elem);
-            }
-        }
-        std::cout << ")" << std::endl;
-    } else {
-        std::cout << "<#value>" << std::endl;
     }
+    // Shared with the CLI's -e path; see include/wal/value_printer.h
+    print_value(result, std::cout, /*quote_strings=*/true);
+    std::cout << std::endl;
 }
 
 void REPL::print_error(const std::string& error) {
