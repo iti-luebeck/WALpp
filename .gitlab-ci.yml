@@ -209,6 +209,8 @@ wheel:python:
 # Markdown into build/docs, doxide adds the API pages, mkdocs renders build/site.
 docs:build:
   stage: docs
+  # The institute's Docker runner (#51) takes only jobs tagged docker
+  tags: [docker]
   image: ubuntu:24.04
   needs: []
   before_script:
@@ -232,6 +234,8 @@ docs:build:
 # protected, so only the protected branch github-release deploys.
 docs:deploy:
   stage: docs
+  # The institute's Docker runner (#51) takes only jobs tagged docker
+  tags: [docker]
   image: ubuntu:24.04
   needs: ["docs:build"]
   before_script:
