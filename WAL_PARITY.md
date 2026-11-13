@@ -321,9 +321,22 @@ differing one returns a plausible wrong answer.
   `#t`/`#f`, the `-e` result printer renders `true`/`false`. Minor, but it is the same
   two-printers problem as the list-echo defect.
 
-## Not in this branch
+## Branch state
 
-The `-e` printer fix and `-e` accumulation (shared `value_printer.h`, plus three
-regression tests) are uncommitted on `github-release` and are **not** in this worktree,
-which was branched from committed HEAD. Development here should use explicit
-`(print ...)` for list results, or those commits should be landed first.
+`github-release` is merged in, so this branch carries both halves: the signal-access
+parity work and the `-e` fixes (shared `value_printer.h`, `-e` accumulation, three
+regression tests). List results echo from `-e` without an explicit `(print ...)`, and
+several `-e` flags share one interpreter, which makes multi-step analysis on the command
+line practical:
+
+```bash
+wal -l counter.vcd \
+  -e '(define edges (filter (lambda (i) (begin (set-index i)
+       (&& (= 1 tb.clk) (= 0 tb.clk@-1)))) (range 1 81)))' \
+  -e '(length edges)' -e '(slice edges 0 5)'
+# => 40
+# => (1 3 5 7 9)
+```
+
+22 tests pass, conformance baseline unchanged at 18/77 (the conformance runner goes
+through the Python bindings, so the `-e` fixes do not affect it).
