@@ -185,6 +185,19 @@ body.bc-homepage .md-content,
   z-index: 1;
 }
 
+/* The navigation and the table of contents sit beside the hero, right over the signals.
+ * A frosted panel in the page colour keeps them readable and the animation visible. */
+body.bc-homepage .md-sidebar {
+  z-index: 1;
+}
+
+body.bc-homepage .md-sidebar__scrollwrap {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--md-default-bg-color) 82%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
 /* Keep the header above the parallax stage.
  *
  * Deliberately NOT transparent: the header's contents (logo, site title, theme
