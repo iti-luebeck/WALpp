@@ -1,0 +1,49 @@
+/* Colours from the WAL++ logo: cyan #08dbf4 at the top of the mark, blue #037ee6 at the bottom,
+   on the dark navy of the logo's background. mkdocs.yaml selects them with primary/accent: custom. */
+
+:root {
+  --walpp-navy: #0f1c2e;
+  --walpp-navy-light: #1a2d45;
+  --walpp-cyan: #08dbf4;
+  --walpp-blue: #037ee6;
+  --walpp-blue-dark: #0566c2;
+}
+
+/* Header and tabs in the logo's navy, so the colour logo sits on its own background. */
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--walpp-navy);
+  --md-primary-fg-color--light: var(--walpp-navy-light);
+  --md-primary-fg-color--dark: #08121f;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+}
+
+/* Light scheme: links in a blue dark enough to read on white, hover in the logo blue. */
+[data-md-color-scheme="default"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--walpp-blue);
+  --md-accent-fg-color--transparent: #037ee61a;
+  --md-typeset-a-color: var(--walpp-blue-dark);
+}
+
+/* Dark scheme: background in the logo's navy, links and hover in cyan. */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0b1624;
+  --md-code-bg-color: #13233a;
+}
+
+[data-md-color-scheme="slate"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--walpp-cyan);
+  --md-accent-fg-color--transparent: #08dbf41a;
+  --md-typeset-a-color: #4cc3f5;
+}
+
+/* The mark has thin lines; at Material's default 1.2rem they fade into the header. */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 2rem;
+}
+
+.md-header__button.md-logo {
+  margin: 0.2rem 0.4rem;
+  padding: 0.2rem;
+}

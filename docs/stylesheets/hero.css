@@ -1,0 +1,236 @@
+/* Front-page particle hero (see docs/javascripts/particles-init.js), after BuddelChip's.
+ *
+ * Everything here is scoped to `body.bc-homepage` / `.bc-*`, which the init
+ * script adds only on the site root, so no other page is affected. */
+
+/* --- parallax stage ------------------------------------------------------ */
+
+.bc-parallax {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  max-height: 800px;
+  overflow: hidden;
+  background: transparent;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bc-parallax__layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+}
+
+/* Synchronisation lines: the edges of the signals snap to them. The spacing must match
+ * GRID in particles-init.js; the lines fade out towards the bottom of the stage. */
+.bc-parallax__layer--grid {
+  z-index: 1;
+  background-image: repeating-linear-gradient(to right,
+    var(--bc-grid-color) 0 1px, transparent 1px 80px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+[data-md-color-scheme="default"] .bc-parallax { --bc-grid-color: rgba(3, 126, 230, 0.14); }
+[data-md-color-scheme="slate"]   .bc-parallax { --bc-grid-color: rgba(8, 219, 244, 0.12); }
+
+.bc-parallax__layer--particles {
+  z-index: 2;
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  pointer-events: auto;  /* click to emit / hover to bubble */
+}
+
+
+.bc-parallax__layer--particles canvas {
+  display: block !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* --- click markers ------------------------------------------------------ */
+
+/* Orange cursor line dropped by a click (attachMarkers in particles-init.js). It grows
+ * from the click point - the script sets transform-origin there - then fades; the 4s
+ * total must match MARKER_FADE_MS. */
+.bc-marker {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  margin-left: -1px;
+  background: #f5821f;
+  box-shadow: 0 0 6px rgba(245, 130, 31, 0.6);
+  pointer-events: none;
+  animation: bc-marker-grow 0.5s ease-out, bc-marker-fade 0.8s ease-in 3.2s forwards;
+}
+
+@keyframes bc-marker-grow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+@keyframes bc-marker-fade {
+  to { opacity: 0; }
+}
+
+/* --- hero panel ---------------------------------------------------------- */
+
+/* NOTE: these rules are deliberately qualified with `.md-typeset`. The hero is
+ * injected inside Material's typeset container, whose h1/p/a rules would
+ * otherwise win on specificity and repaint the text in the body colour - which
+ * renders the title grey-on-grey and makes the primary button's label vanish. */
+
+.bc-hero {
+  position: relative;
+  z-index: 2;
+  min-height: 460px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 4rem 2rem 5rem;
+  margin-top: -1rem;
+  border-radius: 12px;
+  background: rgba(15, 28, 46, 0.72);  /* logo navy */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.md-typeset .bc-hero__title {
+  margin: 0 0 0.3em;
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.md-typeset .bc-hero__tagline {
+  margin: 0 0 1em;
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: #08dbf4;  /* logo cyan, on the dark hero panel */
+}
+
+.md-typeset .bc-hero__description {
+  max-width: 46rem;
+  margin: 0 0 2.5rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.bc-hero__buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.md-typeset .bc-hero__button {
+  display: inline-block;
+  padding: 0.875rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 0.25rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.md-typeset .bc-hero__button--primary {
+  background: #037ee6;  /* logo blue; the primary navy would vanish on the panel */
+  color: #ffffff;
+}
+
+.md-typeset .bc-hero__button--secondary {
+  background: transparent;
+  color: #ffffff;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+}
+
+.md-typeset .bc-hero__button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+}
+
+.md-typeset .bc-hero__button--primary:hover {
+  background: #0794e9;
+  color: #ffffff;
+}
+
+.md-typeset .bc-hero__button--secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: #ffffff;
+}
+
+/* --- page integration ---------------------------------------------------- */
+
+/* Keep the real content above the fixed parallax stage. */
+body.bc-homepage .md-content,
+.md-content__inner > *:not(.bc-hero) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Keep the header above the parallax stage.
+ *
+ * Deliberately NOT transparent: the header's contents (logo, site title, theme
+ * toggle, repo link) are white, and the front page's background is white, so a
+ * see-through header makes all of them invisible until hovered. The opaque bar
+ * costs nothing visually - the hero starts right below it. */
+body.bc-homepage .md-header {
+  position: relative;
+  z-index: 5;
+}
+
+/* The hero replaces the README's own logo and title. */
+.md-content__inner.bc-has-hero > p:first-of-type:has(> img),
+.md-content__inner.bc-has-hero > h1:first-of-type {
+  display: none;
+}
+
+.md-typeset .bc-hero__logo {
+  width: 9rem;
+  margin: 0 0 1rem;
+}
+
+/* --- responsive ---------------------------------------------------------- */
+
+@media screen and (max-width: 76.1875em) {
+  .bc-parallax { max-height: 600px; }
+  .bc-hero__title { font-size: 2.5rem; }
+  .bc-hero__tagline { font-size: 1.25rem; }
+}
+
+@media screen and (max-width: 45em) {
+  .bc-parallax { max-height: 500px; }
+
+  .bc-hero {
+    min-height: 380px;
+    padding: 3rem 1.5rem 3.5rem;
+  }
+  .bc-hero__title { font-size: 2rem; }
+  .bc-hero__tagline { font-size: 1.1rem; }
+  .bc-hero__description { font-size: 1rem; }
+  .bc-hero__buttons { flex-direction: column; width: 100%; }
+  .bc-hero__button { width: 100%; }
+}
+
+/* Respect a reduced-motion preference: keep the layout, drop the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .bc-parallax__layer { transform: none !important; }
+  .bc-marker { animation: bc-marker-fade 0.8s ease-in 3.2s forwards; }
+}

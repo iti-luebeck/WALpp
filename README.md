@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/walpp-logo.png" alt="WAL++ logo" width="180"></p>
+
 # WAL++ - Waveform Analysis Language
 
 A powerful, expressive language and toolkit for analyzing digital simulation waveforms (VCD, FST, CSV) with S-expression syntax, streaming support, and Python bindings.

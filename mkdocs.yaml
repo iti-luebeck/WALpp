@@ -6,6 +6,8 @@ copyright: Copyright &copy; 2025-2026 Rolf Meyer, Andrija Neskovic, ITI, Univers
 theme:
   name: material
   custom_dir: docs/overrides
+  logo: docs/images/walpp-logo.png
+  favicon: docs/images/favicon.png
   features:
     - navigation.instant
     - navigation.tabs
@@ -18,16 +20,16 @@ theme:
   language: en
   palette:
     - scheme: default
-      primary: teal
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7 
         name: Switch to dark mode
 
     # Palette toggle for dark mode
     - scheme: slate
-      primary: teal
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -58,7 +60,10 @@ plugins:
   - search
 extra:
   generator: false
-#extra_css:
+extra_css:
+  - docs/stylesheets/walpp.css
+  # Front-page particle hero; scoped to body.bc-homepage, no effect elsewhere.
+  - docs/stylesheets/hero.css
   #- docs/stylesheets/doxide.css
   #- https://cdn.jsdelivr.net/npm/es6-shim@0.35.8/coverage/base.min.css
 extra_javascript:
@@ -68,6 +73,10 @@ extra_javascript:
   #- https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
   - https://cdn.jsdelivr.net/npm/mermaid@11.5.0/dist/mermaid.min.js
   #- docs/javascripts/mermaid.js
+  # Front-page particle hero (as in BuddelChip, with waveform paths of its own); tsParticles
+  # must load before the init file.
+  - https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js
+  - docs/javascripts/particles-init.js
 use_directory_urls: true
 
 nav:
