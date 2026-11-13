@@ -73,14 +73,13 @@ def main():
 
     # Upstream's tests use paths relative to the repo root (tests/traces/...).
     os.chdir(REPO)
+    # Upstream's tests reference tests/traces/...; the vendored traces live in
+    # tests/original/traces. A committed symlink bridges the two. This runner does
+    # not create it: a test run must not modify the working tree.
     traces = REPO / "tests" / "traces"
     if not traces.exists():
-        original_traces = ORIGINAL / "traces"
-        if original_traces.exists():
-            try:
-                traces.symlink_to(original_traces, target_is_directory=True)
-            except OSError:
-                print(f"note: upstream tests expect {traces}; create it to run them")
+        print(f"note: upstream tests expect {traces} to exist. Create it with:\n"
+              f"  ln -s original/traces {traces}")
 
     if args.file:
         files = [ORIGINAL / args.file]
