@@ -158,16 +158,7 @@
     hero.innerHTML = [
       '<img class="bc-hero__logo" src="docs/images/walpp-logo.png" alt="WAL++ logo">',
       '<h1 class="bc-hero__title">WAL++</h1>',
-      '<p class="bc-hero__tagline">Waveform Analysis Language in C++</p>',
-      '<p class="bc-hero__description">',
-      'Analyse VCD, FST and CSV traces with the S-expression language of WAL &mdash; ',
-      'the same 130+ operators, rewritten in C++20 for large waveforms, with a REPL, ',
-      'a command line and Python bindings.',
-      '</p>',
-      '<div class="bc-hero__buttons">',
-      '  <a href="docs/API_QUICK_REFERENCE/" class="bc-hero__button bc-hero__button--primary">Quick start</a>',
-      '  <a href="api/" class="bc-hero__button bc-hero__button--secondary">API reference</a>',
-      '</div>'
+      '<p class="bc-hero__tagline">Waveform Analysis Language in C++</p>'
     ].join('');
     inner.insertBefore(hero, inner.firstChild);
     inner.classList.add('bc-has-hero');
