@@ -117,3 +117,17 @@ if(BUILD_PYTHON_MODULE)
     set_tests_properties(test_upstream_conformance PROPERTIES
         ENVIRONMENT "WALPP_BUILD_DIR=$<TARGET_FILE_DIR:wal_cpp>")
 endif()
+
+# The bundled agent skill documents this binary's behaviour, and its own verify.sh
+# checks every claim that can be run. Wiring it into CTest means a change that makes
+# the skill wrong fails the build rather than being discovered by an agent later.
+find_program(BASH_EXECUTABLE bash)
+if(BASH_EXECUTABLE AND EXISTS ${CMAKE_SOURCE_DIR}/.claude/skills/walpp-waveform-analysis/verify.sh)
+    add_test(
+        NAME test_skill_matches_binary
+        COMMAND ${BASH_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/.claude/skills/walpp-waveform-analysis/verify.sh
+                $<TARGET_FILE:wal>
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+endif()

@@ -2003,6 +2003,132 @@ void test_cmake_package_export(ExecutableTestSuite& suite, const std::string& ex
     suite.add_result(result);
 }
 
+// Test 35: the machine-readable modes a program drives wal through.
+//
+// An agent reading a trace asks the same first question every time: what is in it,
+// spelled exactly how. Answering that from --fast-list means parsing text, and from
+// the REPL means parsing S-expressions; both are guessable, and a guessed signal
+// name produces a script that runs and returns a plausible wrong number. These three
+// modes answer in JSON instead.
+void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "agent modes: inspect, lint, json";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        result.passed = true;
+
+        if (file_exists(vcd)) {
+            // --inspect: the facts a caller needs before writing a query.
+            auto [rc, out] = run_command(exe_path + " --compact-json --inspect " + vcd + " 2>&1");
+            struct Want { const char* text; const char* why; };
+            const Want wants[] = {
+                {"\"signal_count\":7", "signal count"},
+                {"\"index_count\":81", "index count"},
+                {"\"hierarchy_separator\":\".\"", "the separator, stated not assumed"},
+                {"\"trace_id_separator\":\"^\"", "the trace-id separator"},
+                {"\"name\":\"tb.dut.counter\"", "a fully qualified signal name"},
+                {"\"width\":4", "that signal's width"},
+                {"\"scope\":\"tb.dut\"", "its scope"},
+            };
+            for (const auto& w : wants) {
+                if (out.find(w.text) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("--inspect is missing ") + w.why + "; ";
+                }
+            }
+
+            // -e --json: results a caller can parse.
+            auto [rc2, json] = run_command(
+                exe_path + " -l " + vcd + " --json -e '(count (rising tb.clk))'"
+                " -e '(list 1 \"two\" #t)' 2>&1");
+            if (json.find("40") == std::string::npos ||
+                json.find("[1,\"two\",true]") == std::string::npos) {
+                result.passed = false;
+                result.message += "-e --json did not emit JSON values (got: '" + json + "'); ";
+            }
+
+            // A failed query is reported AS JSON, not only on stderr, so a caller
+            // reading stdout learns that it failed.
+            auto [rc3, err] = run_command(
+                exe_path + " -l " + vcd + " --json -e '(count (rising no.such))' 2>/dev/null");
+            if (err.find("\"error\"") == std::string::npos) {
+                result.passed = false;
+                result.message += "a failing query should still yield JSON (got: '" + err + "'); ";
+            }
+        }
+
+        // --lint: a clean script passes and exits zero.
+        {
+            std::string good = "/tmp/walpp_lint_good.wal";
+            std::ofstream f(good);
+            f << "(define cnt 0)\n(define dbl (fn [x] (* x 2)))\n(dbl cnt)\n";
+            f.close();
+            auto [rc, out] = run_command(exe_path + " --lint " + good + " 2>&1; echo rc=$?");
+            if (out.find("no problems found") == std::string::npos ||
+                out.find("rc=0") == std::string::npos) {
+                result.passed = false;
+                result.message += "a clean script should lint clean and exit 0 (got: '" +
+                                  out + "'); ";
+            }
+            std::remove(good.c_str());
+        }
+
+        // --lint: a mistyped call is caught WITHOUT running the script, which is the
+        // point -- at runtime the first half would already have executed.
+        {
+            std::string bad = "/tmp/walpp_lint_typo.wal";
+            std::ofstream f(bad);
+            f << "(define total 0)\n(cont (rising tb.clk))\n";
+            f.close();
+            auto [rc, out] = run_command(exe_path + " --lint " + bad + " 2>&1; echo rc=$?");
+            if (out.find("unknown-operator") == std::string::npos ||
+                out.find("cont") == std::string::npos ||
+                out.find("rc=1") == std::string::npos) {
+                result.passed = false;
+                result.message += "a mistyped call should be an error and exit 1 (got: '" +
+                                  out + "'); ";
+            }
+            auto [rc2, js] = run_command(exe_path + " --lint " + bad + " --json 2>&1");
+            if (js.find("\"ok\": false") == std::string::npos ||
+                js.find("\"code\": \"unknown-operator\"") == std::string::npos) {
+                result.passed = false;
+                result.message += "--lint --json should report the finding (got: '" + js + "'); ";
+            }
+            std::remove(bad.c_str());
+        }
+
+        // --lint: unbalanced delimiters are located, not just reported.
+        {
+            std::string bad = "/tmp/walpp_lint_paren.wal";
+            std::ofstream f(bad);
+            f << "(define a 1)\n(define b (+ 1 2)\n";
+            f.close();
+            auto [rc, out] = run_command(exe_path + " --lint " + bad + " 2>&1");
+            if (out.find("unterminated-list") == std::string::npos ||
+                out.find(":2:") == std::string::npos) {
+                result.passed = false;
+                result.message += "an unclosed form should be located by line (got: '" +
+                                  out + "'); ";
+            }
+            std::remove(bad.c_str());
+        }
+
+        if (result.passed) {
+            result.message = "inspect, lint and json answer in a parseable form";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -2074,6 +2200,7 @@ int main(int argc, char* argv[]) {
     test_streaming_extraction(suite, exe_path);
     test_streaming_matches_full_load(suite, exe_path);
     test_cmake_package_export(suite, exe_path);
+    test_agent_modes(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

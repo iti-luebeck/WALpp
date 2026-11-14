@@ -1,4 +1,5 @@
 #include "wal/cli.h"
+#include "wal/agent_tools.h"
 #include "wal/bigint.h"
 #include "wal/core.h"
 #include "wal/repl.h"
@@ -52,6 +53,17 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
                 ++i;
                 if (i + 1 < args.size()) fast_output_file = args[++i];
             }
+        } else if (arg == "--inspect") {
+            inspect_mode = true;
+            if (i + 1 < args.size()) inspect_file = args[++i];
+        } else if (arg == "--lint") {
+            lint_mode = true;
+            if (i + 1 < args.size()) lint_file = args[++i];
+        } else if (arg == "--json") {
+            json_output = true;
+        } else if (arg == "--compact-json") {
+            json_output = true;
+            pretty_json = false;
         } else if (arg == "--compat-types") {
             // Upstream's permissive coercion, for running upstream scripts
             // unchanged. Off by default: see compat_types_mode().
@@ -180,6 +192,13 @@ void CLI::print_usage() {
               << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
               << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
               << "  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)\n"
+              << "\nAGENT / SCRIPTING MODES (machine-readable):\n"
+              << "  --inspect FILE                      Describe a trace as JSON\n"
+              << "                                      (signals, widths, scopes, length)\n"
+              << "  --lint FILE.wal                     Check a script without running it;\n"
+              << "                                      exits non-zero if it will not run\n"
+              << "  --json                              Emit -e results and --lint as JSON\n"
+              << "  --compact-json                      As --json, on one line\n"
               << "  --compat-types                      Upstream's permissive type coercion\n"
               << "                                      (default: types stay separate)\n"
               << "  --bigint                            Arbitrary-precision integers\n"
@@ -509,6 +528,49 @@ int CLI::run() {
         return 0;
     }
     
+    // Machine-readable modes. These come before everything else because they are
+    // self-contained: each answers one question and exits, so a caller never has to
+    // separate the answer from REPL chatter or a trace-loading message.
+    if (lint_mode) {
+        if (lint_file.empty()) {
+            std::cerr << "Error: --lint needs a script file\n";
+            return 1;
+        }
+        std::ifstream in(lint_file);
+        if (!in) {
+            std::cerr << "Error: cannot open " << lint_file << "\n";
+            return 1;
+        }
+        std::ostringstream text;
+        text << in.rdbuf();
+        auto findings = lint_script(text.str(), lint_file);
+        if (json_output) {
+            std::cout << lint_findings_json(findings, lint_file, pretty_json) << "\n";
+        } else {
+            std::cout << lint_findings_text(findings, lint_file);
+        }
+        // Non-zero when the script will not run, so this drops into a build or a
+        // pre-commit hook without a wrapper.
+        for (const auto& f : findings) {
+            if (f.severity == LintFinding::Severity::Error) return 1;
+        }
+        return 0;
+    }
+
+    if (inspect_mode) {
+        if (inspect_file.empty()) {
+            std::cerr << "Error: --inspect needs a trace file\n";
+            return 1;
+        }
+        try {
+            std::cout << inspect_trace(inspect_file, pretty_json) << "\n";
+            return 0;
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return 1;
+        }
+    }
+
     // Check for fast mode first (highest priority)
     if (fast_hd_all || fast_hd_scope || fast_hw_all || fast_hw_scope ||
         fast_hd_signals || fast_hw_signals || fast_values_signals || fast_list) {
@@ -545,14 +607,25 @@ int CLI::run() {
                 // printed by the shared renderer: they used to fall off the end
                 // of this chain and vanish, which made `-e '(signal-names)'`
                 // look like an empty trace.
-                if (result.is_nil()) {
+                if (json_output) {
+                    // One JSON value per -e, so a caller reads results without
+                    // parsing WAL syntax and without guessing where one ends.
+                    std::cout << value_to_json(result) << std::endl;
+                } else if (result.is_nil()) {
                     std::cout << "nil" << std::endl;
                 } else {
                     print_value(result, std::cout, /*quote_strings=*/false);
                     std::cout << std::endl;
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Error: " << e.what() << std::endl;
+                if (json_output) {
+                    // An error is a result too: a caller reading JSON should not
+                    // have to scrape stderr to learn the query failed.
+                    std::cout << "{\"error\": \"" << json_escape(e.what()) << "\"}"
+                              << std::endl;
+                } else {
+                    std::cerr << "Error: " << e.what() << std::endl;
+                }
                 return 1;
             }
         }

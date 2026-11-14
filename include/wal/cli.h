@@ -54,6 +54,14 @@ private:
     bool fast_hw_signals = false;
     bool fast_values_signals = false;  // raw per-signal value series (changes only)
     bool fast_list = false;            // list signals (width + name) + timescale
+
+    // Machine-readable modes, for a program driving wal rather than a person.
+    bool inspect_mode = false;         // --inspect FILE   : describe a trace as JSON
+    bool lint_mode = false;            // --lint FILE.wal  : check a script, do not run it
+    bool json_output = false;          // --json           : -e results as JSON
+    bool pretty_json = true;           // --compact-json   : one line instead
+    std::string inspect_file;
+    std::string lint_file;
     std::string fast_scope;
     std::string fast_vcd_file;
     std::string fast_output_file;

@@ -44,6 +44,17 @@ to that core.
 Both have working programs in [`examples/cpp/`](../examples/cpp/README.md), which
 build against an installed WAL++ the way a consumer would.
 
+### Driving WAL++ from an agent
+
+The repository ships a Claude skill at
+[`.claude/skills/walpp-waveform-analysis/`](../.claude/skills/walpp-waveform-analysis/SKILL.md),
+written from the WAL++ usage behind the paper. It carries its own `verify.sh`, which
+checks every claim it makes against the binary you have and is wired into CTest, so a
+change that makes the skill wrong fails the build instead of misleading an agent later.
+
+The machine-readable CLI modes it builds on, `--inspect`, `--lint` and `--json`, are
+in the [command-line reference](reference/cli.md#agent-and-scripting-modes).
+
 ### Coming from upstream WAL
 
 | | |

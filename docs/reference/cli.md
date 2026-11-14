@@ -178,3 +178,83 @@ wal -l small.vcd --no-streaming
 ```
 
 ---
+
+## Agent and scripting modes
+
+Machine-readable entry points, for a program driving `wal` rather than a person
+reading its output. Each answers one question and exits, so nothing has to be
+separated from REPL chatter or a trace-loading message.
+
+### `--inspect FILE`
+
+Describe a trace as JSON: its length, its scopes, and every signal with the width and
+the exact spelling the engine accepts.
+
+```bash
+wal --inspect trace.vcd | jq -r '.signals[].name'
+```
+
+```json
+{
+  "file": "counter.vcd",
+  "max_index": 80,
+  "index_count": 81,
+  "signal_count": 7,
+  "hierarchy_separator": ".",
+  "trace_id_separator": "^",
+  "scopes": ["tb", "tb.dut"],
+  "signals": [
+    { "name": "tb.dut.counter", "leaf": "counter", "scope": "tb.dut", "width": 4 }
+  ]
+}
+```
+
+The two separators are stated rather than left to be assumed, because the caller most
+likely to read this is one building signal names by hand.
+
+### `--lint FILE.wal`
+
+Parse and check a script **without running it**, and exit non-zero if it will not
+run. Catches source that does not parse, located by line and column, and calls to
+operators that do not exist.
+
+```bash
+wal --lint analysis.wal
+```
+
+```
+analysis.wal:2:1: error: call to 'cont', which is not an operator, a macro, or
+                        defined in this file [unknown-operator]
+    check the spelling, or define it before use
+```
+
+Worth running on anything long. At runtime a mistyped operator is only noticed when
+evaluation reaches it, by which point the earlier half of the script has already run
+and possibly written files.
+
+An unresolvable symbol in **argument** position is not reported, because that is how
+a signal is read and `--lint` loads no trace. Only a call to something that does not
+exist is an error.
+
+### `--json`, `--compact-json`
+
+Emit `-e` results, and `--lint` findings, as JSON. One value per `-e`.
+
+```bash
+wal -l trace.vcd --json -e '(count (rising tb.clk))' -e 'SIGNALS'
+```
+
+```json
+40
+["tb.overflow","tb.clk","tb.reset","tb.dut.clk","tb.dut.reset","tb.dut.overflow","tb.dut.counter"]
+```
+
+A failed query is reported **as JSON on stdout** as well as exiting non-zero, so a
+caller reading stdout does not also have to scrape stderr to learn it failed:
+
+```json
+{"error": "Eval error: Undefined variable: no.such.signal"}
+```
+
+A bigint is emitted as a string, because JSON numbers carry no more precision than a
+double and a bigint is used exactly when that is not enough.

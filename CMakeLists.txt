@@ -78,6 +78,7 @@ target_link_libraries(fstapi PRIVATE Threads::Threads m)
 # Core WAL library sources - Phase 1 + Phase 2 + Phase 3 + Phase 4
 set(WALPP_CORE_SOURCES
     src/ast.cpp
+    src/agent_tools.cpp
     src/bigint.cpp
     src/evaluator.cpp
     src/parser.cpp
