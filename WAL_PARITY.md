@@ -9,16 +9,20 @@ Measured against **upstream wal-lang 0.9.1** (`wal/ast_defs.py` operator enum pl
 
 ## Headline numbers
 
-| | Count |
-|---|---|
-| Upstream builtins | 107 |
-| WAL++ operators + special forms | 151 |
-| **Upstream builtins missing from WAL++** | **66** |
-| Upstream stdlib functions/macros (written in WAL itself) | ~45 |
+| | At branch start | Now |
+|---|---|---|
+| Upstream tests passing | 18 of 77 | **65 of 77** |
+| Upstream operators missing from WAL++ | 66 of 106 | **16 of 106** |
+| Upstream standard library | not loaded | loaded |
 
 WAL++ is not a subset: it has ~90 operators upstream lacks (the whole statistics,
-spectrum, Hamming and export families). The gap is concentrated in **language
-machinery** rather than analysis operators.
+spectrum, Hamming and export families). The gap was concentrated in **language
+machinery** rather than analysis operators, which is why closing it was mostly a
+matter of connecting pieces that already existed.
+
+A shareable summary of this document is published at
+https://claude.ai/artifact/41NFwsPgipgr4Rxet8XKTH (visible only to people it has
+been shared with).
 
 ## Verified against a real upstream install
 
