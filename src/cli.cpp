@@ -6,6 +6,7 @@
 #include "wal/trace/streaming_config.h"
 #include "wal/fast/vcd_parser.h"
 #include "wal/fast/hamming_ops.h"
+#include "wal/fast/streaming_ops.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <unistd.h>
 #include <chrono>
+#include <memory>
 
 namespace wal {
 
@@ -324,27 +326,13 @@ int CLI::run_fast_mode() {
         } else {
             if (is_fst) {
                 std::cerr << "Parsing FST...\n";
-                parser.parse_fst(fast_vcd_file);
             } else {
                 std::cerr << "Parsing VCD...\n";
-                parser.parse(fast_vcd_file);
             }
         }
-        
-        auto parse_end = high_resolution_clock::now();
-        auto parse_ms = duration_cast<milliseconds>(parse_end - parse_start).count();
-        
-        std::cerr << "Parsed " << parser.num_signals() << " signals, "
-                  << parser.num_timestamps() << " timestamps in "
-                  << format_duration(parse_ms) << "\n";
-        
-        // Perform operation
-        auto op_start = high_resolution_clock::now();
-        
-        fast_vcd::HammingOps ops(parser);
-        fast_vcd::Result results;
-        
-        // Read signal list if needed
+
+        // Read the signal list before parsing: with streaming the kernel runs
+        // DURING the parse, so it has to exist first.
         std::vector<std::string> signal_names;
         if (fast_hd_signals || fast_hw_signals || fast_values_signals) {
             std::ifstream sigfile(fast_signals_file);
@@ -352,26 +340,111 @@ int CLI::run_fast_mode() {
                 std::cerr << "Error: Could not open signal list file: " << fast_signals_file << "\n";
                 return 1;
             }
-            
             std::string line;
             while (std::getline(sigfile, line)) {
-                // Trim whitespace
                 line.erase(0, line.find_first_not_of(" \t\r\n"));
                 line.erase(line.find_last_not_of(" \t\r\n") + 1);
-                
-                // Skip empty lines and comments
                 if (!line.empty() && line[0] != '#') {
                     signal_names.push_back(line);
                 }
             }
             sigfile.close();
-            
             std::cerr << "Loaded " << signal_names.size() << " signal names from list\n";
         }
-        
-        // --fast-list: emit the timescale + (width, name) for every signal. The
-        // companion timing tools resolve a substring against this and convert
-        // tick timestamps to ns. (No op; written and returned here.)
+
+        std::ofstream outfile;
+        auto open_output = [&]() -> bool {
+            outfile.open(fast_output_file);
+            if (!outfile) {
+                std::cerr << "Error: Could not open output file: " << fast_output_file << "\n";
+                return false;
+            }
+            return true;
+        };
+
+        // Pick the kernel and install it as the parser's delta sink, so each
+        // timestamp is consumed and dropped as it is read. Nothing accumulates: peak
+        // memory is O(signals) rather than growing with the trace.
+        //
+        // FST is parsed through GTKWave's fstapi, which hands over its own callback
+        // structure, so that path still materialises the deltas and then replays
+        // them through the same kernel below. The results are identical either way;
+        // only the memory differs.
+        size_t rows_written = 0;
+        bool have_kernel = false;
+
+        std::unique_ptr<fast_vcd::StreamingHamming> hamming;
+        std::unique_ptr<fast_vcd::StreamingValues> values;
+
+        if (fast_values_signals) {
+            if (!open_output()) return 1;
+            std::cerr << "Extracting value changes (" << signal_names.size() << " signals)...\n";
+            // The timescale is only known once the header has been read, which
+            // happens inside parse() just before the first delta arrives, so the
+            // header line is written lazily on the first row rather than up front.
+            values = std::make_unique<fast_vcd::StreamingValues>(
+                parser, signal_names,
+                [&outfile, &parser, wrote_header = false](int64_t ts, uint32_t idx,
+                                                          int64_t val) mutable {
+                    if (!wrote_header) {
+                        outfile << "# timescale " << parser.get_timescale() << "\n";
+                        wrote_header = true;
+                    }
+                    outfile << ts << "," << idx << "," << val << "\n";
+                });
+            have_kernel = true;
+        } else if (fast_hd_all || fast_hd_scope || fast_hd_signals ||
+                   fast_hw_all || fast_hw_scope || fast_hw_signals) {
+            bool distance = fast_hd_all || fast_hd_scope || fast_hd_signals;
+            fast_vcd::TrackedSignals tracked = fast_vcd::TrackedSignals::all();
+            if (fast_hd_scope || fast_hw_scope) {
+                tracked = fast_vcd::TrackedSignals::in_scope(fast_scope);
+            } else if (fast_hd_signals || fast_hw_signals) {
+                tracked = fast_vcd::TrackedSignals::named(signal_names);
+            }
+            if (!open_output()) return 1;
+            std::cerr << "Computing Hamming " << (distance ? "Distance" : "Weight") << " (";
+            if (fast_hd_scope || fast_hw_scope) std::cerr << "scope: " << fast_scope;
+            else if (fast_hd_signals || fast_hw_signals) std::cerr << signal_names.size() << " signals";
+            else std::cerr << "all signals";
+            std::cerr << ")...\n";
+            hamming = std::make_unique<fast_vcd::StreamingHamming>(
+                parser, tracked, distance,
+                [&outfile](int64_t ts, int64_t value) {
+                    outfile << ts << "," << value << "\n";
+                });
+            have_kernel = true;
+        }
+
+        // --fast-list needs only the header, so a sink that discards every delta
+        // keeps it from building a structure it will not read.
+        if (fast_list && !is_fst) {
+            parser.set_delta_sink([](const fast_vcd::DeltaTimestamp&) {});
+        }
+
+        if (have_kernel && !is_fst) {
+            parser.set_delta_sink([&](const fast_vcd::DeltaTimestamp& delta) {
+                if (hamming) hamming->on_delta(delta);
+                else if (values) values->on_delta(delta);
+            });
+        }
+
+        if (is_fst) {
+            parser.parse_fst(fast_vcd_file);
+        } else {
+            parser.parse(fast_vcd_file);
+        }
+
+        auto parse_end = high_resolution_clock::now();
+        auto parse_ms = duration_cast<milliseconds>(parse_end - parse_start).count();
+
+        std::cerr << "Parsed " << parser.num_signals() << " signals, "
+                  << parser.num_timestamps() << " timestamps in "
+                  << format_duration(parse_ms) << "\n";
+
+        auto op_start = high_resolution_clock::now();
+
+        // --fast-list needs only the header.
         if (fast_list) {
             std::ofstream out(fast_output_file);
             if (!out) {
@@ -387,65 +460,33 @@ int CLI::run_fast_mode() {
             return 0;
         }
 
-        // --fast-values-signals: raw per-signal value-change rows
-        // "timestamp,list-index,value" (+ a "# timescale ..." header), for bus
-        // value queries where a popcount (HW/HD) is not the value.
-        if (fast_values_signals) {
-            fast_vcd::ValueRows rows = ops.values_signals(signal_names);
-            std::ofstream out(fast_output_file);
-            if (!out) {
-                std::cerr << "Error: Could not open output file: " << fast_output_file << "\n";
-                return 1;
-            }
-            out << "# timescale " << parser.get_timescale() << "\n";
-            for (const auto& [ts, idx, val] : rows) {
-                out << ts << "," << idx << "," << val << "\n";
-            }
-            std::cerr << "Wrote " << rows.size() << " value rows to " << fast_output_file << "\n";
-            return 0;
-        }
-
-        if (fast_hd_all) {
-            std::cerr << "Computing Hamming Distance (all signals)...\n";
-            results = ops.hamming_distance_all();
-        } else if (fast_hd_scope) {
-            std::cerr << "Computing Hamming Distance (scope: " << fast_scope << ")...\n";
-            results = ops.hamming_distance_scope(fast_scope);
-        } else if (fast_hd_signals) {
-            std::cerr << "Computing Hamming Distance (" << signal_names.size() << " signals)...\n";
-            results = ops.hamming_distance_signals(signal_names);
-        } else if (fast_hw_all) {
-            std::cerr << "Computing Hamming Weight (all signals)...\n";
-            results = ops.hamming_weight_all();
-        } else if (fast_hw_scope) {
-            std::cerr << "Computing Hamming Weight (scope: " << fast_scope << ")...\n";
-            results = ops.hamming_weight_scope(fast_scope);
-        } else if (fast_hw_signals) {
-            std::cerr << "Computing Hamming Weight (" << signal_names.size() << " signals)...\n";
-            results = ops.hamming_weight_signals(signal_names);
-        }
-        
-        auto op_end = high_resolution_clock::now();
-        auto op_ms = duration_cast<milliseconds>(op_end - op_start).count();
-        
-        std::cerr << "Computation completed in " << format_duration(op_ms) << "\n";
-        std::cerr << "Total time: " << format_duration(parse_ms + op_ms) << "\n";
-        
-        // Write results to CSV
-        std::ofstream outfile(fast_output_file);
-        if (!outfile) {
-            std::cerr << "Error: Could not open output file: " << fast_output_file << "\n";
+        if (!have_kernel) {
+            std::cerr << "Error: no extraction mode selected\n";
             return 1;
         }
-        
-        for (const auto& result : results) {
-            outfile << result.first << "," << result.second << "\n";
+
+        // The values output carries a timescale header; it has to precede the rows,
+        // so it is written before the parse when streaming. For FST the rows have
+        // not been produced yet, so replay the stored deltas through the kernel now.
+        if (is_fst) {
+            for (const auto& delta : parser.get_deltas()) {
+                if (hamming) hamming->on_delta(delta);
+                else if (values) values->on_delta(delta);
+            }
         }
+
+        if (hamming) { hamming->finish(); rows_written = hamming->rows(); }
+        if (values)  { values->finish();  rows_written = values->rows(); }
         outfile.close();
-        
-        std::cerr << "Results written to: " << fast_output_file 
-                  << " (" << results.size() << " entries)\n";
-        
+
+        auto op_end = high_resolution_clock::now();
+        auto op_ms = duration_cast<milliseconds>(op_end - op_start).count();
+
+        std::cerr << "Computation completed in " << format_duration(op_ms) << "\n";
+        std::cerr << "Total time: " << format_duration(parse_ms + op_ms) << "\n";
+        std::cerr << "Results written to: " << fast_output_file
+                  << " (" << rows_written << " entries)\n";
+
         return 0;
         
     } catch (const std::exception& e) {

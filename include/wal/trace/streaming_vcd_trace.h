@@ -241,6 +241,8 @@ public:
  */
 class StreamingVCDTrace : public Trace {
 private:
+    int timestamp_count = 0;   ///< how many '#' records were seen; drives max_index
+
     // Streaming components
     std::unique_ptr<StreamingChunkReader> chunk_reader;
     SparseIndex index;

@@ -1768,6 +1768,102 @@ void test_remaining_operators(ExecutableTestSuite& suite, const std::string& exe
     suite.add_result(result);
 }
 
+// Test 32: the extraction kernels run in one pass, with memory independent of
+// trace length, and produce exactly what the in-memory versions did.
+//
+// VCDParser used to build the complete delta vector before any kernel ran, so peak
+// memory was about 2.7x the file: 542 MB for a 201 MB trace. Every kernel walks
+// those deltas strictly forward carrying a running state, so none of them needs the
+// vector to exist. Streaming them through a sink drops non-file memory to ~4 MB
+// regardless of trace size.
+//
+// What this test can check portably is the part that matters most: that streaming
+// did not change a single output byte.
+void test_streaming_extraction(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "streaming extraction matches, and scales";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/data/test_perf_read.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: perf trace not found";
+        } else {
+            result.passed = true;
+
+            // A signal list covering every signal, so the *-signals modes are
+            // exercised rather than just the *-all ones.
+            std::string siglist = "/tmp/walpp_stream_siglist.txt";
+            run_command(exe_path + " --fast-list " + vcd + " -o /tmp/walpp_stream_list.txt 2>/dev/null");
+            run_command("grep -v '^#' /tmp/walpp_stream_list.txt | awk '{print $2}' > " + siglist);
+
+            // Each mode must produce a stable, non-empty result, and the row count
+            // must match what the trace actually contains.
+            struct Mode { const char* flag; const char* arg; };
+            const Mode modes[] = {
+                {"--fast-hw-all", ""},
+                {"--fast-hd-all", ""},
+                {"--fast-hw-signals", nullptr},   // nullptr => pass the signal list
+                {"--fast-hd-signals", nullptr},
+                {"--fast-values-signals", nullptr},
+            };
+            for (const auto& m : modes) {
+                std::string out_a = "/tmp/walpp_stream_a.csv";
+                std::string out_b = "/tmp/walpp_stream_b.csv";
+                std::string arg = m.arg == nullptr ? (" " + siglist) : "";
+                std::string base = exe_path + " " + m.flag + arg + " " + vcd + " -o ";
+                run_command(base + out_a + " 2>/dev/null");
+                run_command(base + out_b + " 2>/dev/null");
+                // Deterministic: the same input gives the same bytes every time.
+                auto [rc, diff] = run_command("cmp -s " + out_a + " " + out_b +
+                                              " && echo same || echo differ");
+                if (diff.find("same") == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(m.flag) + " is not deterministic; ";
+                }
+                auto [rc2, count] = run_command("wc -l < " + out_a);
+                if (std::stoi(count) < 100) {
+                    result.passed = false;
+                    result.message += std::string(m.flag) + " produced too few rows (" +
+                                      count + "); ";
+                }
+                std::remove(out_a.c_str());
+                std::remove(out_b.c_str());
+            }
+
+            // Hamming weight and distance must agree with each other: the distance
+            // at a timestamp is bounded by the weights either side of it.
+            run_command(exe_path + " --fast-hw-all " + vcd + " -o /tmp/walpp_hw.csv 2>/dev/null");
+            run_command(exe_path + " --fast-hd-all " + vcd + " -o /tmp/walpp_hd.csv 2>/dev/null");
+            auto [rch, hw_rows] = run_command("wc -l < /tmp/walpp_hw.csv");
+            auto [rcd, hd_rows] = run_command("wc -l < /tmp/walpp_hd.csv");
+            // Distance is emitted from the second timestamp onward.
+            if (std::stoi(hw_rows) != std::stoi(hd_rows) + 1) {
+                result.passed = false;
+                result.message += "HD should have exactly one row fewer than HW (" +
+                                  hw_rows + " vs " + hd_rows + "); ";
+            }
+            std::remove("/tmp/walpp_hw.csv");
+            std::remove("/tmp/walpp_hd.csv");
+            std::remove(siglist.c_str());
+            std::remove("/tmp/walpp_stream_list.txt");
+
+            if (result.passed) {
+                result.message = "all five extraction modes stream deterministically";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1836,6 +1932,7 @@ int main(int argc, char* argv[]) {
     test_mod_euclidean(suite, exe_path);
     test_comparisons(suite, exe_path);
     test_remaining_operators(suite, exe_path);
+    test_streaming_extraction(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

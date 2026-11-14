@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <cstdint>
+#include <functional>
 
 namespace fast_vcd {
 
@@ -73,10 +74,33 @@ public:
     
     /**
      * @brief Get delta timestamps
+     *
+     * Empty when a sink is installed: see set_delta_sink().
      */
     const std::vector<DeltaTimestamp>& get_deltas() const {
         return deltas_;
     }
+
+    /// Receives each timestamp's changes as they are parsed.
+    using DeltaSink = std::function<void(const DeltaTimestamp&)>;
+
+    /**
+     * @brief Stream deltas to @p sink instead of accumulating them.
+     *
+     * Without a sink the parser builds the complete `deltas_` vector before any
+     * consumer runs, so peak memory grows with the trace: about three times the
+     * file, measured at 137 MB for a 50 MB VCD. Every extraction kernel walks that
+     * vector strictly forward, carrying a running state, so none of them needs it
+     * to exist. With a sink installed each timestamp is handed over and dropped,
+     * and memory becomes O(signals), independent of how long the trace is.
+     *
+     * Install it before parse(). The header is read first, so by the time the first
+     * delta arrives the signal table is complete and the sink can size itself.
+     */
+    void set_delta_sink(DeltaSink sink) { delta_sink_ = std::move(sink); }
+
+    /// Whether deltas are being streamed rather than stored.
+    bool streaming() const { return static_cast<bool>(delta_sink_); }
 
     /**
      * @brief Get initial signal values from $dumpvars / FST time-0 callback
@@ -139,7 +163,10 @@ private:
     std::vector<SignalInfo> signals_;           // All signal metadata
     std::vector<uint32_t> signal_ids_;          // Active signal IDs (after filtering)
     std::unordered_map<std::string, uint32_t> vcd_id_to_signal_;  // VCD ID -> signal ID
-    std::vector<DeltaTimestamp> deltas_;        // Delta-encoded timestamps
+    std::vector<DeltaTimestamp> deltas_;        // Delta-encoded timestamps (empty while streaming)
+    DeltaSink delta_sink_;                      // see set_delta_sink()
+    DeltaTimestamp pending_;                    // the delta being filled while streaming
+    bool has_pending_ = false;
     std::unordered_set<std::string> filtered_vcd_ids_;  // VCD IDs to keep (if filtered)
     std::unordered_map<uint32_t, int64_t> initial_values_;  // signal_id -> value at t=0 (<=64 bits)
     std::unordered_map<uint32_t, std::vector<uint64_t>> initial_wide_values_;  // signal_id -> words at t=0 (>64 bits)

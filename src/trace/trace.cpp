@@ -8,7 +8,26 @@
 namespace wal {
 
 std::vector<std::string> Trace::get_scopes() const {
-    return scope_names;
+    if (!scope_names.empty()) {
+        return scope_names;
+    }
+    // A reader that records signal names but not scope names still has the
+    // hierarchy: it is the set of prefixes of the signal names. Deriving it here
+    // means every reader reports SCOPES, rather than only the ones that happen to
+    // keep a separate list.
+    std::vector<std::string> derived;
+    for (const auto& signal : get_all_signals()) {
+        size_t cut = 0;
+        while ((cut = signal.find(SCOPE_SEPARATOR, cut)) != std::string::npos) {
+            std::string scope = signal.substr(0, cut);
+            if (std::find(derived.begin(), derived.end(), scope) == derived.end()) {
+                derived.push_back(scope);
+            }
+            ++cut;
+        }
+    }
+    std::sort(derived.begin(), derived.end());
+    return derived;
 }
 
 void Trace::set_index(int idx) {
@@ -66,14 +85,19 @@ Value Trace::get_special_signal(const std::string& name) {
     } else if (name == TRACE_FILE) {
         return Value(std::make_shared<Symbol>(filename));
     } else if (name == SIGNALS) {
+        // Through the VIRTUAL accessor, not the `signal_names` member. Only the
+        // full-load readers fill that member; a streaming reader keeps its own
+        // index and overrides get_all_signals(), so reading the member directly
+        // made SIGNALS report an empty trace whenever streaming was in use.
         auto list = std::make_shared<WList>();
-        for (const auto& sig : signal_names) {
+        for (const auto& sig : get_all_signals()) {
             list->push_back(Value(std::make_shared<Symbol>(sig)));
         }
         return Value(list);
     } else if (name == SCOPES) {
+        // Virtual accessor, for the same reason as SIGNALS above.
         auto list = std::make_shared<WList>();
-        for (const auto& scope : scope_names) {
+        for (const auto& scope : get_scopes()) {
             list->push_back(Value(std::make_shared<Symbol>(scope)));
         }
         return Value(list);

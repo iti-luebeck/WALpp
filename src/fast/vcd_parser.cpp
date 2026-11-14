@@ -119,6 +119,12 @@ void VCDParser::parse(const std::string& filename, const std::string& scope_filt
         close(fd);
         throw std::runtime_error("Cannot mmap VCD file");
     }
+
+    // The parse is a single forward scan, so tell the kernel to read ahead and not
+    // to keep what we are past. Without this the whole file stays resident and peak
+    // RSS tracks the file size, even though no byte is ever read twice, which
+    // defeats streaming the deltas in the first place.
+    madvise(const_cast<char*>(data), file_size, MADV_SEQUENTIAL);
     
     const char* end = data + file_size;
     size_t pos = 0;
@@ -146,11 +152,22 @@ void VCDParser::parse(const std::string& filename, const std::string& scope_filt
         }
     }
     
-    // Reserve space for deltas (estimate ~64K timestamps)
-    deltas_.reserve(65536);
+    // Reserve space for deltas (estimate ~64K timestamps). Skipped while
+    // streaming, where no delta outlives the call that produced it.
+    if (!delta_sink_) {
+        deltas_.reserve(65536);
+    } else {
+        pending_.changes.reserve(100);
+    }
 
     // Parse value changes with delta encoding
     parse_data(data, end, pos);
+
+    // The last timestamp has no following one to close it, so flush it here.
+    if (delta_sink_ && has_pending_) {
+        delta_sink_(pending_);
+        has_pending_ = false;
+    }
 
     // Cleanup
     munmap(const_cast<char*>(data), file_size);
@@ -341,6 +358,25 @@ void VCDParser::parse_header(const char* data, const char* end, size_t& pos) {
 void VCDParser::parse_data(const char* data, const char* end, size_t& pos) {
     int64_t current_timestamp = 0;
     DeltaTimestamp* current_delta = nullptr;
+
+    // Hand pages back to the kernel once the scan is past them.
+    //
+    // MADV_SEQUENTIAL asks for read-ahead but does not reclaim, so without this the
+    // mapping stays fully resident and peak RSS tracks the file size: 205 MB for a
+    // 201 MB trace, even though the parse is one forward pass and no byte is read
+    // twice. The pages are clean and read-only, so dropping them is free and they
+    // can be faulted back from the file if anything ever does look again.
+    const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    const size_t release_every = 32u * 1024u * 1024u;
+    size_t released_to = 0;
+    auto release_consumed = [&](size_t upto) {
+        size_t boundary = (upto / page_size) * page_size;
+        if (boundary > released_to + release_every) {
+            madvise(const_cast<char*>(data) + released_to, boundary - released_to,
+                    MADV_DONTNEED);
+            released_to = boundary;
+        }
+    };
     
     // Parse $dumpvars to capture initial signal values
     while (pos < static_cast<size_t>(end - data)) {
@@ -459,9 +495,23 @@ void VCDParser::parse_data(const char* data, const char* end, size_t& pos) {
             }
             
             current_timestamp = ts;
-            deltas_.emplace_back(current_timestamp);
-            current_delta = &deltas_.back();
-            current_delta->changes.reserve(100);  // Estimate ~100 changes per timestamp
+            release_consumed(pos);
+            if (delta_sink_) {
+                // Streaming: a delta is complete once the NEXT timestamp starts, so
+                // hand the previous one over and reuse the buffer. Nothing is kept.
+                if (has_pending_) {
+                    delta_sink_(pending_);
+                }
+                pending_.timestamp = current_timestamp;
+                pending_.changes.clear();
+                pending_.wide_changes.clear();
+                has_pending_ = true;
+                current_delta = &pending_;
+            } else {
+                deltas_.emplace_back(current_timestamp);
+                current_delta = &deltas_.back();
+                current_delta->changes.reserve(100);  // Estimate ~100 changes per timestamp
+            }
             
             continue;
         }

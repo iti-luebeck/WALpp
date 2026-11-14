@@ -107,6 +107,7 @@ set(WALPP_CORE_SOURCES
     # Fast VCD implementation for HD/HW operators
     src/fast/vcd_parser.cpp
     src/fast/hamming_ops.cpp
+    src/fast/streaming_ops.cpp
     
     # Phase 2-5: All operators are header-only (implementations in .h files)
 )

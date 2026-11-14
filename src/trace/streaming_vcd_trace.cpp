@@ -220,6 +220,11 @@ void StreamingVCDTrace::parse_vcd_line(const std::string& line, int64_t& current
         try {
             current_timestamp = std::stoll(line.substr(1));
             index.add_entry(current_timestamp, 0);  // 0 = approximate offset
+            // Count timestamps so MAX-INDEX is known. The sparse index samples
+            // every 10,000 entries, so it cannot answer how many there are, and
+            // max_index stayed 0: a streaming trace reported itself as a single
+            // sample, which made set-index and every sweep fail immediately.
+            max_index = timestamp_count++;
         } catch (...) {
             // Invalid timestamp, skip
         }
@@ -273,30 +278,29 @@ void StreamingVCDTrace::parse_vcd_line(const std::string& line, int64_t& current
 
 Value StreamingVCDTrace::signal_value(const std::string& name, int offset,
                                      const std::string& scope) {
-    // Try exact match first (with scope if provided)
-    std::string lookup_name = name;
-    if (!scope.empty()) {
-        lookup_name = scope + "^" + name;
-    }
-    
-    // Check cache first
-    if (auto cached = value_cache.get(lookup_name, offset)) {
-        return *cached;
-    }
-    
-    // Try without scope (flatten search)
-    for (const auto& [signal_name, info] : signal_info) {
-        if (signal_name.find(name) != std::string::npos) {
-            if (current_values.find(signal_name) != current_values.end()) {
-                auto val = current_values[signal_name];
-                value_cache.add(lookup_name, offset, val);
-                return val;
-            }
-        }
-    }
-    
-    // Return default (X) if not found
-    return Value("x");
+    (void)offset;
+    (void)scope;
+    // Indexed value access is NOT implemented for streaming traces.
+    //
+    // What this used to do: ignore current_index and offset entirely, look `name`
+    // up in `current_values`, and return whatever value happened to be current when
+    // parsing finished -- that is, the signal's value at the END of the file, for
+    // every index. It also matched names by substring, so a lookup could land on a
+    // different signal, and compared with a hardcoded '^' separator that no longer
+    // exists. Reading a signal therefore returned a confident, wrong number.
+    //
+    // Doing it properly means replaying value changes from the nearest sparse-index
+    // entry up to the requested index, re-reading the chunk that holds them. The
+    // index and the cache are both in place for that; the replay is not written.
+    //
+    // Until it is, this refuses rather than inventing an answer. The header is
+    // parsed, so SIGNALS, SCOPES, MAX-INDEX and signal-width queries all work on a
+    // streaming trace; only reading a VALUE does not.
+    throw std::runtime_error(
+        "streaming: reading signal values is not implemented (asked for \"" + name +
+        "\"). Load without --streaming to read values, or use the --fast-* "
+        "extraction modes, which stream internally and are the supported path for "
+        "large files.");
 }
 
 int StreamingVCDTrace::signal_width(const std::string& name) {
