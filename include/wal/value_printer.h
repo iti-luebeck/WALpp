@@ -50,6 +50,10 @@ inline void print_value(const Value& result, std::ostream& os, bool quote_string
             print_value((*list)[i], os, true);
         }
         os << ")";
+    } else if (result.is_bigint()) {
+        os << result.to_bigint()->to_string();
+    } else if (result.is_array()) {
+        os << result.to_string_repr();
     } else if (result.is_nil()) {
         os << "nil";
     } else {

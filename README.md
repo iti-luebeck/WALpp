@@ -643,7 +643,8 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 ```scheme
 (list 1 2 3)        ; Create list: (1 2 3)
 (length '(a b c))   ; Length: 3
-(append '(1 2) '(3 4))  ; (1 2 3 4)
+(extend '(1 2) '(3 4))  ; (1 2 3 4)   concatenate whole lists
+(append '(1 2) 3)       ; (1 2 3)     add one element (upstream's append)
 (reverse '(1 2 3))  ; (3 2 1)
 (sort '(3 1 2))     ; (1 2 3)
 ```

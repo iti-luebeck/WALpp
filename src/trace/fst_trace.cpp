@@ -1,4 +1,5 @@
 #include "wal/trace/fst_trace.h"
+#include "wal/signal_resolve.h"
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
@@ -100,7 +101,9 @@ void FSTTrace::load() {
                 case FST_HT_SCOPE:
                     if (!current_scope.empty())
                         current_scope += Trace::SCOPE_SEPARATOR;
-                    current_scope += hier->u.scope.name;
+                    // `data[0]` becomes `data<0>`, as in the VCD reader, so the two
+                    // agree and a bracketed element stays addressable as a bare symbol.
+                    current_scope += normalize_array_index(hier->u.scope.name);
                     if (std::find(scope_names.begin(), scope_names.end(), current_scope)
                             == scope_names.end())
                         scope_names.push_back(current_scope);
@@ -124,7 +127,7 @@ void FSTTrace::load() {
                     // part of the name -- the VCD reader does not keep it, and leaving
                     // it on meant `tb.dut.counter` did not resolve against an FST while
                     // the identical VCD worked. Width is kept from u.var.length.
-                    std::string var_name = hier->u.var.name;
+                    std::string var_name = normalize_array_index(hier->u.var.name);
                     auto bracket = var_name.find(" [");
                     if (bracket != std::string::npos && var_name.back() == ']') {
                         var_name = var_name.substr(0, bracket);

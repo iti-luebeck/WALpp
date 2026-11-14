@@ -6,8 +6,40 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <cctype>
 
 namespace wal {
+
+/**
+ * @brief Rewrite an array-index suffix from `name[0]` to `name<0>`.
+ *
+ * A VCD or FST hierarchy spells an array element `data[0]`, and that name used to be
+ * kept verbatim. It cannot stay that way now that `[` opens a subscript in WAL++:
+ * `TOP.tb.data[0].data.something` reads as the symbol `TOP.tb.data` subscripted by 0,
+ * so a bracketed element was unaddressable as a bare symbol.
+ *
+ * Upstream hit the same ambiguity and solved it the same way, so adopting `<0>` both
+ * repairs the name and matches `ics-jku/wal` exactly.
+ *
+ * Only a suffix that is entirely digits is rewritten, so a bit range or any other
+ * bracketed text is left alone.
+ */
+inline std::string normalize_array_index(const std::string& name) {
+    if (name.size() < 3 || name.back() != ']') {
+        return name;
+    }
+    auto open = name.rfind('[');
+    if (open == std::string::npos || open == 0 || open + 1 == name.size() - 1) {
+        return name;
+    }
+    for (size_t i = open + 1; i + 1 < name.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(name[i]))) {
+            return name;
+        }
+    }
+    return name.substr(0, open) + "<" + name.substr(open + 1, name.size() - open - 2) + ">";
+}
+
 
 /**
  * @brief Resolve a signal name written in any of the accepted spellings.
@@ -58,6 +90,27 @@ inline bool resolve_signal_name(const std::shared_ptr<TraceContainer>& traces,
     }
     if (name.find('^') != std::string::npos) {
         candidates.push_back(translate(name, '^', '.'));
+    }
+
+    // A name written with the old bracketed array spelling still resolves, so a
+    // string passed to get-signal keeps working: (get-signal "tb.data[0].x").
+    if (name.find('[') != std::string::npos) {
+        std::string normalized;
+        size_t start = 0;
+        while (start <= name.size()) {
+            size_t sep = name.find_first_of(".^", start);
+            std::string part = name.substr(start, sep == std::string::npos
+                                                  ? std::string::npos : sep - start);
+            normalized += normalize_array_index(part);
+            if (sep == std::string::npos) break;
+            normalized += name[sep];
+            start = sep + 1;
+        }
+        if (normalized != name) {
+            candidates.push_back(normalized);
+            candidates.push_back(translate(normalized, '.', '^'));
+            candidates.push_back(translate(normalized, '^', '.'));
+        }
     }
 
     // `tid^path` as upstream spells it: strip a leading trace id, then try the

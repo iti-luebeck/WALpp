@@ -1150,9 +1150,16 @@ void test_std_library(ExecutableTestSuite& suite, const std::string& exe_path) {
             {"(begin (defun sq [x] (* x x)) (sq 12))", "144", false},
             {"(for/list [x (list 1 2 3)] (* x 10))", "(10 20 30)", false},
             {"(cadr (list 1 2 3))", "2", false},
-            // A builtin must NOT be replaced by the library's version of the same
-            // name: upstream's `append` adds one element, WAL++'s concatenates.
-            {"(append (list 1 2) (list 3 4))", "(1 2 3 4)", false},
+            // `append` is upstream's: it adds ONE element, so a list argument nests.
+            // Verified against upstream 0.9.1, which gives the same.
+            {"(append (list 1 2) 3)", "(1 2 3)", false},
+            {"(append (list 1 2) (list 3))", "(1 2 (3))", false},
+            // WAL++'s own concatenation kept its behavior under the name `extend`.
+            {"(extend (list 1 2) (list 3 4))", "(1 2 3 4)", false},
+            // + builds a list when the first operand is one, which is what the
+            // library's append, reverse and filter are written in terms of.
+            {"(+ (list 1 2) (list 3 4))", "(1 2 3 4)", false},
+            {"(reverse (list 1 2 3))", "(3 2 1)", false},
         };
 
         for (const auto& c : cases) {
@@ -1173,6 +1180,134 @@ void test_std_library(ExecutableTestSuite& suite, const std::string& exe_path) {
             }
         }
         if (result.passed) result.message = "stdlib loads silently and agrees with upstream";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 24: 64-bit by default, arbitrary precision on request.
+//
+// A literal past 2^63 used to fall through the number parser into the SYMBOL branch,
+// so `583547542375894327581` was reported as an undefined variable rather than as a
+// number out of range. The default stays 64-bit, which is what waveform values and
+// indices need and what keeps arithmetic on the native path; --bigint opts in.
+void test_bigint_mode(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "64-bit by default, --bigint for arbitrary precision";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        const std::string big = "583547542375894327581";
+
+        // Default mode: a clear diagnostic that names the limit and the way out.
+        auto [rc, out] = run_command(exe_path + " -e '(int? " + big + ")' 2>&1");
+        if (out.find("does not fit in 64 bits") == std::string::npos ||
+            out.find("--bigint") == std::string::npos) {
+            result.passed = false;
+            result.message += "default mode should explain the 64-bit limit (got: '" +
+                              out + "'); ";
+        }
+
+        struct Case { std::string expr; std::string want; };
+        const Case cases[] = {
+            {"(int? " + big + ")", "true"},
+            {"(+ " + big + " 1)", "583547542375894327582"},
+            {"(* " + big + " " + big + ")",
+             "340527734212946185964567257311572137311561"},
+            {"(- " + big + " " + big + ")", "0"},
+            {"(< " + big + " 583547542375894327582)", "true"},
+            {"(> " + big + " 583547542375894327582)", "false"},
+            {"(= " + big + " " + big + ")", "true"},
+            // A result that fits comes back as a plain int, so a bigint does not
+            // spread through a computation that no longer needs one.
+            {"(int? (- " + big + " 583547542375894327580))", "true"},
+            {"(- " + big + " 583547542375894327580)", "1"},
+            // Ordinary arithmetic is unaffected in either mode.
+            {"(+ 1 2)", "3"},
+            {"(if 0 (quote yes) (quote no))", "'no"},
+        };
+        for (const auto& c : cases) {
+            auto [rc2, out2] = run_command(
+                exe_path + " --bigint -e '" + c.expr + "' 2>&1");
+            if (out2.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += c.expr + " should give " + c.want +
+                                  " (got: '" + out2 + "'); ";
+            }
+        }
+        if (result.passed) {
+            result.message = "64-bit default diagnoses the limit, --bigint is exact";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 25: an array element keeps its own name.
+//
+// A VCD hierarchy spells an array element `data[0]`. That name could not survive now
+// that `[` opens a subscript, so `TOP.tb.data[0].data.something` read as the symbol
+// `TOP.tb.data` subscripted by 0. Upstream hit the same ambiguity and renames to
+// `data<0>`, which both repairs the name and matches upstream exactly.
+void test_array_element_names(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "array element names survive subscript syntax";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/sv_struct_array.vcd";
+        std::string fst = "tests/original/traces/sv_struct_array.fst";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found";
+        } else {
+            result.passed = true;
+            struct Case { const char* expr; const char* want; };
+            const Case cases[] = {
+                // upstream gives 5 for this exact expression
+                {"TOP.tb.data<0>.data.something", "5"},
+                {"TOP^tb^data<0>^data^something", "5"},
+                // the old bracketed spelling still resolves through get-signal
+                {"(get-signal \"TOP.tb.data[0].data.something\")", "5"},
+                {"(length SIGNALS)", "2"},
+                // and a list subscript still means a subscript
+                {"(begin (define l (list 7 8 9)) l[2])", "9"},
+            };
+            for (const auto& c : cases) {
+                auto [rc, out] = run_command(
+                    exe_path + " -l " + vcd + " -e '" + c.expr + "' 2>&1");
+                if (out.find(c.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(c.expr) + " should give " + c.want +
+                                      " (got: '" + out + "'); ";
+                }
+            }
+            // VCD and FST must agree on the renamed hierarchy.
+            if (file_exists(fst)) {
+                auto [rcv, outv] = run_command(exe_path + " -l " + vcd + " -e 'SIGNALS' 2>&1");
+                auto [rcf, outf] = run_command(exe_path + " -l " + fst + " -e 'SIGNALS' 2>&1");
+                if (outv != outf) {
+                    result.passed = false;
+                    result.message += "VCD gave '" + outv + "' but FST gave '" + outf + "'; ";
+                }
+            }
+            if (result.passed) {
+                result.message = "array elements read as data<0>, as upstream spells them";
+            }
+        }
     } catch (const std::exception& e) {
         result.passed = false;
         result.message = std::string("Exception: ") + e.what();
@@ -1243,6 +1378,8 @@ int main(int argc, char* argv[]) {
     test_fst_matches_vcd(suite, exe_path);
     test_macros(suite, exe_path);
     test_std_library(suite, exe_path);
+    test_bigint_mode(suite, exe_path);
+    test_array_element_names(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

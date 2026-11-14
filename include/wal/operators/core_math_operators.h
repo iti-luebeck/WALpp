@@ -19,6 +19,32 @@ namespace wal::operators {
  * 
  * All implementations are header-only for compiler optimization.
  */
+namespace bigint_detail {
+
+/// Exact arithmetic when any operand is a bigint. Mixing with a float is still done
+/// in double, since a float has already lost the precision a bigint is there to keep.
+inline bool any_bigint(const std::vector<Value>& vals) {
+    for (const auto& v : vals) {
+        if (v.is_bigint()) return true;
+    }
+    return false;
+}
+
+inline BigInt as_bigint(const Value& v) {
+    if (v.is_bigint()) return *v.to_bigint();
+    if (v.is_int()) return BigInt(v.to_int());
+    throw EvalError("Expected integer, got " + v.to_string_repr());
+}
+
+/// Give back a plain int when the result fits, so a bigint does not spread through a
+/// computation that no longer needs one.
+inline Value narrow(const BigInt& b) {
+    if (b.fits_int64()) return Value(b.to_int64());
+    return Value(std::make_shared<BigInt>(b));
+}
+
+} // namespace bigint_detail
+
 class CoreMathOperators {
 public:
     /**
@@ -32,7 +58,39 @@ public:
         registry.register_operator("+", [](SEval& eval, const std::vector<Value>& args) -> Value {
             if (args.empty()) return Value(0);
             auto evaluated = eval.eval_args(args);
-            
+
+            // Upstream's + is polymorphic. When the FIRST operand is a list it builds a
+            // list: another list is concatenated, anything else is appended as one
+            // element. The standard library's `append`, `reverse` and `filter` are all
+            // written in terms of this, so without it they cannot run.
+            //
+            // Only the list half is adopted. Upstream also concatenates when an operand
+            // is a STRING, so `(+ 1 "hi")` is "1hi" there and an error here. That stays
+            // an error deliberately: the VCD reader represents a signal wider than 64
+            // bits as a bit STRING, so string-coercing + would silently turn
+            // `(+ wide 1)` into concatenation of a bit pattern instead of failing. A
+            // list is never mistakable for a number, so this half carries no such risk.
+            if (bigint_detail::any_bigint(evaluated)) {
+                BigInt total = bigint_detail::as_bigint(evaluated[0]);
+                for (size_t i = 1; i < evaluated.size(); ++i) {
+                    total = total + bigint_detail::as_bigint(evaluated[i]);
+                }
+                return bigint_detail::narrow(total);
+            }
+
+            if (evaluated[0].is_list()) {
+                auto result = std::make_shared<WList>(*evaluated[0].to_list());
+                for (size_t i = 1; i < evaluated.size(); ++i) {
+                    if (evaluated[i].is_list()) {
+                        auto other = evaluated[i].to_list();
+                        result->insert(result->end(), other->begin(), other->end());
+                    } else {
+                        result->push_back(evaluated[i]);
+                    }
+                }
+                return Value(result);
+            }
+
             double result = 0.0;
             bool is_int = true;
             
@@ -50,6 +108,15 @@ public:
             }
             auto evaluated = eval.eval_args(args);
             
+            if (bigint_detail::any_bigint(evaluated)) {
+                BigInt total = bigint_detail::as_bigint(evaluated[0]);
+                if (evaluated.size() == 1) return bigint_detail::narrow(-total);
+                for (size_t i = 1; i < evaluated.size(); ++i) {
+                    total = total - bigint_detail::as_bigint(evaluated[i]);
+                }
+                return bigint_detail::narrow(total);
+            }
+
             if (evaluated.size() == 1) {
                 if (evaluated[0].is_float()) {
                     return Value(-evaluated[0].to_float());
@@ -72,7 +139,15 @@ public:
         registry.register_operator("*", [](SEval& eval, const std::vector<Value>& args) -> Value {
             if (args.empty()) return Value(1);
             auto evaluated = eval.eval_args(args);
-            
+
+            if (bigint_detail::any_bigint(evaluated)) {
+                BigInt total = bigint_detail::as_bigint(evaluated[0]);
+                for (size_t i = 1; i < evaluated.size(); ++i) {
+                    total = total * bigint_detail::as_bigint(evaluated[i]);
+                }
+                return bigint_detail::narrow(total);
+            }
+
             double result = 1.0;
             bool is_int = true;
             
@@ -218,6 +293,11 @@ public:
                 throw EvalError("< requires exactly 2 arguments");
             }
             auto evaluated = eval.eval_args(args);
+            // Comparing through double would be wrong past 2^53, where distinct
+            // bigints round to the same float.
+            if (bigint_detail::any_bigint(evaluated)) {
+                return Value(bigint_detail::as_bigint(evaluated[0]).compare(bigint_detail::as_bigint(evaluated[1])) < 0);
+            }
             return Value(evaluated[0].to_float() < evaluated[1].to_float());
         });
         
@@ -226,6 +306,11 @@ public:
                 throw EvalError("> requires exactly 2 arguments");
             }
             auto evaluated = eval.eval_args(args);
+            // Comparing through double would be wrong past 2^53, where distinct
+            // bigints round to the same float.
+            if (bigint_detail::any_bigint(evaluated)) {
+                return Value(bigint_detail::as_bigint(evaluated[0]).compare(bigint_detail::as_bigint(evaluated[1])) > 0);
+            }
             return Value(evaluated[0].to_float() > evaluated[1].to_float());
         });
         
@@ -234,6 +319,11 @@ public:
                 throw EvalError("<= requires exactly 2 arguments");
             }
             auto evaluated = eval.eval_args(args);
+            // Comparing through double would be wrong past 2^53, where distinct
+            // bigints round to the same float.
+            if (bigint_detail::any_bigint(evaluated)) {
+                return Value(bigint_detail::as_bigint(evaluated[0]).compare(bigint_detail::as_bigint(evaluated[1])) <= 0);
+            }
             return Value(evaluated[0].to_float() <= evaluated[1].to_float());
         });
         
@@ -242,6 +332,11 @@ public:
                 throw EvalError(">= requires exactly 2 arguments");
             }
             auto evaluated = eval.eval_args(args);
+            // Comparing through double would be wrong past 2^53, where distinct
+            // bigints round to the same float.
+            if (bigint_detail::any_bigint(evaluated)) {
+                return Value(bigint_detail::as_bigint(evaluated[0]).compare(bigint_detail::as_bigint(evaluated[1])) >= 0);
+            }
             return Value(evaluated[0].to_float() >= evaluated[1].to_float());
         });
         

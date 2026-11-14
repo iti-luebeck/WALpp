@@ -19,6 +19,7 @@ Value::Value(const char* s) : data(std::string(s)) {}
 Value::Value(std::shared_ptr<Symbol> sym) : data(sym) {}
 Value::Value(std::shared_ptr<WList> list) : data(list) {}
 Value::Value(std::shared_ptr<WArray> array) : data(array) {}
+Value::Value(std::shared_ptr<BigInt> big) : data(big) {}
 Value::Value(std::shared_ptr<Closure> closure) : data(closure) {}
 Value::Value(std::shared_ptr<Macro> macro) : data(macro) {}
 Value::Value(std::shared_ptr<Environment> env) : data(env) {}
@@ -42,7 +43,7 @@ bool Value::is_float() const {
 }
 
 bool Value::is_number() const {
-    return is_int() || is_float();
+    return is_int() || is_float() || is_bigint();
 }
 
 bool Value::is_string() const {
@@ -59,6 +60,10 @@ bool Value::is_list() const {
 
 bool Value::is_array() const {
     return std::holds_alternative<std::shared_ptr<WArray>>(data);
+}
+
+bool Value::is_bigint() const {
+    return std::holds_alternative<std::shared_ptr<BigInt>>(data);
 }
 
 bool Value::is_closure() const {
@@ -90,6 +95,15 @@ int64_t Value::to_int() const {
         return std::get<int64_t>(data);
     } else if (is_float()) {
         return static_cast<int64_t>(std::get<double>(data));
+    } else if (is_bigint()) {
+        auto big = std::get<std::shared_ptr<BigInt>>(data);
+        // Refuse rather than truncate. A value that does not fit is exactly the case
+        // bigint mode exists for, so silently wrapping it here would defeat the point.
+        if (!big->fits_int64()) {
+            throw EvalError("Value " + big->to_string() +
+                            " does not fit in a 64-bit integer");
+        }
+        return big->to_int64();
     }
     throw EvalError("Expected number, got " + to_string_repr());
 }
@@ -99,6 +113,10 @@ double Value::to_float() const {
         return std::get<double>(data);
     } else if (is_int()) {
         return static_cast<double>(std::get<int64_t>(data));
+    } else if (is_bigint()) {
+        // Lossy above 2^53, which is why the arithmetic operators take the exact
+        // BigInt path when an operand is one, instead of going through here.
+        return std::get<std::shared_ptr<BigInt>>(data)->to_double();
     }
     throw EvalError("Expected number, got " + to_string_repr());
 }
@@ -129,6 +147,13 @@ std::shared_ptr<WArray> Value::to_array() const {
         throw std::runtime_error("Value is not an array");
     }
     return std::get<std::shared_ptr<WArray>>(data);
+}
+
+std::shared_ptr<BigInt> Value::to_bigint() const {
+    if (!is_bigint()) {
+        throw std::runtime_error("Value is not a bigint");
+    }
+    return std::get<std::shared_ptr<BigInt>>(data);
 }
 
 std::shared_ptr<UserOperator> Value::to_user_operator() const {
@@ -191,6 +216,8 @@ std::string Value::to_string_repr() const {
         return std::get<std::shared_ptr<WList>>(data)->to_string();
     } else if (is_array()) {
         return std::get<std::shared_ptr<WArray>>(data)->to_string();
+    } else if (is_bigint()) {
+        return std::get<std::shared_ptr<BigInt>>(data)->to_string();
     } else if (is_closure()) {
         return std::get<std::shared_ptr<Closure>>(data)->to_string();
     } else if (is_macro()) {
@@ -223,10 +250,31 @@ bool Value::is_truthy() const {
         auto array = std::get<std::shared_ptr<WArray>>(data);
         return array && !array->empty();
     }
+    if (is_bigint()) {
+        auto big = std::get<std::shared_ptr<BigInt>>(data);
+        return big && !big->is_zero();
+    }
     return true; // symbols, operators and anything else
 }
 
 bool Value::operator==(const Value& other) const {
+    // A bigint and an int may hold the same number in different representations, so
+    // they are compared by value before the tag check below rejects them.
+    if (is_bigint() || other.is_bigint()) {
+        if (is_bigint() && other.is_bigint()) {
+            return *std::get<std::shared_ptr<BigInt>>(data) ==
+                   *std::get<std::shared_ptr<BigInt>>(other.data);
+        }
+        if (is_bigint() && other.is_int()) {
+            return *std::get<std::shared_ptr<BigInt>>(data) ==
+                   BigInt(std::get<int64_t>(other.data));
+        }
+        if (is_int() && other.is_bigint()) {
+            return BigInt(std::get<int64_t>(data)) ==
+                   *std::get<std::shared_ptr<BigInt>>(other.data);
+        }
+        return false;
+    }
     if (data.index() != other.data.index()) return false;
     
     if (is_nil()) return true;

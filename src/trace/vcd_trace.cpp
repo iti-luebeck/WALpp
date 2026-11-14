@@ -1,4 +1,5 @@
 #include "wal/trace/vcd_trace.h"
+#include "wal/signal_resolve.h"
 #include "wal/trace/trace_container.h"
 #include <fstream>
 #include <sstream>
@@ -195,8 +196,9 @@ void VCDTrace::parse_header(const std::vector<std::string>& lines, size_t& line_
             std::string cmd, type, scope_name;
             iss >> cmd >> type >> scope_name;
             
-            // Push scope onto stack
-            scope_stack.push_back(scope_name);
+            // Push scope onto stack. `data[0]` becomes `data<0>`: see
+            // normalize_array_index(), which explains why the bracket cannot stay.
+            scope_stack.push_back(normalize_array_index(scope_name));
             
             // Build full hierarchical scope
             current_scope = "";

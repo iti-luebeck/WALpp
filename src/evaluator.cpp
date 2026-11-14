@@ -528,6 +528,11 @@ Value SEval::eval(const Value& expr) {
     if (expr.is_closure() || expr.is_macro() || expr.is_environment()) {
         return expr;
     }
+
+    // So do bigint and array literals, like any other literal value.
+    if (expr.is_bigint() || expr.is_array()) {
+        return expr;
+    }
     
     throw EvalError("Cannot evaluate: " + expr.to_string_repr());
 }

@@ -52,6 +52,15 @@ def _load_extension():
 
 _ext = _load_extension()
 
+# Upstream WAL is written in Python, whose integers are unbounded, so conformance is
+# measured with WAL++'s arbitrary-precision mode ON. That is a deliberate choice about
+# what is being compared: the question these tests answer is whether WAL++ agrees with
+# upstream's SEMANTICS, not whether it shares upstream's default. WAL++ defaults to
+# 64-bit integers because that is what waveform values and indices need and the bigint
+# path is slower, and it says so plainly when a literal overflows.
+if hasattr(_ext, "set_bigint_mode"):
+    _ext.set_bigint_mode(True)
+
 
 def to_python(value):
     """Convert a WAL++ Value into the plain Python value upstream's tests expect."""

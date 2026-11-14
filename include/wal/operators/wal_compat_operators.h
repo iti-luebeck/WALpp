@@ -235,7 +235,9 @@ private:
         };
 
         // Upstream's spellings of predicates WAL++ already had as is-*.
-        registry.register_operator("int?", one("int?", [](const Value& v) { return v.is_int(); }));
+        registry.register_operator("int?", one("int?", [](const Value& v) {
+            return v.is_int() || v.is_bigint();   // a bigint is still an integer
+        }));
         registry.register_operator("float?", one("float?", [](const Value& v) { return v.is_float(); }));
         registry.register_operator("string?", one("string?", [](const Value& v) { return v.is_string(); }));
         registry.register_operator("symbol?", one("symbol?", [](const Value& v) { return v.is_symbol(); }));

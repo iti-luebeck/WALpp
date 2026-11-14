@@ -1,4 +1,5 @@
 #include <pybind11/pybind11.h>
+#include "wal/bigint.h"
 #include <pybind11/functional.h>
 #include <pybind11/stl.h>
 #include "wal/core.h"
@@ -65,6 +66,12 @@ PYBIND11_MODULE(wal_cpp, m) {
         .def("__eq__", [](const Value& a, const Value& b) {
             return a.to_string_repr() == b.to_string_repr();
         });
+
+    // Arbitrary-precision integers are opt-in, matching the --bigint CLI flag.
+    m.def("set_bigint_mode", &set_bigint_mode,
+          "Enable arbitrary-precision integers (default: 64-bit, which is faster)");
+    m.def("bigint_mode", []() { return bigint_mode(); },
+          "Whether arbitrary-precision integers are enabled");
 
     // ───────────────────────────────────────────────────────────────
     // WArray Class Bindings (upstream's string-keyed map)

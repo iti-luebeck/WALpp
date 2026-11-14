@@ -1,4 +1,5 @@
 #include "wal/cli.h"
+#include "wal/bigint.h"
 #include "wal/core.h"
 #include "wal/repl.h"
 #include "wal/value_printer.h"
@@ -49,6 +50,10 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
                 ++i;
                 if (i + 1 < args.size()) fast_output_file = args[++i];
             }
+        } else if (arg == "--bigint") {
+            // Opt-in arbitrary-precision integers. Off by default: 64-bit is what
+            // waveform values and indices need, and the bigint path is slower.
+            set_bigint_mode(true);
         } else if (arg == "--fast-hw-all") {
             fast_hw_all = true;
             if (i + 1 < args.size()) fast_vcd_file = args[++i];
@@ -169,6 +174,8 @@ void CLI::print_usage() {
               << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
               << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
               << "  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)\n"
+              << "  --bigint                            Arbitrary-precision integers\n"
+              << "                                      (default is 64-bit, which is faster)\n"
               << "  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)\n"
               << "  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)\n"
               << "  --fast-hw-signals LIST FILE -o OUT  Hamming Weight (signal list)\n"

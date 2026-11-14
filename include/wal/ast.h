@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <unordered_map>
+#include "bigint.h"
 
 namespace wal {
 
@@ -90,6 +91,7 @@ public:
         std::shared_ptr<Symbol>,                  // Symbol
         std::shared_ptr<WList>,                   // List
         std::shared_ptr<WArray>,                  // Array (upstream's string-keyed map)
+        std::shared_ptr<BigInt>,                  // Arbitrary-precision int (bigint mode)
         std::shared_ptr<Closure>,                 // Function
         std::shared_ptr<Macro>,                   // Macro
         std::shared_ptr<Environment>,             // Environment
@@ -113,6 +115,7 @@ public:
     Value(std::shared_ptr<Symbol> sym);
     Value(std::shared_ptr<WList> list);
     Value(std::shared_ptr<WArray> array);
+    Value(std::shared_ptr<BigInt> big);
     Value(std::shared_ptr<Closure> closure);
     Value(std::shared_ptr<Macro> macro);
     Value(std::shared_ptr<Environment> env);
@@ -129,6 +132,7 @@ public:
     bool is_symbol() const;
     bool is_list() const;
     bool is_array() const;
+    bool is_bigint() const;
     bool is_closure() const;
     bool is_macro() const;
     bool is_environment() const;
@@ -145,6 +149,7 @@ public:
     std::shared_ptr<Symbol> to_symbol() const;
     std::shared_ptr<WList> to_list() const;
     std::shared_ptr<WArray> to_array() const;
+    std::shared_ptr<BigInt> to_bigint() const;
     std::shared_ptr<Closure> to_closure() const;
     std::shared_ptr<Macro> to_macro() const;
     std::shared_ptr<Environment> to_environment() const;

@@ -46,7 +46,7 @@ class SEval;
  * - Math: +, -, *, /, **, %
  * - Bitwise: band, bor, bxor, lshift, rshift
  * - List: car, cdr, cons, length, list
- * - Array: arange, array, append
+ * - Array: arange, array, extend
  * - Waveform: signal, signal-names, load, step
  * - Type: type, is?, ...
  * - Control: if, while, for, let
@@ -239,7 +239,7 @@ public:
     /// Register list operators (car, cdr, cons, length, list)
     void register_list_operators();
     
-    /// Register array operators (arange, array, append)
+    /// Register array operators (arange, array, extend)
     void register_array_operators();
     
     /// Register core operators (define, lambda, if, etc.)

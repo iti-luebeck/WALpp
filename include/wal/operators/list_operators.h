@@ -17,7 +17,7 @@ namespace wal::operators {
  * Implements list operations:
  * - first (car) - get first element
  * - rest (cdr) - get rest of list
- * - append - concatenate lists
+ * - extend - concatenate lists (upstream's `append` adds one element)
  * - length - get list length
  * - reverse - reverse a list
  * - map - apply function to each element
@@ -103,13 +103,18 @@ public:
             return Value(std::make_shared<WList>(rest_elements));
         });
         
-        registry.register_operator("append", [](SEval& eval, const std::vector<Value>& args) -> Value {
+        // (extend lists...) concatenates whole lists. This used to be called `append`,
+        // which collided with upstream WAL's `append`: upstream's adds ONE element to a
+        // list, so the same source could mean two different things depending on which
+        // engine ran it. Renamed so upstream's `append` can keep its own meaning, and
+        // the two operations now have two names that say which is which.
+        registry.register_operator("extend", [](SEval& eval, const std::vector<Value>& args) -> Value {
             auto evaluated = eval.eval_args(args);
             
             std::vector<Value> result;
             for (const auto& val : evaluated) {
                 if (!val.is_list()) {
-                    throw EvalError("append: all arguments must be lists");
+                    throw EvalError("extend: all arguments must be lists");
                 }
                 auto list = val.to_list();
                 result.insert(result.end(), list->begin(), list->end());

@@ -1,4 +1,5 @@
 #include "wal/parser.h"
+#include "wal/bigint.h"
 #include <cctype>
 #include <stdexcept>
 #include <sstream>
@@ -63,6 +64,25 @@ Value Parser::parse_number(const std::string& token) {
         // Otherwise try as double
         double double_val = std::stod(token);
         return Value(double_val);
+    } catch (const std::out_of_range&) {
+        // A decimal integer too large for int64_t. This used to fall into the
+        // catch-all below and become a SYMBOL, so `583547542375894327581` was
+        // reported as an undefined variable rather than as a number out of range.
+        if (auto big = BigInt::from_decimal(token)) {
+            if (bigint_mode()) {
+                return Value(std::make_shared<BigInt>(*big));
+            }
+            throw EvalError(
+                "Integer literal " + token + " does not fit in 64 bits. "
+                "WAL++ uses 64-bit integers by default; run with --bigint for "
+                "arbitrary precision.");
+        }
+        // Out of range but not a plain integer: try it as a float, else a symbol.
+        try {
+            return Value(std::stod(token));
+        } catch (...) {
+            return Value(std::make_shared<Symbol>(token));
+        }
     } catch (...) {
         // Not a number
         return Value(std::make_shared<Symbol>(token));
