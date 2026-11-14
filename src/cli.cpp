@@ -521,8 +521,11 @@ int CLI::run() {
     // Load trace file if specified
     if (trace_mode && !trace_file.empty()) {
         try {
-            // Disable streaming for now - hamming operators require full trace access
-            wal_instance->get_traces()->set_streaming_enabled(false);
+            // `-l` used to force streaming off here unconditionally, with a note
+            // that the hamming operators needed full trace access. That silently
+            // ignored --streaming on the main entry point, and the reason no longer
+            // holds: the extraction modes never build a Trace at all, and the
+            // streaming reader now answers indexed reads. Honour what was asked.
             wal_instance->load(trace_file);
         } catch (const std::exception& e) {
             std::cerr << "Error loading trace file: " << e.what() << std::endl;

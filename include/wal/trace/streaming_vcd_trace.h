@@ -262,12 +262,44 @@ private:
     };
     
     std::unordered_map<std::string, SignalInfo> signal_info;
+    std::vector<std::string> signal_order;   ///< declaration order, for SIGNALS
     std::unordered_map<std::string, int> identifier_map;
     std::vector<std::string> current_scope_stack;  // Track scope hierarchy
     std::unordered_map<std::string, std::vector<std::string>> scope_hierarchy_map;
     
     // Current state
     std::unordered_map<std::string, Value> current_values;
+
+    /**
+     * @name Demand-loaded signal histories
+     *
+     * A VCD is a change log, so answering "value of S at index i" needs either the
+     * whole log in memory or another read of the file. Keeping the whole log is
+     * what the non-streaming reader does and what streaming exists to avoid.
+     *
+     * So a signal's history is built only when that signal is first read: one
+     * forward pass over the file recording the changes of the signals asked for,
+     * and nothing else. An analysis that watches a clock and three bus signals on a
+     * 100 GB trace keeps four short change lists, not the trace.
+     *
+     * A pass also collects every signal requested so far, so repeatedly asking for
+     * the same few signals costs one pass, not one per read.
+     */
+    ///@{
+    struct Change {
+        int index;        ///< trace index at which the value took effect
+        Value value;
+    };
+    std::unordered_map<std::string, std::vector<Change>> histories;
+    std::vector<int64_t> index_timestamps;   ///< index -> simulation time, for TS
+    bool scanned_once = false;
+
+    /// Build (or extend) the histories so that @p name is covered.
+    void ensure_history(const std::string& name);
+
+    /// One forward pass recording the changes of every requested signal.
+    void scan_for(const std::vector<std::string>& wanted);
+    ///@}
     
     // Parsing helpers
     bool parse_header_from_chunks();

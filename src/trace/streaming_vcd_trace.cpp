@@ -1,4 +1,5 @@
 #include "wal/trace/streaming_vcd_trace.h"
+#include "wal/fast/vcd_parser.h"
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -23,10 +24,13 @@ std::string StreamingVCDTrace::get_full_signal_path(const std::string& signal_na
     
     std::string path;
     for (const auto& scope : current_scope_stack) {
-        if (!path.empty()) path += "^";
+        // Through the shared constant: this reader hardcoded "^", so it kept
+        // naming signals the old way after the separator changed to "." and
+        // nothing else could resolve one of its names.
+        if (!path.empty()) path += Trace::SCOPE_SEPARATOR;
         path += scope;
     }
-    path += "^";
+    path += Trace::SCOPE_SEPARATOR;
     path += signal_name;
     return path;
 }
@@ -58,16 +62,39 @@ void StreamingVCDTrace::validate_vcd_format(const std::string& line) {
 }
 
 void StreamingVCDTrace::load() {
-    // Initialize chunk reader
-    chunk_reader = std::make_unique<StreamingChunkReader>(
-        create_chunk_reader(filename, chunk_size_bytes)
-    );
-    
-    // Phase 1: Parse header and build initial index
-    parse_header_from_chunks();
-    
-    // Phase 2: Parse data and build sparse timestamp index
-    parse_data_from_chunks();
+    // One forward pass through the fast parser, which reads the header and then
+    // streams the deltas without keeping any of them.
+    //
+    // This used to go through the chunk reader instead, appending 100 MB chunks
+    // into a buffer and copying out of it, which cost several hundred megabytes
+    // before a single signal had been read -- on the reader whose whole purpose is
+    // to avoid that. The chunk reader is still what the CSV and FST streaming
+    // readers use.
+    fast_vcd::VCDParser parser;
+    index_timestamps.clear();
+    parser.set_delta_sink([&](const fast_vcd::DeltaTimestamp& delta) {
+        index_timestamps.push_back(delta.timestamp);
+    });
+    parser.parse(filename);
+
+    signal_info.clear();
+    signal_order.clear();
+    for (uint32_t id : parser.get_signal_ids()) {
+        const auto& info = parser.get_signal_info(id);
+        SignalInfo mine;
+        mine.name = info.name;
+        mine.identifier = info.vcd_id;
+        mine.width = info.width;
+        mine.scope = info.scope;
+        if (!signal_info.count(info.name)) {
+            signal_order.push_back(info.name);
+        }
+        signal_info[info.name] = mine;
+    }
+
+    max_index = index_timestamps.empty()
+        ? 0 : static_cast<int>(index_timestamps.size()) - 1;
+    current_index = 0;
 }
 
 bool StreamingVCDTrace::parse_header_from_chunks() {
@@ -136,6 +163,13 @@ bool StreamingVCDTrace::parse_header_from_chunks() {
                 
                 // Build full hierarchical name
                 std::string full_name = get_full_signal_path(name);
+                if (!signal_info.count(full_name)) {
+                    // Declaration order, so SIGNALS reads the same from either
+                    // reader. signal_info is an unordered_map, so iterating it
+                    // gave an arbitrary order that differed from the full-load
+                    // reader's and from run to run.
+                    signal_order.push_back(full_name);
+                }
                 signal_info[full_name] = info;
                 identifier_map[id] = 0;  // placeholder for index
             } catch (const std::exception& e) {
@@ -276,31 +310,140 @@ void StreamingVCDTrace::parse_vcd_line(const std::string& line, int64_t& current
     }
 }
 
+/**
+ * @brief One forward pass recording the changes of the requested signals.
+ *
+ * Uses the fast VCD parser in streaming mode, so the pass itself holds only the
+ * current timestamp's changes. What is kept afterwards is one change list per
+ * requested signal, which for the handful of signals an analysis actually watches
+ * is a tiny fraction of the trace.
+ */
+void StreamingVCDTrace::scan_for(const std::vector<std::string>& wanted) {
+    fast_vcd::VCDParser parser;
+
+    // Resolve the requested names to parser signal ids. The parser must read the
+    // header before the ids exist, so resolution happens on the first delta.
+    std::unordered_map<uint32_t, std::string> id_to_name;
+    bool resolved = false;
+    int current = -1;
+
+    for (const auto& name : wanted) {
+        histories[name].clear();
+    }
+    std::vector<int64_t> timestamps;
+
+    parser.set_delta_sink([&](const fast_vcd::DeltaTimestamp& delta) {
+        if (!resolved) {
+            // One name at a time: get_signal_ids_by_names SKIPS what it cannot
+            // find, so zipping its result against `wanted` by position silently
+            // mislabels every signal after the first missing one.
+            for (const auto& name : wanted) {
+                auto ids = parser.get_signal_ids_by_names({name});
+                if (!ids.empty()) {
+                    id_to_name[ids[0]] = name;
+                }
+            }
+            // Seed from the values at time 0, so a signal that never changes still
+            // has a value.
+            for (const auto& [sid, val] : parser.get_initial_values()) {
+                auto it = id_to_name.find(sid);
+                if (it != id_to_name.end()) {
+                    histories[it->second].push_back({0, Value(static_cast<int64_t>(val))});
+                }
+            }
+            resolved = true;
+        }
+
+        ++current;
+        timestamps.push_back(delta.timestamp);
+
+        for (const auto& [sig_id, value] : delta.changes) {
+            auto it = id_to_name.find(sig_id);
+            if (it != id_to_name.end()) {
+                auto& history = histories[it->second];
+                if (!history.empty() && history.back().index == current) {
+                    history.back().value = Value(static_cast<int64_t>(value));
+                } else {
+                    history.push_back({current, Value(static_cast<int64_t>(value))});
+                }
+            }
+        }
+        for (const auto& [sig_id, words] : delta.wide_changes) {
+            auto it = id_to_name.find(sig_id);
+            if (it != id_to_name.end()) {
+                // Wider than 64 bits: keep the exact bit pattern as a string, the
+                // same representation the non-streaming reader uses.
+                std::string bits;
+                for (size_t w = words.size(); w-- > 0;) {
+                    for (int bit = 63; bit >= 0; --bit) {
+                        bits += ((words[w] >> bit) & 1ULL) ? '1' : '0';
+                    }
+                }
+                histories[it->second].push_back({current, Value(bits)});
+            }
+        }
+    });
+
+    parser.parse(filename);
+
+    if (index_timestamps.empty() && !timestamps.empty()) {
+        index_timestamps = std::move(timestamps);
+        max_index = static_cast<int>(index_timestamps.size()) - 1;
+    }
+    scanned_once = true;
+}
+
+void StreamingVCDTrace::ensure_history(const std::string& name) {
+    if (histories.count(name)) {
+        return;
+    }
+    // Re-scan for everything wanted so far plus the new name, so a later read of an
+    // already-loaded signal never triggers another pass.
+    std::vector<std::string> wanted;
+    wanted.reserve(histories.size() + 1);
+    for (const auto& entry : histories) {
+        wanted.push_back(entry.first);
+    }
+    wanted.push_back(name);
+    scan_for(wanted);
+    // A name the trace does not contain gets an empty history, so it is not
+    // rescanned on every read.
+    histories.emplace(name, std::vector<Change>{});
+}
+
 Value StreamingVCDTrace::signal_value(const std::string& name, int offset,
                                      const std::string& scope) {
-    (void)offset;
-    (void)scope;
-    // Indexed value access is NOT implemented for streaming traces.
-    //
-    // What this used to do: ignore current_index and offset entirely, look `name`
-    // up in `current_values`, and return whatever value happened to be current when
-    // parsing finished -- that is, the signal's value at the END of the file, for
-    // every index. It also matched names by substring, so a lookup could land on a
-    // different signal, and compared with a hardcoded '^' separator that no longer
-    // exists. Reading a signal therefore returned a confident, wrong number.
-    //
-    // Doing it properly means replaying value changes from the nearest sparse-index
-    // entry up to the requested index, re-reading the chunk that holds them. The
-    // index and the cache are both in place for that; the replay is not written.
-    //
-    // Until it is, this refuses rather than inventing an answer. The header is
-    // parsed, so SIGNALS, SCOPES, MAX-INDEX and signal-width queries all work on a
-    // streaming trace; only reading a VALUE does not.
-    throw std::runtime_error(
-        "streaming: reading signal values is not implemented (asked for \"" + name +
-        "\"). Load without --streaming to read values, or use the --fast-* "
-        "extraction modes, which stream internally and are the supported path for "
-        "large files.");
+    std::string lookup = name;
+    if (!scope.empty()) {
+        lookup = scope + Trace::SCOPE_SEPARATOR + name;
+    }
+    if (signal_info.find(lookup) == signal_info.end()) {
+        throw std::runtime_error("Signal not found: " + lookup);
+    }
+
+    ensure_history(lookup);
+
+    int target = current_index + offset;
+    if (target < 0 || target > max_index) {
+        throw std::out_of_range("Index out of range: " + std::to_string(target));
+    }
+
+    const auto& history = histories[lookup];
+    if (history.empty()) {
+        return Value(static_cast<int64_t>(0));
+    }
+
+    // The value in force at `target` is the last change at or before it.
+    size_t lo = 0, hi = history.size();
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (history[mid].index <= target) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo == 0) {
+        return Value(static_cast<int64_t>(0));   // before the first recorded change
+    }
+    return history[lo - 1].value;
 }
 
 int StreamingVCDTrace::signal_width(const std::string& name) {
@@ -324,11 +467,7 @@ bool StreamingVCDTrace::contains_signal(const std::string& name) const {
 }
 
 std::vector<std::string> StreamingVCDTrace::get_all_signals() const {
-    std::vector<std::string> signals;
-    for (const auto& [name, info] : signal_info) {
-        signals.push_back(name);
-    }
-    return signals;
+    return signal_order;
 }
 
 // Cache enhancement methods

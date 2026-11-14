@@ -1864,6 +1864,93 @@ void test_streaming_extraction(ExecutableTestSuite& suite, const std::string& ex
     suite.add_result(result);
 }
 
+// Test 33: a streamed trace answers exactly like a fully loaded one.
+//
+// This is the test that was missing, and that would have caught all of it. The
+// streaming reader's signal_value ignored current_index entirely and returned the
+// value left over at the END of parsing, for every index; it matched names by
+// substring; and it still spelled a hierarchy with '^' after the separator changed,
+// so nothing could resolve one of its names. None of that was visible, because
+// nothing ever compared the two readers.
+void test_streaming_matches_full_load(ExecutableTestSuite& suite,
+                                      const std::string& exe_path) {
+    TestResult result;
+    result.name = "streamed trace answers like a loaded one";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found";
+        } else {
+            result.passed = true;
+            const char* queries[] = {
+                "(length SIGNALS)",
+                "(length SCOPES)",
+                "MAX-INDEX",
+                "SIGNALS",
+                "(signal-width \"tb.dut.counter\")",
+                "(get-signal \"tb.clk\")",
+                "(begin (set-index 40) (get-signal \"tb.dut.counter\"))",
+                "(begin (set-index 40) (get-signal \"tb.clk\" -1))",
+                "(begin (set-index 80) (get-signal \"tb.dut.counter\"))",
+                // a backward jump after a forward one, which a cursor-only reader
+                // would get wrong
+                "(begin (set-index 60) (set-index 10) (get-signal \"tb.dut.counter\"))",
+                // whole-trace sweeps
+                "(count (rising tb.clk))",
+                "(count (falling tb.clk))",
+                "(length (find (= tb.dut.counter 3)))",
+                "(length (find (&& tb.clk (! tb.clk@-1))))",
+            };
+            for (const auto& q : queries) {
+                auto [rc_a, full] = run_command(
+                    exe_path + " -l " + vcd + " -e '" + std::string(q) + "' 2>&1");
+                auto [rc_b, streamed] = run_command(
+                    exe_path + " --streaming -e '(load \"" + vcd + "\" \"a\")' -e '" +
+                    std::string(q) + "' 2>&1");
+                // The streamed run echoes the load's return first; compare the last line.
+                auto last_line = [](const std::string& text) {
+                    std::string trimmed = text;
+                    while (!trimmed.empty() && (trimmed.back() == '\n' || trimmed.back() == '\r')) {
+                        trimmed.pop_back();
+                    }
+                    auto nl = trimmed.rfind('\n');
+                    return nl == std::string::npos ? trimmed : trimmed.substr(nl + 1);
+                };
+                if (last_line(full) != last_line(streamed)) {
+                    result.passed = false;
+                    result.message += std::string(q) + ": loaded gave '" +
+                                      last_line(full) + "' but streamed gave '" +
+                                      last_line(streamed) + "'; ";
+                }
+            }
+
+            // --streaming must also be honoured by -l, which used to force it off.
+            auto [rc, out] = run_command(
+                exe_path + " --streaming -l " + vcd + " -e '(count (rising tb.clk))' 2>&1");
+            if (out.find("40") == std::string::npos) {
+                result.passed = false;
+                result.message += "-l --streaming should still count 40 edges (got: '" +
+                                  out + "'); ";
+            }
+
+            if (result.passed) {
+                result.message = "both readers agree on metadata, offsets, jumps and sweeps";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1933,6 +2020,7 @@ int main(int argc, char* argv[]) {
     test_comparisons(suite, exe_path);
     test_remaining_operators(suite, exe_path);
     test_streaming_extraction(suite, exe_path);
+    test_streaming_matches_full_load(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);
