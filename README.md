@@ -4,7 +4,7 @@
 
 A powerful, expressive language and toolkit for analyzing digital simulation waveforms (VCD, FST, CSV) with S-expression syntax, streaming support, and Python bindings.
 
-**WAL++ is a high-performance C++20 rewrite of the [Waveform Analysis Language (WAL)](https://wal-lang.org), originally developed in Python.** It provides the same powerful S-expression syntax and 130+ operators, but with dramatically improved performance and memory efficiency for analyzing large-scale waveforms.
+**WAL++ is a high-performance C++20 rewrite of the [Waveform Analysis Language (WAL)](https://wal-lang.org), originally developed in Python.** It provides the same S-expression syntax and 130+ operators, with substantially better performance and memory efficiency on large waveforms.
 
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
 ![Language](https://img.shields.io/badge/language-C%2B%2B20-brightgreen)
@@ -102,7 +102,7 @@ WAL++ is ideal for:
 
 **WAL (Waveform Analysis Language)** is a pioneering open-source project ([wal-lang.org](https://wal-lang.org)) that introduced S-expression-based waveform analysis to the digital design community. The original Python implementation established the language semantics, operator library, and analytical capabilities that have proven invaluable for hardware verification workflows.
 
-**WAL++** is a ground-up rewrite of WAL in modern C++20, maintaining 100% compatibility with WAL's syntax and semantics while delivering:
+**WAL++** is a ground-up rewrite of WAL in modern C++20. It runs the WAL language, including upstream's own standard library, and keeps almost full compatibility: a handful of defaults differ on purpose, and `--compat-types` and `--bigint` switch the ones that matter back. See [Compatibility with upstream WAL](docs/reference/wal-compatibility.md) for the list. What the rewrite delivers:
 
 | Aspect | WAL (Python) | WAL++ (C++20) |
 |--------|--------------|--------------|
@@ -110,13 +110,13 @@ WAL++ is ideal for:
 | **Memory Usage** | High for large traces | **Significantly reduced** |
 | **Large File Support** | Limited (GBs) | **Full streaming (100+ GBs)** |
 | **Startup Time** | 1-2 seconds | **< 100ms** |
-| **Syntax Compatibility** | Native | **100% compatible** |
+| **Language Compatibility** | Native | **Almost full** (see [the differences](docs/reference/wal-compatibility.md)) |
 | **Library Integration** | Python-only | **C++ + Python bindings** |
 | **Deployment** | Python runtime required | **Single binary executable** |
 
 ### Key Improvements in WAL++
 
-1. **Performance**: JIT-compiled evaluation engine vs. interpreted Python
+1. **Performance**: a compiled C++ evaluator against an interpreted Python one
 2. **Memory Efficiency**: Streaming architecture for traces larger than RAM
 3. **Responsiveness**: Minimal startup overhead, immediate feedback
 4. **Integration**: Native C++ library with Python bindings for flexibility

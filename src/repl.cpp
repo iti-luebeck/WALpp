@@ -50,13 +50,15 @@ int REPL::run() {
     return 0;
 }
 
-bool REPL::execute(const std::string& expr) {
+bool REPL::execute(const std::string& expr, bool echo_result) {
     try {
         // eval_program, not eval_str: the input may hold several top-level forms,
         // which is the normal shape of a script file, stdin or a pipe. eval_str
         // parses one expression, so everything after the first was silently ignored.
         Value result = wal_instance->eval_program(expr);
-        print_output(result);
+        if (echo_result) {
+            print_output(result);
+        }
         return true;
     } catch (const std::exception& e) {
         print_error(e.what());
@@ -76,8 +78,9 @@ bool REPL::load_file(const std::string& filename) {
         buffer << file.rdbuf();
         std::string contents = buffer.str();
         
-        // Execute file contents
-        execute(contents);
+        // Execute file contents. No echo: a script prints what it chooses to
+        // print, as it does upstream.
+        execute(contents, /*echo_result=*/false);
         return true;
     } catch (const std::exception& e) {
         print_error("Error loading file: " + std::string(e.what()));

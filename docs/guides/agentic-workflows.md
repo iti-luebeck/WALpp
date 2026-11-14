@@ -26,7 +26,7 @@ wal inspect trace.vcd
 {
   "envelope_version": 1,
   "tool": "walpp",
-  "tool_version": "1.6.3",
+  "tool_version": "1.6.4",
   "command": "inspect",
   "generated_at": "2026-11-14T13:49:54Z",
   "source": {"path": "counter.vcd","modified_at": "2026-11-13T23:06:12Z","age_seconds": 53021},
@@ -249,7 +249,7 @@ wal eval '(count (rising tb.clk))' -l trace.vcd --compact-json
 ```
 
 ```json
-{"envelope_version":1,"tool":"walpp","tool_version":"1.6.3","command":"eval","generated_at":"2026-11-14T13:51:49Z","source":{"path":"counter.vcd","modified_at":"2026-11-13T23:06:12Z","age_seconds":53136},"ok":true,"warnings":[],"data":{"results":[40]}}
+{"envelope_version":1,"tool":"walpp","tool_version":"1.6.4","command":"eval","generated_at":"2026-11-14T13:51:49Z","source":{"path":"counter.vcd","modified_at":"2026-11-13T23:06:12Z","age_seconds":53136},"ok":true,"warnings":[],"data":{"results":[40]}}
 ```
 
 ## A whole run

@@ -16,4 +16,7 @@ for name in __all__:
 try:
     from .wal_cpp import __version__  # type: ignore
 except Exception:
-    __version__ = "1.2.2"
+    # Only reached if the extension was built without a version. Kept in step with
+    # CMake's project(VERSION) rather than frozen: this said 1.2.2 while the project
+    # was at 1.6.3.
+    __version__ = "1.6.4"

@@ -145,7 +145,8 @@ private:
                 }
             }
             Value key = eval.eval(args[0]);
-            for (size_t c = 1; c < args.size(); ++c) {
+
+            auto clause_parts = [&args](size_t c) {
                 if (!args[c].is_list()) {
                     throw EvalError("case: each clause must be a list (value body...)");
                 }
@@ -153,21 +154,38 @@ private:
                 if (parts->empty()) {
                     throw EvalError("case: a clause must have a value");
                 }
+                return parts;
+            };
+            auto is_default = [](const Value& label) {
+                return label.is_symbol() && label.to_symbol()->get_name() == "default";
+            };
+            auto run_clause = [&eval](const std::shared_ptr<WList>& parts) {
+                Value result = Value(nullptr);
+                for (size_t i = 1; i < parts->size(); ++i) {
+                    result = eval.eval((*parts)[i]);
+                }
+                return result;
+            };
+
+            // `default` is a fallback, not a label that matches anything, so it is
+            // only taken once every explicit label has been ruled out. Checking it
+            // in clause order would let a `default` written first swallow the
+            // clauses after it and return a plausible wrong answer.
+            size_t default_clause = 0;
+            for (size_t c = 1; c < args.size(); ++c) {
+                auto parts = clause_parts(c);
                 const Value& label = (*parts)[0];
-                bool matches = false;
-                if (label.is_symbol() && label.to_symbol()->get_name() == "default") {
-                    matches = true;
-                } else {
-                    // Labels are literals, not expressions, so they are not evaluated.
-                    matches = (key == label);
+                if (is_default(label)) {
+                    default_clause = c;
+                    continue;
                 }
-                if (matches) {
-                    Value result = Value(nullptr);
-                    for (size_t i = 1; i < parts->size(); ++i) {
-                        result = eval.eval((*parts)[i]);
-                    }
-                    return result;
+                // Labels are literals, not expressions, so they are not evaluated.
+                if (key == label) {
+                    return run_clause(parts);
                 }
+            }
+            if (default_clause != 0) {
+                return run_clause(clause_parts(default_clause));
             }
             return Value(nullptr);
         });
@@ -183,23 +201,25 @@ private:
 
             auto scope = std::make_shared<Environment>(eval.get_environment());
             auto bindings = args[0].to_list();
-            for (size_t i = 0; i < bindings->size(); ++i) {
-                const Value& binding = (*bindings)[i];
-                if (!binding.is_list()) {
-                    throw EvalError("let: each binding must be a list [name value]");
-                }
-                auto pair = binding.to_list();
-                if (pair->size() != 2 || !(*pair)[0].is_symbol()) {
-                    throw EvalError("let: each binding must be [name value]");
-                }
-                // Values are evaluated in the outer scope, so bindings cannot see
-                // each other. That matches let rather than let*.
-                scope->define((*pair)[0].to_symbol()->get_name(), eval.eval((*pair)[1]));
-            }
 
             auto saved = eval.get_environment();
             eval.set_environment(scope);
             try {
+                // Bindings are evaluated in order inside the new scope, so a later
+                // binding can use an earlier one. That is upstream WAL's `let`, and
+                // it is what the WAL manual documents: `(let ([x 10] [y x]) (+ x y))`
+                // is 20, not an unbound-variable error.
+                for (size_t i = 0; i < bindings->size(); ++i) {
+                    const Value& binding = (*bindings)[i];
+                    if (!binding.is_list()) {
+                        throw EvalError("let: each binding must be a list [name value]");
+                    }
+                    auto pair = binding.to_list();
+                    if (pair->size() != 2 || !(*pair)[0].is_symbol()) {
+                        throw EvalError("let: each binding must be [name value]");
+                    }
+                    scope->define((*pair)[0].to_symbol()->get_name(), eval.eval((*pair)[1]));
+                }
                 Value result = eval_body(eval, args, 1);
                 eval.set_environment(saved);
                 return result;
@@ -407,7 +427,7 @@ private:
             // Upstream: (in value... container) is variadic and true only when EVERY
             // value is present. The binary-only form here rejected `(in 1 2 lst)`.
             if (args.size() < 2) {
-                throw EvalError("in expects at least 2 arguments (in value* [list|string])");
+                throw EvalError("in expects at least 2 arguments (in value* [list|string|array])");
             }
             auto evaluated = eval.eval_args(args);
             const Value& container = evaluated.back();
@@ -424,7 +444,13 @@ private:
                     if (!needle.is_string()) return false;
                     return container.to_string().find(needle.to_string()) != std::string::npos;
                 }
-                throw EvalError("in: last argument must be a list or a string");
+                if (container.is_array()) {
+                    // An array is tested by key, with the same stringified spelling
+                    // `geta` uses, so 0, "0" and '0 are one key. Upstream's own
+                    // `geta/default` in lib/std/std.wal is built on this.
+                    return container.to_array()->has(WArray::key_of(needle));
+                }
+                throw EvalError("in: last argument must be a list, a string or an array");
             };
 
             for (size_t i = 0; i + 1 < evaluated.size(); ++i) {

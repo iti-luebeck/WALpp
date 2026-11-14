@@ -799,6 +799,168 @@ void test_zero_is_false(ExecutableTestSuite& suite, const std::string& exe_path)
 
 // Test 17: upstream WAL compatibility forms.
 // Semantics pinned by running each against upstream ics-jku/wal 0.9.1.
+// The forms the WAL Programmer Manual documents, checked against it.
+//
+// Every expectation below was produced by running upstream wal-lang 0.9.1 on the
+// same input, so this test is the manual's own answer key. Each group names the
+// divergence it guards, because each one of these once disagreed with upstream and
+// nothing in the suite noticed.
+void test_wal_manual_forms(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "the WAL manual's documented forms";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        std::string vcd = "tests/original/traces/counter.vcd";
+
+        struct Case { const char* expr; const char* want; bool needs_trace; };
+        const Case cases[] = {
+            // `default` is a fallback, not a label that matches anything. Written
+            // first it used to swallow every clause after it and return the wrong
+            // branch with no error at all.
+            {"(case 2 [default 99] [2 2])", "2", false},
+            {"(case 2 [2 2] [default 99])", "2", false},
+            {"(case 7 [2 2] [default 99])", "99", false},
+
+            // let binds in order, so a later binding sees an earlier one. The
+            // manual: "later bindings can use earlier bindings".
+            {"(let ([x 10] [y x]) (+ x y))", "20", false},
+            {"(let ([x 10] [y 12]) (+ x y))", "22", false},
+
+            // slice over a number is a bit field, inclusive, upper first. 12 is
+            // 0b1100, so bits 3..2 are 0b11 and bits 2..1 are 0b10.
+            {"(slice 12 3 2)", "3", false},
+            {"(slice 12 2 1)", "2", false},
+            {"(slice 255 7 4)", "15", false},
+            {"(slice 12 2)", "1", false},
+            // over a list or a string it indexes and slices as Python does
+            {"(slice (list 1 2 3 4 5) 1)", "2", false},
+            {"(slice (list 1 2 3 4 5) 1 3)", "(2 3)", false},
+            {"(slice \"hello\" 1 3)", "el", false},
+
+            // `in` takes an array, by key. Written with "x" rather than 'x only
+            // because an apostrophe would close the shell's -e argument here. Upstream's own lib/std/std.wal builds
+            // geta/default on this, so without it a documented operator that
+            // WAL++ loads from its own stdlib could not be called.
+            {"(in \"x\" (array [\"x\" 10]))", "true", false},
+            {"(geta/default (array [\"x\" 10]) 5 \"x\")", "10", false},
+            {"(geta/default (array [\"x\" 10]) 5 \"y\")", "5", false},
+
+            // All-string + concatenates. ALL-INDICES needs it, and timeframe is
+            // built on ALL-INDICES.
+            {"(+ \"a\" \"b\")", "ab", false},
+            {"(+ \"t0\" \"^INDEX\")", "t0^INDEX", false},
+            // mixed with a number it is still an error, which is the point
+            {"(+ 1 \"hi\")", "Expected number", false},
+
+            // upstream binds true and false as ordinary globals
+            {"(if true 1 2)", "1", false},
+            {"(if false 1 2)", "2", false},
+
+            // trace ids follow upstream's documented t0, t1, ... scheme
+            {"(begin (load \"tests/original/traces/counter.vcd\") (loaded-traces))",
+             "(\"t0\")", false},
+            {"(loaded-traces)", "(\"t0\")", true},
+
+            // a trace id may be written as a symbol, which is how the manual
+            // types every one of them
+            {"(begin (load \"tests/original/traces/counter.vcd\" (quote tr)) tr^tb.clk)",
+             "0", false},
+            {"(begin (load \"tests/original/traces/counter.vcd\" (quote tr)) (step (quote tr) 5) INDEX)",
+             "5", false},
+            // and the step count may come last, as the manual writes it, or first,
+            // as WAL++ used to require. Neither is ambiguous.
+            {"(begin (load \"tests/original/traces/counter.vcd\" (quote tr)) (step \"tr\" 5) INDEX)",
+             "5", false},
+            {"(begin (load \"tests/original/traces/counter.vcd\" (quote tr)) (step 5 (quote tr)) INDEX)",
+             "5", false},
+        };
+
+        for (const auto& c : cases) {
+            std::string cmd = exe_path;
+            if (c.needs_trace) cmd += " -l " + vcd;
+            cmd += " -e '" + std::string(c.expr) + "' 2>&1";
+            auto [rc, out] = run_command(cmd);
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should give " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+
+        // timeframe restores every trace's index after the body, so a local step
+        // does not lose the cursor. Upstream prints 2, 7, 2.
+        {
+            std::string script = "/tmp/walpp_manual_timeframe.wal";
+            {
+                std::ofstream f(script);
+                f << "(load \"" << vcd << "\")\n"
+                  << "(step 2)\n(print INDEX)\n"
+                  << "(timeframe (step 5) (print INDEX))\n(print INDEX)\n";
+            }
+            auto [rc, out] = run_command(exe_path + " -f " + script + " 2>&1");
+            if (out.find("2") == std::string::npos || out.find("7") == std::string::npos) {
+                result.passed = false;
+                result.message += "timeframe should print 2, 7, 2 (got: '" + out + "'); ";
+            }
+            std::remove(script.c_str());
+        }
+
+        // A script prints what it prints and nothing else. The value of the last
+        // top-level form used to be echoed, which put a stray line on the stdout of
+        // every script whose job was to write a report or a CSV.
+        {
+            std::string script = "/tmp/walpp_manual_echo.wal";
+            {
+                std::ofstream f(script);
+                f << "(define x 1)\n(+ x 41)\n";
+            }
+            auto [rc, out] = run_command(exe_path + " -f " + script + " 2>&1");
+            if (out.find("42") != std::string::npos) {
+                result.passed = false;
+                result.message += "a script must not echo its last value (got: '" +
+                                  out + "'); ";
+            }
+            std::remove(script.c_str());
+        }
+
+        // eval-file resolves "module" to module.wal, as the manual defines it, and
+        // still accepts the name written out in full.
+        {
+            std::string mod = "/tmp/walpp_manual_mod.wal";
+            {
+                std::ofstream f(mod);
+                f << "(define helper 7)\n";
+            }
+            for (const char* spelling : {"/tmp/walpp_manual_mod",
+                                         "/tmp/walpp_manual_mod.wal"}) {
+                auto [rc, out] = run_command(
+                    exe_path + " -e '(begin (eval-file \"" + std::string(spelling) +
+                    "\") helper)' 2>&1");
+                if (out.find("7") == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("eval-file ") + spelling +
+                                      " should give 7 (got: '" + out + "'); ";
+                }
+            }
+            std::remove(mod.c_str());
+        }
+
+        if (result.passed) {
+            result.message = "every documented form agrees with upstream 0.9.1";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 void test_wal_compat_forms(ExecutableTestSuite& suite, const std::string& exe_path) {
     TestResult result;
     result.name = "upstream WAL forms: control flow, predicates, printf, alias";
@@ -1482,9 +1644,14 @@ void test_strict_types(ExecutableTestSuite& suite, const std::string& exe_path) 
             {"(= \"a\" \"a\")", "true"},
             {"(= \"1\" 1)", "false"},
             {"(in 1.0 (list 1 2))", "false"},
-            // and + refuses to join a string to a number
+            // + refuses to join a string to a NUMBER, which is the case the
+            // strictness exists for: a signal wider than 64 bits reads as a bit
+            // string, so coercing there would return a plausible wrong answer.
             {"(+ 1 \"hi\")", "Expected number"},
-            {"(+ \"a\" \"b\")", "Expected number"},
+            // All-string + concatenates, as upstream does. Nothing here can be
+            // mistaken for arithmetic, and upstream's own lib/std/std.wal needs it:
+            // ALL-INDICES and therefore timeframe are built on (+ t "^INDEX").
+            {"(= (+ \"a\" \"b\") \"ab\")", "true"},
             // the explicit conversions are the way across
             {"(= (int->string 1) \"1\")", "true"},
             {"(= (string->int \"1\") 1)", "true"},
@@ -1685,15 +1852,18 @@ void test_remaining_operators(ExecutableTestSuite& suite, const std::string& exe
             {"(bits->sint \"1000\")", "-8", false},           // upstream: -8
             {"(bits->sint \"0\")", "0", false},
             // trace queries
-            {"(loaded-traces)", "(\"DEFAULT\")", true},       // upstream: ['DEFAULT']
+            // A trace loaded with -l carries upstream's auto id, t0, so an upstream
+            // script can name it. It used to be "DEFAULT", which no upstream
+            // script would reach for.
+            {"(loaded-traces)", "(\"t0\")", true},
             {"(length (find/g (rising tb.clk)))", "40", true},
             // scope as a statement
             {"(begin (set-scope (quote tb)) CS)", "tb", true},
             {"(begin (set-scope (quote tb)) (unset-scope) CS)", "", true},
             {"(begin (set-scope (quote tb)) (length LOCAL-SIGNALS))", "3", true},
             // trace authoring
-            {"(begin (trim-trace \"DEFAULT\" 10) MAX-INDEX)", "10", true},
-            {"(begin (trim-trace \"DEFAULT\" 10) (length (find/g (rising tb.clk))))",
+            {"(begin (trim-trace \"t0\" 10) MAX-INDEX)", "10", true},
+            {"(begin (trim-trace \"t0\" 10) (length (find/g (rising tb.clk))))",
              "5", true},
             {"(sample-at (list 0 2 4))", "3", true},
             {"(begin (new-trace v 5) (length (loaded-traces)))", "2", true},
@@ -1719,7 +1889,7 @@ void test_remaining_operators(ExecutableTestSuite& suite, const std::string& exe
         // dump-trace must produce a VCD that reads back as the same trace.
         if (file_exists(vcd)) {
             std::string out_vcd = "/tmp/walpp_dump_roundtrip.vcd";
-            run_command(exe_path + " -l " + vcd + " -e '(dump-trace \"DEFAULT\" \"" +
+            run_command(exe_path + " -l " + vcd + " -e '(dump-trace \"t0\" \"" +
                         out_vcd + "\")' >/dev/null 2>&1");
             struct Check { const char* expr; const char* want; };
             const Check checks[] = {
@@ -2575,6 +2745,7 @@ int main(int argc, char* argv[]) {
     test_verbs_equal_flags(suite, exe_path);
     test_cookbook_recipes(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
+    test_wal_manual_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);
     

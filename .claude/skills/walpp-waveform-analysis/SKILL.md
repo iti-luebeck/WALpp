@@ -8,14 +8,14 @@ description: Analyze digital simulation waveforms (VCD/FST/CSV) with the WAL++ `
 Drive the `wal` command-line tool to analyze digital simulation waveforms. WAL++ is a
 C++20 waveform-analysis language with S-expression syntax and 130+ operators.
 
-Everything below was verified against **WAL++ v1.6.3**. Where a claim could go stale,
+Everything below was verified against **WAL++ v1.6.4**. Where a claim could go stale,
 the check that verifies it is given with it.
 
 ## Finding the binary
 
 ```bash
 export WAL=$(command -v wal || echo "$PWD/build/wal")   # installed, or a local build
-$WAL --version                                          # => WAL++ v1.6.3
+$WAL --version                                          # => WAL++ v1.6.4
 ```
 
 If it is missing, build it from the repository root:
@@ -63,8 +63,8 @@ Note that `-e` echoes signal names as quoted symbols while `print` renders them 
 which matters when you are generating a signal-list file:
 
 ```bash
-$WAL -l t.vcd -e '(signal-names)'          # => ('tb^overflow 'tb^clk ...)
-$WAL -l t.vcd -e '(print (signal-names))'  # => (tb^overflow tb^clk ...)
+$WAL -l t.vcd -e '(signal-names)'          # => ('tb.overflow 'tb.clk ...)
+$WAL -l t.vcd -e '(print (signal-names))'  # => (tb.overflow tb.clk ...)
 ```
 
 ## If your binary predates the `-e` fixes
@@ -132,8 +132,8 @@ $WAL --fast-list trace.vcd -o names.txt            # "width name" per signal + "
 ## Signal model and navigation
 
 ```bash
-$WAL -l trace.vcd -e '(print (signal-names))'  # => (tb^overflow tb^clk ... tb^dut^counter)
-$WAL -l trace.vcd -e '(print (get-traces))'    # => (DEFAULT)
+$WAL -l trace.vcd -e '(print (signal-names))'  # => (tb.overflow tb.clk ... tb.dut.counter)
+$WAL -l trace.vcd -e '(print (get-traces))'    # => (t0)   upstream's auto id
 ```
 
 | Operator | Meaning |

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(walpp
 
-    VERSION 1.6.3 
+    VERSION 1.6.4 
     LANGUAGES CXX C
     DESCRIPTION "WAL - Waveform Analysis Language in C++20"
 )

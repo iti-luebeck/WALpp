@@ -849,7 +849,11 @@ int CLI::run() {
             // ignored --streaming on the main entry point, and the reason no longer
             // holds: the extraction modes never build a Trace at all, and the
             // streaming reader now answers indexed reads. Honour what was asked.
-            wal_instance->load(trace_file);
+            // Empty id, so the container applies upstream's t0, t1, ... scheme. The
+            // library default is still "DEFAULT" for the C++ and Python callers that
+            // rely on it, but a trace loaded with -l should carry the name an
+            // upstream script would reach for.
+            wal_instance->load(trace_file, "");
         } catch (const std::exception& e) {
             std::cerr << "Error loading trace file: " << e.what() << std::endl;
             return 1;

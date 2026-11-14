@@ -104,7 +104,15 @@ private:
             if (!path.is_string()) {
                 throw EvalError("eval-file: argument must evaluate to a string");
             }
-            return run_file(eval, path.to_string(), "eval-file");
+            // The WAL manual defines this as evaluating "the WAL code in module +
+            // .wal", so `(eval-file "lib/helpers")` names helpers.wal. The suffix is
+            // only added when the name as given cannot be opened, so an explicit
+            // "helpers.wal" and an unusual extension both still work.
+            std::string name = path.to_string();
+            if (!std::ifstream(name).good() && std::ifstream(name + ".wal").good()) {
+                name += ".wal";
+            }
+            return run_file(eval, name, "eval-file");
         });
 
         // (require module ...) -- run a module file once, so its definitions become

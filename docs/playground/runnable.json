@@ -17,8 +17,8 @@
    "trace": null
   },
   {
-   "code": "; This WAL script runs identically in both implementations:\n(define signals (signal-names))\n(define bus-signals\n  (filter (lambda (s) (> (signal-width s) 1)) signals))\n(map signal-width bus-signals)",
-   "trace": null
+   "code": "(alias clk \"cpu.clk\")\n(define cnt 0)\n(while (step 1)\n  (when (&& clk (! clk@-1))\n    (set! cnt (+ cnt 1))))\n(printf \"Total rising edges: %d\\n\" cnt)",
+   "trace": "counter.vcd"
   },
   {
    "code": "; Comments start with semicolon\n\n; Atoms\n42                         ; Integer\n3.14                       ; Float\n\"hello\"                    ; String\n'symbol                    ; Symbol\n\n; Lists (S-expressions)\n(+ 1 2)                    ; Function call\n(list 1 2 3)               ; List construction\n'(a b c)                   ; Quoted list",

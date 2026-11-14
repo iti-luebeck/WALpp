@@ -13,7 +13,12 @@
 (alias vld 't0^TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_valid)
 
 ; One `whenever` per signal, so that a row is printed only when that signal
-; changes -- the same rows WAL++ emits.
+; changes. The same value-change events WAL++ emits, with two differences that
+; matter if the outputs are diffed rather than timed: the first column here is
+; INDEX, where `--fast-values-signals` writes the simulation timestamp (`TS`
+; converts one to the other), and the rows come out grouped by signal, because
+; this makes one pass per signal where the extraction path makes one interleaved
+; pass over all of them.
 (whenever (!= clk clk@-1) (printf "%d,0,%d\n" INDEX clk))
 (whenever (!= addr addr@-1) (printf "%d,1,%d\n" INDEX addr))
 (whenever (!= isw isw@-1) (printf "%d,2,%d\n" INDEX isw))

@@ -1,5 +1,7 @@
 #include "wal/ast.h"
+#include <cmath>
 #include <iomanip>
+#include "wal/value_printer.h"
 #include <sstream>
 
 namespace wal {
@@ -189,13 +191,27 @@ std::string Value::to_string_repr() const {
     if (is_nil()) {
         return "nil";
     } else if (is_bool()) {
-        return std::get<bool>(data) ? "#t" : "#f";
+        // `true` and `false`, as upstream prints them, and as `-e` already rendered
+        // them. `print` used to say `#t` while `-e` said `true` for the same value,
+        // so one binary disagreed with itself. `#t` and `#f` remain how a boolean is
+        // written, and `true`/`false` are bound to them, so this still reads back.
+        return std::get<bool>(data) ? "true" : "false";
     } else if (is_int()) {
         return std::to_string(std::get<int64_t>(data));
     } else if (is_float()) {
-        std::ostringstream oss;
-        oss << std::setprecision(10) << std::get<double>(data);
-        return oss.str();
+        // Shared with `-e` and the REPL, so all three agree. See format_double.
+        // A whole float keeps its ".0", so a float stays distinguishable from an
+        // int: upstream's `(average (list 1 2 3))` prints 2.0, not 2.
+        double value = std::get<double>(data);
+        std::string text = format_double(value);
+        if (std::isfinite(value) && value == static_cast<int64_t>(value) &&
+            text.find('.') == std::string::npos &&
+            text.find('e') == std::string::npos &&
+            text.find("inf") == std::string::npos &&
+            text.find("nan") == std::string::npos) {
+            text += ".0";
+        }
+        return text;
     } else if (is_string()) {
         std::string escaped = std::get<std::string>(data);
         // Escape special characters

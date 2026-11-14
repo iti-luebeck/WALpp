@@ -6,7 +6,62 @@ All notable changes to WAL++ are recorded here. The format follows
 
 ## [Unreleased]
 
-## [1.6.3] - TBD
+## [1.6.4] - 2026-11-14
+
+Checked against the [WAL Programmer Manual](https://wal-lang.org/documentation/core)
+form by form, with every expectation taken from upstream `wal-lang` 0.9.1.
+`test_wal_manual_forms` in `tests/test_wal_executable.cpp` now holds each one.
+
+### Breaking
+
+- **A trace loaded with `-l` is `t0`**, then `t1`, which is the scheme the manual
+  documents and the one an upstream script names. It was `DEFAULT`, so `t0^tb.clk`
+  did not resolve. A script that spelled out `DEFAULT^...` or passed `"DEFAULT"` to
+  `dump-trace` or `trim-trace` has to use `t0`. The C++ and Python `load()` default
+  is unchanged.
+- **`print` renders as upstream renders.** Arguments run together with no separator,
+  a top-level string is bare where a nested one is quoted, symbols are bare, arrays
+  are `{("x" 10)}`, booleans are `true`/`false` rather than `#t`/`#f`, and a float
+  carries the shortest decimal that reads back as the same value, keeping `.0` when
+  whole. `#t` and `#f` are unchanged as input.
+
+### Fixed
+
+- **`case` took `default` positionally.** Written before a matching clause it
+  swallowed every clause after it and returned that branch with no error:
+  `(case 2 [default 99] [2 2])` gave 99 instead of 2. `default` is now a fallback,
+  checked once every explicit label has failed. The upstream assertion covering
+  this had gone missing from the vendored `tests/original/test_eval.py`. It is back,
+  and that directory is byte-identical to upstream again.
+- **`let` did not bind in order**, so `(let ([x 10] [y x]) (+ x y))` raised instead
+  of giving 20.
+- **`slice` could not slice a number.** `(slice 12 3 2)` is the bit field 3..2, and
+  `(slice 12 2)` is bit 2. Strings now index and slice as lists do, and a two-argument
+  list slice returns the element rather than the tail.
+- **`in` rejected an array**, which made `geta/default` unusable even though it ships
+  in upstream's own `lib/std/std.wal`.
+- **`+` refused to concatenate strings**, which broke `ALL-INDICES`, `trace-index`
+  and `timeframe` in that same stdlib. All-string `+` now joins. A string mixed with
+  a number is still an error, which is the case the strictness exists for.
+- **`expr@off` disagreed with `reval`** although the manual defines the first as the
+  second. An offset past either end of the trace now reads as `#f` instead of
+  aborting the run, so `(whenever (!= sig sig@-1) ...)` works at index 0.
+- **A trace id had to be a string.** The manual types every one as `symbol?`, so
+  `(load "t.vcd" 'tr)`, `(unload 'tr)` and `(step 'tr 1)` now work.
+- **`step` took its arguments in the opposite order** to the manual's `(step id
+  amount)`. Both orders work now, since a count is an integer and an id never is.
+- **`eval-file` did not add `.wal`**, so the documented `(eval-file "module")` form
+  failed.
+- **A script echoed the value of its last top-level form**, putting a stray line on
+  the stdout of anything whose job was to write a report or a CSV. An interactive
+  prompt still echoes.
+- **`true` and `false` were unbound.** Upstream binds them as ordinary globals.
+- **`(** 2 10)` returned 1024.0.** Integer operands with a non-negative exponent
+  give an integer.
+- **`loaded-traces` came back in `unordered_map` order**, so it could differ between
+  runs.
+
+## [1.6.3] - 2026-11-14
 
 Upstream WAL compatibility, the agent-facing modes, and the documentation site.
 

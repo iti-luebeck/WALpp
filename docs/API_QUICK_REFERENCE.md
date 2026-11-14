@@ -292,7 +292,7 @@ try {
 wal> (+ 1 2)
 3
 wal> (load "trace.vcd")
-[Trace loaded: DEFAULT]
+[Trace loaded: t0]
 wal> (signal "clk")
 0
 wal> (step)

@@ -318,7 +318,7 @@ uses, so an assistant that has learned one can read the other:
 {
   "envelope_version": 1,
   "tool": "walpp",
-  "tool_version": "1.6.3",
+  "tool_version": "1.6.4",
   "command": "inspect",
   "generated_at": "2026-11-14T12:25:39Z",
   "source": {

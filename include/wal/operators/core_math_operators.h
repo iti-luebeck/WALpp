@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wal/operator_registry.h"
+#include "wal/value_printer.h"
 #include "wal/evaluator.h"
 #include <cmath>
 #include <iostream>
@@ -91,10 +92,28 @@ public:
                 return Value(result);
             }
 
-            // Upstream also concatenates when any operand is a STRING. Off by
-            // default here: the VCD reader represents a signal wider than 64 bits as
-            // a bit string, so a string-coercing + would turn `(+ wide 1)` into
-            // concatenation of a bit pattern and return a plausible wrong answer
+            // When EVERY operand is a string, concatenate. Nothing here can be
+            // mistaken for arithmetic, so this half of upstream's string behavior
+            // carries none of the risk described below, and upstream's own
+            // lib/std/std.wal depends on it: `ALL-INDICES` builds `(+ t "^INDEX")`,
+            // `trace-index` builds `(+ trace "§")`, and `timeframe` is built on
+            // `ALL-INDICES`. Without it those stdlib functions cannot run.
+            {
+                bool all_strings = true;
+                for (const auto& val : evaluated) {
+                    if (!val.is_string()) { all_strings = false; break; }
+                }
+                if (all_strings) {
+                    std::string joined;
+                    for (const auto& val : evaluated) joined += val.to_string();
+                    return Value(joined);
+                }
+            }
+
+            // A string MIXED with a number is still an error. That is the case the
+            // strictness exists for: the VCD reader represents a signal wider than 64
+            // bits as a bit string, so a string-coercing + would turn `(+ wide 1)`
+            // into concatenation of a bit pattern and return a plausible wrong answer
             // instead of failing. --compat-types turns it on for upstream scripts.
             if (compat_types_mode()) {
                 bool has_string = false;
@@ -201,6 +220,14 @@ public:
             double base = evaluated[0].to_float();
             double exponent = evaluated[1].to_float();
             double result = std::pow(base, exponent);
+            // Integer in, integer out, as upstream's `**` gives: `(** 2 10)` is 1024,
+            // not 1024.0. A negative exponent or an inexact result stays a float.
+            if (evaluated[0].is_int() && evaluated[1].is_int() && exponent >= 0 &&
+                std::isfinite(result) &&
+                std::abs(result) <= 9.007199254740992e15 &&
+                result == std::floor(result)) {
+                return Value(static_cast<int64_t>(result));
+            }
             return Value(result);
         });
         
@@ -441,9 +468,9 @@ public:
         
         registry.register_operator("print", [](SEval& eval, const std::vector<Value>& args) -> Value {
             auto evaluated = eval.eval_args(args);
-            for (size_t i = 0; i < evaluated.size(); ++i) {
-                if (i > 0) std::cout << " ";
-                std::cout << evaluated[i].to_string_repr();
+            // Display form, no separator, as upstream's print does. See display_value.
+            for (const auto& value : evaluated) {
+                display_value(value, std::cout);
             }
             std::cout << "\n";
             return Value(nullptr);

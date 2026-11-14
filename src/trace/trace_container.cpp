@@ -35,10 +35,13 @@ void TraceContainer::load(const std::string& file, const std::string& tid,
                          [](unsigned char c) { return std::tolower(c); });
         }
         
-        // Generate trace ID if not provided
+        // Generate trace ID if not provided. The scheme is upstream's, documented in
+        // the WAL manual as "t0, t1, ...", so a script that reaches for `t0^tb.clk`
+        // after an unnamed `(load ...)` resolves it. It used to be `trace_1`, which
+        // left no spelling an upstream script could name.
         std::string trace_id = tid;
         if (trace_id.empty()) {
-            trace_id = "trace_" + std::to_string(num_traces + 1);
+            trace_id = "t" + std::to_string(num_traces);
         }
         
         // Check if we should use streaming
@@ -184,6 +187,11 @@ std::vector<std::string> TraceContainer::get_trace_ids() const {
     for (const auto& [id, _] : traces) {
         ids.push_back(id);
     }
+    // `traces` is an unordered_map, so the raw iteration order is arbitrary and can
+    // differ between runs. Sorting makes `loaded-traces` deterministic, and for the
+    // auto-generated t0, t1, ... ids it reproduces load order, which is what
+    // upstream reports.
+    std::sort(ids.begin(), ids.end());
     return ids;
 }
 

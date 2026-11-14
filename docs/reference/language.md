@@ -71,7 +71,7 @@ narrows it:
 (begin (set-index 40) (count (rising tb.clk))) ; 20, from index 40
 ```
 
-That is upstream's behaviour and it is useful for windowing an analysis, but it
+That is upstream's behavior and it is useful for windowing an analysis, but it
 surprises people who expect a whole-trace answer. `(set-index 0)` first if you want
 one.
 
@@ -104,8 +104,8 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 | String | `"hello"` | Text values |
 | Symbol | `'foo` | Named identifiers |
 | List | `(1 2 3)` | Ordered collections |
-| Boolean | `true`, `false` | Logical values |
-| Nil | `nil` | Empty/null value |
+| Boolean | `#t`, `#f` | Logical values. `true` and `false` are bound to them, and are also how one prints |
+| Nil | prints as `nil` | Empty/null value. There is no `nil` literal: `(if #f 1)` produces one |
 
 ## Operators
 
@@ -136,8 +136,10 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 ### Logical
 
 The names are `&&`, `||` and `!`, as in upstream WAL. There is no `and`, `or` or
-`not`. The literals are `#t` and `#f`: `true` and `false` are how a boolean
-*prints*, not how you write one.
+`not`. The literals are `#t` and `#f`, which is also how a boolean prints. `true` and
+`false` are bound to them as ordinary globals, the way upstream binds them, so an
+upstream script written with those names runs. There is no `nil` literal, though nil
+is what prints when there is no value: `(if #f 1)` produces one to test with.
 
 ```scheme
 (&& #t #t)          ; true

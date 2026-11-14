@@ -13,9 +13,19 @@ Upstream's own test suite, run against the WAL++ engine. The test files in
 `tests/conformance/run_conformance.py` points them at WAL++ through its Python
 bindings.
 
+Verbatim is meant literally, and is worth checking rather than trusting: a single
+assertion once went missing from `test_eval.py`, and it was the one that catches a
+`case` whose `default` is written before a matching clause. `diff -r` against an
+upstream checkout is the check.
+
 ```bash
-python3 tests/conformance/run_conformance.py
+cmake -S . -B build -DBUILD_PYTHON_MODULE=ON    # the runner needs the extension
+cmake --build build -j
+PYTHONPATH=build/lib python3 tests/conformance/run_conformance.py
 ```
+
+Without the extension built, the runner prints `SKIP: No module named 'wal_cpp'`
+and exits 0, so a green run means nothing until you see the count.
 
 **71 of 77 upstream tests pass**, and **0 of upstream's 106 operators are missing**.
 A ratchet in `tests/CMakeLists.txt` keeps the number from going down.
@@ -83,7 +93,36 @@ possible failure mode.
 Ordering still mixes numeric types, so `(< 1 1.5)` is true. The strictness is about
 identity, not about arithmetic.
 
-**Turn it off:** `--compat-types` restores upstream's coercion in full.
+What is strict is a string *mixed with* a number. When every operand is a string, `+`
+concatenates as upstream does, because nothing there can be mistaken for arithmetic:
+
+```lisp
+(+ "t0" "^INDEX")   ; "t0^INDEX", as upstream
+(+ 1 "hi")          ; error here, "1hi" upstream
+```
+
+That distinction is not cosmetic. Upstream's own `lib/std/std.wal` builds signal names
+with `+`, so `ALL-INDICES`, `trace-index` and `timeframe` are written in terms of it
+and cannot run without it.
+
+**Turn it off:** `--compat-types` restores upstream's coercion in full, including the
+mixed case.
+
+### What the strictness does change in the standard library
+
+Upstream's `stable` and `unstable` are `(= expr (reval expr 1))` and its negation. At
+the last index `reval` reads past the end and answers `#f` on both engines, and
+upstream's `(= 0 #f)` is true where WAL++'s is false. So the two disagree by exactly
+one index:
+
+| on `counter.vcd` | upstream | WAL++ | WAL++ `--compat-types` |
+|---|---|---|---|
+| `(count (stable tb.clk))` | 1 | 0 | 1 |
+| `(count (unstable tb.clk))` | 80 | 81 | 80 |
+| `(count (rising tb.clk))` | 40 | 40 | 40 |
+
+`rising` and `falling` compare against `1`, so they are unaffected. If you are
+reproducing an upstream number from `stable` or `unstable`, use `--compat-types`.
 
 ### Integers are 64-bit
 
@@ -136,6 +175,47 @@ A VCD hierarchy spells an array element `data[0]`. Both engines rename it to
 `data<0>`, because `[` opens a subscript in the language and
 `TOP.tb.data[0].data.something` would otherwise read as `TOP.tb.data` subscripted by
 zero. The old bracketed spelling still resolves through `get-signal`.
+
+## Spellings the manual documents
+
+These are the forms the [WAL Programmer Manual](https://wal-lang.org/documentation/core)
+defines, each checked against upstream 0.9.1. They are listed because every one of
+them once disagreed, and `test_wal_manual_forms` in `tests/test_wal_executable.cpp`
+now holds them to it.
+
+- **`case`'s `default` is a fallback, not a wildcard.** It is taken only once every
+  explicit label has failed, wherever it is written in the clause list.
+- **`let` binds in order**, so `(let ([x 10] [y x]) (+ x y))` is 20.
+- **`slice` over a number is a bit field**, inclusive and upper-first:
+  `(slice 12 3 2)` is 3, `(slice 12 2)` is bit 2. Over a list or a string it indexes
+  and slices as Python does.
+- **`in` takes an array**, by key, which is what `geta/default` is built on.
+- **A trace id may be a symbol**, as the manual types all of them:
+  `(load "t.vcd" 'tr)`, `(unload 'tr)`, `(step 'tr 1)`.
+- **Unnamed traces are `t0`, `t1`, ...**, including the one `-l` loads, so
+  `t0^tb.clk` resolves.
+- **`step` takes the count last**, `(step 'tr 5)`, as the manual writes it. The old
+  `(step 5 'tr)` also works, since a count is an integer and an id never is.
+- **`eval-file "module"` resolves `module.wal`**, and an explicit `.wal` works too.
+- **`expr@off` is `reval`**, so an offset outside the trace reads as `#f` at either
+  end rather than failing.
+- **`true` and `false` are bound globals**, as they are upstream. `#t` and `#f` are
+  still how a boolean is written, and still how one prints.
+- **A script prints only what it prints.** The value of the last top-level form is
+  not echoed, so stdout stays usable for a report or a CSV. An interactive prompt
+  still echoes, because there the value is the answer.
+- **`print` renders what upstream renders.** Arguments run together with no
+  separator, a top-level string contributes its characters bare while a nested one
+  is quoted, symbols are bare, arrays are `{("x" 10)}`, booleans are `true` and
+  `false`, and a float carries the shortest decimal that reads back as the same
+  value, with `.0` kept when it is whole. Three renderers in the binary used to
+  disagree with each other: `print` said `#t` and truncated `(/ 10 3)` at ten
+  digits, `-e` said `true` and truncated at six.
+- **`(** 2 10)` is 1024**, not 1024.0. Integer operands and a non-negative exponent
+  give an integer, as upstream does.
+
+The empty value still prints as `nil` rather than upstream's `None`, which is the one
+output difference left standing. It is a name for the same thing.
 
 ## Where WAL++ accepts more
 

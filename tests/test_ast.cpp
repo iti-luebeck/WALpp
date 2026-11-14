@@ -80,8 +80,8 @@ TEST_F(ASTTest, ValueEquality) {
 
 TEST_F(ASTTest, StringRepr) {
     EXPECT_EQ(wal::Value(42).to_string_repr(), "42");
-    EXPECT_EQ(wal::Value(true).to_string_repr(), "#t");
-    EXPECT_EQ(wal::Value(false).to_string_repr(), "#f");
+    EXPECT_EQ(wal::Value(true).to_string_repr(), "true");
+    EXPECT_EQ(wal::Value(false).to_string_repr(), "false");
     EXPECT_EQ(wal::Value(nullptr).to_string_repr(), "nil");
     EXPECT_EQ(wal::Value("hello").to_string_repr(), "\"hello\"");
 }

@@ -77,30 +77,84 @@ public:
         
         registry.register_operator("slice", [](SEval& eval, const std::vector<Value>& args) -> Value {
             if (args.size() < 2 || args.size() > 3) {
-                throw EvalError("slice requires 2 or 3 arguments");
+                throw EvalError("slice requires 2 or 3 arguments (slice value upper [lower])");
             }
             auto evaluated = eval.eval_args(args);
-            
-            if (!evaluated[0].is_list()) {
-                throw EvalError("slice: first argument must be a list");
-            }
+
             if (!evaluated[1].is_int()) {
                 throw EvalError("slice: second argument must be an integer");
             }
             if (args.size() == 3 && !evaluated[2].is_int()) {
                 throw EvalError("slice: third argument must be an integer");
             }
-            
-            auto list = evaluated[0].to_list();
-            int64_t start = evaluated[1].to_int();
-            int64_t end = (args.size() == 3) ? evaluated[2].to_int() : list->size();
-            
-            if (start < 0) start = 0;
-            if (end > static_cast<int64_t>(list->size())) end = list->size();
-            if (start > end) start = end;
-            
-            std::vector<Value> result(list->begin() + start, list->begin() + end);
-            return Value(std::make_shared<WList>(result));
+
+            // A number is sliced by bit, inclusive and in Verilog's order: with two
+            // arguments `(slice n i)` is bit i, with three `(slice n upper lower)` is
+            // the field upper down to lower. That is upstream's definition and it is
+            // the one a bus read out of a waveform needs.
+            if (evaluated[0].is_int()) {
+                uint64_t bits = static_cast<uint64_t>(evaluated[0].to_int());
+                int64_t upper = evaluated[1].to_int();
+                int64_t lower = (args.size() == 3) ? evaluated[2].to_int() : upper;
+                if (lower < 0 || upper < lower) {
+                    throw EvalError("slice: expects upper >= lower >= 0 for a number");
+                }
+                if (lower > 63) {
+                    return Value(static_cast<int64_t>(0));
+                }
+                if (upper > 63) upper = 63;
+                uint64_t width = static_cast<uint64_t>(upper - lower + 1);
+                uint64_t mask = (width >= 64) ? ~0ULL : ((1ULL << width) - 1ULL);
+                return Value(static_cast<int64_t>((bits >> lower) & mask));
+            }
+
+            // Lists and strings index and slice the way Python does, so a negative
+            // index counts from the end and the upper bound is exclusive. A signal
+            // wider than 64 bits arrives here as its bit string.
+            auto resolve = [](int64_t i, int64_t n) {
+                if (i < 0) i += n;
+                if (i < 0) i = 0;
+                if (i > n) i = n;
+                return i;
+            };
+
+            if (evaluated[0].is_string()) {
+                const std::string s = evaluated[0].to_string();
+                int64_t n = static_cast<int64_t>(s.size());
+                if (args.size() == 2) {
+                    int64_t i = evaluated[1].to_int();
+                    if (i < 0) i += n;
+                    if (i < 0 || i >= n) {
+                        throw EvalError("slice: index out of range");
+                    }
+                    return Value(std::string(1, s[static_cast<size_t>(i)]));
+                }
+                int64_t start = resolve(evaluated[1].to_int(), n);
+                int64_t end = resolve(evaluated[2].to_int(), n);
+                if (start > end) start = end;
+                return Value(s.substr(static_cast<size_t>(start),
+                                      static_cast<size_t>(end - start)));
+            }
+
+            if (evaluated[0].is_list()) {
+                auto list = evaluated[0].to_list();
+                int64_t n = static_cast<int64_t>(list->size());
+                if (args.size() == 2) {
+                    int64_t i = evaluated[1].to_int();
+                    if (i < 0) i += n;
+                    if (i < 0 || i >= n) {
+                        throw EvalError("slice: index out of range");
+                    }
+                    return (*list)[static_cast<size_t>(i)];
+                }
+                int64_t start = resolve(evaluated[1].to_int(), n);
+                int64_t end = resolve(evaluated[2].to_int(), n);
+                if (start > end) start = end;
+                std::vector<Value> result(list->begin() + start, list->begin() + end);
+                return Value(std::make_shared<WList>(result));
+            }
+
+            throw EvalError("slice: first argument must be a number, a list or a string");
         });
         
         registry.register_operator("flatten", [](SEval& eval, const std::vector<Value>& args) -> Value {

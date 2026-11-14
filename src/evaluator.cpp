@@ -586,6 +586,12 @@ void SEval::initialize_builtins() {
     // set happens to define the same spelling.
     wal::operators::WalCompatOperators::register_all(builtin_operators);
     wal::operators::WalRemainingOperators::register_all(builtin_operators);
+
+    // Upstream binds `true` and `false` as ordinary globals, so a script written
+    // with them runs. They are bindings, not reader literals: `#t` and `#f` remain
+    // the way a boolean is written, and these can be shadowed like any other name.
+    global_environment->define("true", Value(true));
+    global_environment->define("false", Value(false));
 }
 
 } // namespace wal

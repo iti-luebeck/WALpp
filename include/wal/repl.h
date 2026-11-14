@@ -56,11 +56,15 @@ public:
     
     /**
      * @brief Execute single expression
-     * 
+     *
      * @param expr The expression to evaluate
+     * @param echo_result Print the value of the last form. True at an interactive
+     *        prompt, where that is the answer. False when running a script, because
+     *        upstream WAL prints nothing there, and an extra line on stdout corrupts
+     *        the output of a script whose job is to write a report or a CSV.
      * @return true if execution succeeded
      */
-    bool execute(const std::string& expr);
+    bool execute(const std::string& expr, bool echo_result = true);
     
     /**
      * @brief Load and execute a file

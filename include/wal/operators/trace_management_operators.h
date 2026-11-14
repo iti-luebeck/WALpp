@@ -44,7 +44,17 @@ private:
         throw EvalError(std::string(who) + ": signal name must be a string or symbol");
     }
 
-public:
+    /// A trace id given as a string OR as a symbol.
+    ///
+    /// The WAL manual types every trace id as `symbol?`, so `(load "t.vcd" 'tr)`,
+    /// `(unload 'tr)` and `(step 'tr 1)` are the documented spellings. Demanding a
+    /// string rejected all of them.
+    static std::string trace_id_of(const Value& v, const char* who) {
+        if (v.is_string()) return v.to_string();
+        if (v.is_symbol()) return v.to_symbol()->get_name();
+        throw EvalError(std::string(who) + ": trace-id must be a string or symbol");
+    }
+
 public:
     /**
      * @brief Register all trace management operators
@@ -72,10 +82,7 @@ public:
             std::vector<std::string>* keep_signals = nullptr;
 
             if (args.size() >= 2) {
-                if (!evaluated[1].is_string()) {
-                    throw EvalError("load: trace-id must be a string");
-                }
-                trace_id = evaluated[1].to_string();
+                trace_id = trace_id_of(evaluated[1], "load");
             }
 
             if (args.size() >= 3) {
@@ -102,11 +109,7 @@ public:
 
             auto evaluated = eval.eval_args(args);
 
-            if (!evaluated[0].is_string()) {
-                throw EvalError("unload: trace-id must be a string");
-            }
-
-            std::string trace_id = evaluated[0].to_string();
+            std::string trace_id = trace_id_of(evaluated[0], "unload");
 
             try {
                 eval.get_traces()->unload(trace_id);
@@ -122,28 +125,30 @@ public:
 
         // step - Move all traces forward/backward in time
         registry.register_operator("step", [](SEval& eval, const std::vector<Value>& args) -> Value {
-            if (args.size() > 2) {
-                throw EvalError("step expects 0-2 arguments ([steps [trace-id]]), got " + 
-                              std::to_string(args.size()));
-            }
-
+            // Upstream's signature is `(step id... amount)`: any trace ids come
+            // first and the step count is last. WAL++ used to read the count first,
+            // so `(step 'tr 5)` was rejected. The two orders can never be confused,
+            // because a count is an integer and an id never is, so the count is
+            // taken wherever it appears and every other argument is an id. That
+            // accepts the documented order and keeps the old one working.
             int64_t steps = 1;
-            std::string trace_id = "";
+            std::vector<std::string> trace_ids;
 
-            if (args.size() >= 1) {
-                auto evaluated = eval.eval_args(args);
-                if (!evaluated[0].is_int()) {
-                    throw EvalError("step: steps must be an integer");
+            auto evaluated = eval.eval_args(args);
+            bool have_steps = false;
+            for (const auto& arg : evaluated) {
+                if (arg.is_int()) {
+                    if (have_steps) {
+                        throw EvalError("step: expects at most one step count");
+                    }
+                    steps = arg.to_int();
+                    have_steps = true;
+                } else {
+                    trace_ids.push_back(trace_id_of(arg, "step"));
                 }
-                steps = evaluated[0].to_int();
             }
-
-            if (args.size() >= 2) {
-                auto evaluated = eval.eval_args(args);
-                if (!evaluated[1].is_string()) {
-                    throw EvalError("step: trace-id must be a string");
-                }
-                trace_id = evaluated[1].to_string();
+            if (trace_ids.empty()) {
+                trace_ids.push_back("");  // every loaded trace
             }
 
             try {
@@ -151,8 +156,11 @@ public:
                 // while the cursor advances, false once a trace cannot. It used to
                 // return the step count, which is truthy for the usual `(step 1)`, so
                 // `(while (step 1) ...)` never terminated.
-                std::string ended = eval.get_traces()->step(steps, trace_id);
-                return Value(ended.empty());
+                bool advanced = true;
+                for (const auto& id : trace_ids) {
+                    if (!eval.get_traces()->step(steps, id).empty()) advanced = false;
+                }
+                return Value(advanced);
             } catch (const std::exception& e) {
                 throw EvalError("step: " + std::string(e.what()));
             }
@@ -310,6 +318,26 @@ public:
                 if (eval.has_alias(lookup)) {
                     lookup = eval.get_aliases().at(lookup);
                 }
+
+                // An offset that lands outside the trace reads as false, it is not an
+                // error. The WAL manual defines `expr@off` as a call to `reval`, and
+                // `reval` answers false here, so the two spellings have to agree.
+                // They did not: `(reval clk -1)` was false while `clk@-1` aborted the
+                // run, which killed the `(whenever (!= sig sig@-1) ...)` idiom at
+                // index 0 -- the shape the paper's own latency_signals.wal is built
+                // on. Only `rising`/`falling` were exercised before, and those offset
+                // forward, so nothing caught it.
+                if (offset != 0 && eval.get_traces()) {
+                    for (const auto& tid : eval.get_traces()->get_trace_ids()) {
+                        auto trace = eval.get_traces()->get_trace(tid);
+                        if (!trace) continue;
+                        int target = trace->get_index() + offset;
+                        if (target < 0 || target > trace->get_max_index()) {
+                            return Value(false);
+                        }
+                    }
+                }
+
                 std::string resolved = lookup;
                 resolve_signal_name(eval.get_traces(), lookup, resolved);
                 return eval.get_traces()->signal_value(resolved, offset);
