@@ -242,7 +242,9 @@ docs:build:
     # The viewer half of the playground: ~15 MB, fetched rather than committed.
     # If it cannot be fetched the playground still ships, with the console working
     # and the viewer pane saying it is unavailable.
-    - bash tools/fetch-surfer.sh || echo "warning: no Surfer bundle, the playground ships without the viewer"
+    # Single-quoted: an unquoted scalar carrying ": " is read as a mapping, which is
+    # what made this whole file invalid and stopped the pipeline before any job ran.
+    - 'bash tools/fetch-surfer.sh || echo "warning: no Surfer bundle, the playground ships without the viewer"'
     - make docs
   artifacts:
     name: "walpp-docs-${CI_COMMIT_SHORT_SHA}"
