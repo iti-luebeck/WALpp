@@ -36,6 +36,24 @@ jobs:
       - name: Install MkDocs
         run: pip install -r requirements.txt
 
+      - name: Build the playground WebAssembly module
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.10
+
+      - name: Build WAL++ for the browser
+        run: bash build-wasm.sh
+
+      - name: Fetch the Surfer viewer bundle
+        # ~15 MB, not committed. The playground degrades to the console without it.
+        run: bash tools/fetch-surfer.sh || echo "no Surfer bundle, playground ships without the viewer"
+
+      - name: Check the playground examples
+        run: |
+          cmake -S . -B build -DBUILD_PYTHON_MODULE=OFF -DENABLE_TESTS=OFF
+          cmake --build build --target wal -j"$(nproc)"
+          python3 tools/check-examples.py build/wal
+
       - name: Build
         run: make docs
 

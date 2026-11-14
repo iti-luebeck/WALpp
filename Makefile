@@ -30,6 +30,18 @@ build:
 
 .PHONY: docs
 
+# Builds the WAL++ WebAssembly module for the playground. Needs the Emscripten SDK.
+wasm:
+	bash build-wasm.sh
+
+# Fetches the Surfer viewer bundle for the playground (~15 MB, not committed).
+surfer:
+	bash tools/fetch-surfer.sh
+
+# Checks that every playground example still evaluates without an error.
+check-examples:
+	python3 tools/check-examples.py
+
 docs:
 	mkdir -p build/docs
 	rsync -am \
@@ -37,6 +49,10 @@ docs:
 				--exclude="ext" \
 				--exclude=".*" \
 				--include='*.md' \
+				--include='*.wasm' \
+				--include='*.vcd' \
+				--include='*.json' \
+				--include='SURFER_VERSION.txt' \
 				--include='/LICENSE' \
 				--include='/CITATION.cff' \
 				--include='/CITATION.bib' \

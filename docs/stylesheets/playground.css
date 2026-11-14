@@ -1,0 +1,180 @@
+/* Layout for the interactive playground (docs/playground.md).
+ *
+ * Scoped to body.walpp-playground, which docs/javascripts/playground.js sets while the
+ * playground page is open and removes again on navigating away, so none of this touches
+ * the rest of the site. */
+
+body.walpp-playground .md-main__inner { margin-top: 0; }
+
+/* The viewer wants room. Let the content column use the full window on this page. */
+body.walpp-playground .md-grid { max-width: none; }
+body.walpp-playground .md-content__inner { padding: 0.6rem 1rem 1.2rem; }
+body.walpp-playground .md-content__inner > h1:first-child { margin-bottom: 0.3rem; }
+
+.wal-pg {
+  --wal-border: var(--md-default-fg-color--lightest);
+  --wal-panel: var(--md-code-bg-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* ---- toolbar ---- */
+.wal-pg__bar {
+  /* The viewer is tall, so keep Run and Send to viewer reachable while scrolled into it.
+     2.4rem is the height of Material's own sticky header. */
+  position: sticky;
+  top: 2.4rem;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--wal-border);
+  border-radius: 0.3rem;
+  background: var(--wal-panel);
+}
+.wal-pg__bar label { font-size: 0.68rem; color: var(--md-default-fg-color--light); }
+.wal-pg__bar select,
+.wal-pg__bar button {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.2rem;
+  border: 1px solid var(--wal-border);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+}
+.wal-pg__bar button { cursor: pointer; }
+.wal-pg__bar button:hover:not(:disabled) { border-color: var(--md-primary-fg-color); }
+.wal-pg__bar button:disabled { opacity: 0.45; cursor: default; }
+.wal-pg__bar button.wal-pg__primary {
+  background: var(--md-primary-fg-color);
+  border-color: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  font-weight: 600;
+}
+.wal-pg__spacer { flex: 1 1 auto; }
+.wal-pg__status { font-size: 0.65rem; color: var(--md-default-fg-color--light); }
+
+/* ---- viewer ---- */
+.wal-pg__viewer {
+  position: relative;
+  width: 100%;
+  height: 54vh;
+  min-height: 320px;
+  border: 1px solid var(--wal-border);
+  border-radius: 0.3rem;
+  overflow: hidden;
+  background: #1c1c1c;
+}
+.wal-pg__viewer canvas { display: block; width: 100%; height: 100%; }
+.wal-pg__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1rem;
+  text-align: center;
+  color: #e8e8e8;
+  background: #1c1c1c;
+}
+.wal-pg__overlay p { margin: 0; max-width: 32rem; font-size: 0.72rem; line-height: 1.5; opacity: 0.8; }
+.wal-pg__overlay button {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+}
+
+/* ---- lower half: examples beside the console ---- */
+.wal-pg__lower {
+  display: grid;
+  grid-template-columns: minmax(200px, 20rem) 1fr;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+.wal-pg__examples,
+.wal-pg__console {
+  border: 1px solid var(--wal-border);
+  border-radius: 0.3rem;
+  background: var(--wal-panel);
+  overflow: hidden;
+}
+.wal-pg__examples { max-height: 24rem; overflow-y: auto; }
+.wal-pg__examples h3 {
+  margin: 0;
+  padding: 0.45rem 0.6rem 0.2rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+}
+.wal-pg__examples button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--wal-border);
+  background: transparent;
+  color: var(--md-default-fg-color);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.wal-pg__examples button:hover { background: var(--md-default-fg-color--lightest); }
+.wal-pg__examples button.is-active {
+  background: var(--md-default-fg-color--lightest);
+  box-shadow: inset 0.15rem 0 0 var(--md-primary-fg-color);
+}
+.wal-pg__examples .wal-pg__blurb {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: var(--md-default-fg-color--light);
+}
+
+.wal-pg__console { display: flex; flex-direction: column; min-height: 24rem; }
+.wal-pg__editor {
+  width: 100%;
+  min-height: 7rem;
+  resize: vertical;
+  border: 0;
+  border-bottom: 1px solid var(--wal-border);
+  padding: 0.5rem 0.6rem;
+  background: transparent;
+  color: var(--md-default-fg-color);
+  font-family: var(--md-code-font-family, ui-monospace, monospace);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+.wal-pg__editor:focus { outline: none; box-shadow: inset 0 -2px 0 var(--md-primary-fg-color); }
+.wal-pg__out {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--md-code-font-family, ui-monospace, monospace);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+.wal-pg__out .is-prompt { color: var(--md-primary-fg-color); }
+.wal-pg__out .is-error { color: #d9534f; }
+.wal-pg__out .is-note { color: var(--md-default-fg-color--light); }
+.wal-pg__out .is-ok { color: #4a9c5d; }
+
+@media screen and (max-width: 76.1875em) {
+  .wal-pg__lower { grid-template-columns: 1fr; }
+  .wal-pg__examples { max-height: 14rem; }
+  .wal-pg__viewer { height: 44vh; }
+}
