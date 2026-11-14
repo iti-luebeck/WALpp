@@ -122,17 +122,34 @@
   // toggle tears down and rebuilds the whole hero).
   var particleContainer = null;
 
-  // The site is served below /docs/walpp/, so the path alone says little. Material
-  // writes the way back to the site root into #__config; on the root page it is ".".
-  function isFrontPage() {
+  // Takes the hero's scroll listener off again, so travelling in and out of the front page
+  // does not leave one listener per visit behind.
+  var detachParallax = null;
+
+  // The site is served below /docs/walpp/, so the path alone says little. Material writes
+  // the way back to the site root into #__config, but `navigation.instant` swaps the page
+  // content without replacing that element, so from the first instant navigation onwards
+  // its `base` still describes whichever page the reader loaded first. Resolve the site
+  // root once, here, while `base` and the address bar still agree (this script is the last
+  // thing in <body>, so #__config is already above it), and compare paths from then on.
+  var SITE_ROOT = (function () {
     var el = document.getElementById('__config');
-    if (!el) return false;
-    try { return JSON.parse(el.textContent).base === '.'; } catch (e) { return false; }
+    if (!el) return null;
+    try {
+      var base = JSON.parse(el.textContent).base || '.';
+      return new URL(base.replace(/\/?$/, '/'), window.location.href).pathname;
+    } catch (e) { return null; }
+  })();
+
+  function isFrontPage() {
+    if (!SITE_ROOT) return false;
+    return window.location.pathname.replace(/index\.html$/, '') === SITE_ROOT;
   }
 
   function teardown() {
     document.body.classList.remove('bc-homepage', 'bc-asides-hidden');
     document.body.style.removeProperty('--bc-aside-opacity');
+    if (detachParallax) detachParallax();
     if (particleContainer) {
       try { particleContainer.destroy(); } catch (e) { /* already gone */ }
       particleContainer = null;
@@ -248,12 +265,17 @@
       if (!reduced) phaseAsides(travelled);
       ticking = false;
     }
-    window.addEventListener('scroll', function () {
+    function onScroll() {
       if (!ticking) {
         window.requestAnimationFrame(update);
         ticking = true;
       }
-    }, { passive: true });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    detachParallax = function () {
+      window.removeEventListener('scroll', onScroll);
+      detachParallax = null;
+    };
     update();
   }
 

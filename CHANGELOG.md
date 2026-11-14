@@ -21,6 +21,17 @@ All notable changes to WAL++ are recorded here. The format follows
 
 ### Fixed
 
+- **The front-page particle animation ran on every page.** The hero is gated on
+  Material's `#__config`, whose `base` says how far it is back to the site root, but
+  `navigation.instant` swaps the page content without replacing that element. From
+  the first instant navigation onwards it still described whichever page the reader
+  had loaded first, so the hero, the WAL++ heading and the particle canvas followed
+  the reader into the reference and the guides, and the sidebars stayed hidden. The
+  site root is now resolved once at load, while that value is still true, and the
+  gate compares paths against it. Entering the site on a subpage and then going to
+  the front page shows the hero too, which it never did before. The hero's scroll
+  listener is also removed on teardown, so moving in and out of the front page no
+  longer leaves one listener behind per visit.
 - **`-e` and `print` rendered an array two different ways** once `print` was
   aligned with upstream in 1.6.4. Both now give `{("x" 10)}`, which is what
   upstream prints and what the manual shows.
