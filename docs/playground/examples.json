@@ -41,16 +41,16 @@
         {
           "id": "signals",
           "title": "What is in this waveform",
-          "blurb": "Signal names are scoped with ^, so dut^data is data inside module dut.",
+          "blurb": "A dot joins the hierarchy, so dut.data is data inside module dut. A ^ prefix names a trace when several are loaded.",
           "trace": "handshake.vcd",
-          "code": ["(signal-names)", "(signal-width \"dut^data\")"]
+          "code": ["(signal-names)", "(signal-width \"dut.data\")"]
         },
         {
           "id": "current-value",
           "title": "Values at the current time",
           "blurb": "get-signal reads a signal where the trace is positioned, and step moves it.",
           "trace": "handshake.vcd",
-          "code": ["(get-signal \"dut^data\")", "(step 4)", "(get-signal \"dut^data\")"]
+          "code": ["(get-signal \"dut.data\")", "(step 4)", "(get-signal \"dut.data\")"]
         }
       ]
     },
