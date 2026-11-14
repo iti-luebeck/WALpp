@@ -10,6 +10,7 @@ for throughput on traces too large for the original to handle.
 | | |
 |---|---|
 | [Installation](guides/installation.md) | Building from source, and the Python module |
+| [Cookbook](guides/cookbook.md) | "I want X, what do I type" — start here if you are new |
 | [Getting started](guides/getting-started.md) | A first trace, a first query |
 | [Troubleshooting](guides/troubleshooting.md) | What the common failures mean |
 

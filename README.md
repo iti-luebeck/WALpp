@@ -21,6 +21,7 @@ The full documentation is in [`docs/`](docs/INDEX.md).
 **Start here**
 
 - [Installation](docs/guides/installation.md)
+- [**Cookbook**](docs/guides/cookbook.md) - "I want X, what do I type"
 - [Getting started](docs/guides/getting-started.md)
 - [Troubleshooting](docs/guides/troubleshooting.md)
 

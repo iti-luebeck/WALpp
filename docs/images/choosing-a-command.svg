@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 416" role="img"
+     aria-labelledby="t5 d5" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t5">Which command do you want?</title>
+  <desc id="d5">Four questions and the command each leads to. What is in this trace
+  leads to inspect. One question about it leads to eval. A number per timestamp, for
+  every trace in a campaign, leads to extract. Will this script run leads to lint.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .ask   { fill: #f7f8fa; stroke: #dfe4ec; }
+    .cmd   { fill: #e6edfb; stroke: #9cbcf0; }
+    .arrow { stroke: #8d98a8; stroke-width: 1.5; fill: none; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; }
+    .small { font-size: 11px; }
+    .q     { font-size: 13px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+    .verb  { fill: #1d5fd0; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .ask   { fill: #151d29; stroke: #263142; }
+      .cmd   { fill: #1a2740; stroke: #3b5a8c; }
+      .arrow { stroke: #76829a; }
+      .verb  { fill: #74a4f5; }
+    }
+
+    /* Each row lights in turn, so the eye reads them as four separate questions
+       rather than one dense table. */
+    .row  { animation: lift 8s ease-in-out infinite; }
+    .r2 { animation-delay: 2s; } .r3 { animation-delay: 4s; } .r4 { animation-delay: 6s; }
+    @keyframes lift {
+      0%, 18%, 100% { opacity: .45; }
+      4%, 14%       { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) { .row { animation: none; opacity: 1; } }
+  </style>
+
+  <rect class="bg" width="760" height="416"/>
+
+  <text class="fg cap" x="28" y="32">Which command do you want?</text>
+  <text class="dim small" x="28" y="50">start from the question you actually have</text>
+
+  <!-- row 1 -->
+  <g class="row r1">
+    <rect class="ask" x="28" y="70" width="300" height="56" rx="5"/>
+    <text class="fg q" x="44" y="94">“What is even in this trace?”</text>
+    <text class="faint small" x="44" y="112">signal names, widths, how long it runs</text>
+    <path class="arrow" d="M 334 98 H 376" marker-end="url(#ar)"/>
+    <rect class="cmd" x="382" y="70" width="350" height="56" rx="5"/>
+    <text class="verb mono" x="398" y="94">wal inspect t.vcd</text>
+    <text class="dim small" x="398" y="112">--format=names gives a plain list, to feed --signals</text>
+  </g>
+
+  <!-- row 2 -->
+  <g class="row r2">
+    <rect class="ask" x="28" y="142" width="300" height="56" rx="5"/>
+    <text class="fg q" x="44" y="166">“One question about it.”</text>
+    <text class="faint small" x="44" y="184">how many edges, what value, where</text>
+    <path class="arrow" d="M 334 170 H 376" marker-end="url(#ar)"/>
+    <rect class="cmd" x="382" y="142" width="350" height="56" rx="5"/>
+    <text class="verb mono" x="398" y="166">wal eval '(count (rising tb.clk))' -l t.vcd</text>
+    <text class="dim small" x="398" y="184">the whole language; slow per sample, fine for one answer</text>
+  </g>
+
+  <!-- row 3 -->
+  <g class="row r3">
+    <rect class="ask" x="28" y="214" width="300" height="56" rx="5"/>
+    <text class="fg q" x="44" y="238">“A number per timestamp.”</text>
+    <text class="faint small" x="44" y="256">and for every trace in a campaign</text>
+    <path class="arrow" d="M 334 242 H 376" marker-end="url(#ar)"/>
+    <rect class="cmd" x="382" y="214" width="350" height="56" rx="5"/>
+    <text class="verb mono" x="398" y="238">wal extract weight t.vcd --scope top -o a.csv</text>
+    <text class="dim small" x="398" y="256">no interpreter: hundreds of times faster, one shape of answer</text>
+  </g>
+
+  <!-- row 4 -->
+  <g class="row r4">
+    <rect class="ask" x="28" y="286" width="300" height="56" rx="5"/>
+    <text class="fg q" x="44" y="310">“Will this script run?”</text>
+    <text class="faint small" x="44" y="328">before it writes anything</text>
+    <path class="arrow" d="M 334 314 H 376" marker-end="url(#ar)"/>
+    <rect class="cmd" x="382" y="286" width="350" height="56" rx="5"/>
+    <text class="verb mono" x="398" y="310">wal lint analysis.wal</text>
+    <text class="dim small" x="398" y="328">exits non-zero if it will not; then `wal run` it</text>
+  </g>
+
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8d98a8"/>
+    </marker>
+  </defs>
+
+  <line class="rule" x1="28" y1="362" x2="732" y2="362"/>
+  <text class="dim small" x="28" y="384">Every verb has a flag spelling too (`--fast-hw-scope`, `--inspect`, `-e`). They are the same</text>
+  <text class="dim small" x="28" y="402">command: the verb is rewritten into the flag before anything runs. Use whichever reads better.</text>
+</svg>

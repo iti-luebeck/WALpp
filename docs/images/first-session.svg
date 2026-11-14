@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 326" role="img"
+     aria-labelledby="t6 d6" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t6">A first session: look, ask, then scale up</title>
+  <desc id="d6">Three steps. Find out what is in the trace, ask one question
+  interactively until the query is right, then run that query across a campaign with
+  the extraction modes. The loop in the middle is where the work happens.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .box   { fill: #f7f8fa; stroke: #dfe4ec; }
+    .live  { fill: #e6edfb; stroke: #9cbcf0; }
+    .arrow { stroke: #8d98a8; stroke-width: 1.5; fill: none; }
+    .loop  { stroke: #1d5fd0; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+    .num   { fill: #1d5fd0; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .small { font-size: 11px; }
+    .h     { font-size: 13px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .box   { fill: #151d29; stroke: #263142; }
+      .live  { fill: #1a2740; stroke: #3b5a8c; }
+      .arrow { stroke: #76829a; }
+      .loop  { stroke: #74a4f5; }
+      .num   { fill: #74a4f5; }
+    }
+
+    /* The middle step pulses, because that is the one you repeat. */
+    .iterate { animation: pulse 3s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+    /* The dashed return path draws itself, to read as "go back and try again". */
+    .loop { stroke-dasharray: 4 3; animation: dash 2s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -28; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .iterate, .loop { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="326"/>
+
+  <text class="fg cap" x="28" y="32">A first session</text>
+  <text class="dim small" x="28" y="50">look at the trace, get one query right, then run it everywhere</text>
+
+  <!-- 1 -->
+  <text class="num h" x="40" y="88">1</text>
+  <rect class="box" x="60" y="70" width="196" height="76" rx="5"/>
+  <text class="fg h" x="76" y="92">See what is there</text>
+  <text class="dim mono" x="76" y="112">wal inspect t.vcd</text>
+  <text class="faint small" x="76" y="132">names, widths, how long it runs</text>
+
+  <path class="arrow" d="M 262 108 H 300" marker-end="url(#ar2)"/>
+
+  <!-- 2 -->
+  <text class="num h" x="314" y="88">2</text>
+  <g class="iterate">
+    <rect class="live" x="334" y="70" width="200" height="76" rx="5"/>
+    <text class="fg h" x="350" y="92">Get the query right</text>
+    <text class="dim mono" x="350" y="112">wal eval '...' -l t.vcd</text>
+    <text class="faint small" x="350" y="132">one answer, as often as you like</text>
+  </g>
+
+  <path class="arrow" d="M 540 108 H 578" marker-end="url(#ar2)"/>
+
+  <!-- 3 -->
+  <text class="num h" x="592" y="88">3</text>
+  <rect class="box" x="612" y="70" width="120" height="76" rx="5"/>
+  <text class="fg h" x="628" y="92">Scale it up</text>
+  <text class="dim mono" x="628" y="112">wal extract</text>
+  <text class="faint small" x="628" y="132">every trace</text>
+
+  <!-- the loop back into step 2 -->
+  <path class="loop" d="M 434 150 V 176 H 360 V 150" marker-end="url(#ar3)"/>
+  <text class="num small" x="370" y="194">wrong answer? change it and run again</text>
+
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8d98a8"/>
+    </marker>
+    <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1d5fd0"/>
+    </marker>
+  </defs>
+
+  <line class="rule" x1="28" y1="218" x2="732" y2="218"/>
+
+  <text class="fg h" x="28" y="244">Why not just use step 2 for everything?</text>
+  <text class="dim small" x="28" y="266">Because step 3 answers one shaped question with no interpreter at all, which is where the</text>
+  <text class="dim small" x="28" y="284">published 70 to 978 times speedup comes from. On one trace you will not notice. On a campaign</text>
+  <text class="dim small" x="28" y="302">of five hundred, it is the difference between a coffee break and overnight.</text>
+</svg>

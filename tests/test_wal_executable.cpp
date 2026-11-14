@@ -2379,6 +2379,90 @@ void test_verbs_equal_flags(ExecutableTestSuite& suite, const std::string& exe_p
     suite.add_result(result);
 }
 
+// Test 38: the cookbook's commands do what the cookbook says.
+//
+// The cookbook is the page a newcomer reads first, so a wrong command there costs
+// more than a wrong one anywhere else: they have no way to tell their mistake from
+// ours. These are its claims, verbatim.
+void test_cookbook_recipes(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "the cookbook's recipes produce what it claims";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found";
+        } else {
+            result.passed = true;
+
+            struct Recipe { const char* expr; const char* want; };
+            const Recipe recipes[] = {
+                {"MAX-INDEX", "80"},
+                {"(length SIGNALS)", "7"},
+                {"(signal-width (quote tb.dut.counter))", "4"},
+                {"(signal? (quote tb.dut.counter))", "true"},
+                {"(count (rising tb.clk))", "40"},
+                {"(count (falling tb.clk))", "40"},
+                {"(find (= tb.dut.counter 3))", "(15 16 47 48 79 80)"},
+                {"(first (find (= tb.dut.counter 3)))", "15"},
+                {"(length (find (= tb.clk 1)))", "40"},
+                {"(begin (set-index 40) tb.dut.counter)", "15"},
+                {"(begin (set-index 40) tb.clk@-1)", "1"},
+                // the cursor caveat the cookbook warns about
+                {"(begin (set-index 40) (count (rising tb.clk)))", "20"},
+                {"(let ([m (find (= tb.dut.counter 3))]) (- (second m) (first m)))", "1"},
+            };
+            for (const auto& r : recipes) {
+                auto [rc, out] = run_command(
+                    exe_path + " eval '" + std::string(r.expr) + "' -l " + vcd + " 2>&1");
+                if (out.find(r.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(r.expr) + " should give " + r.want +
+                                      " (got: '" + out + "'); ";
+                }
+            }
+
+            // The names-to-signals-file pipeline the cookbook gives.
+            auto [rcp, names] = run_command(
+                exe_path + " inspect " + vcd +
+                " --format=names 2>/dev/null | grep -v '^#' | awk '{print $2}' | head -1");
+            if (names.find("tb.") == std::string::npos) {
+                result.passed = false;
+                result.message += "the --format=names pipeline should yield bare names (got: '" +
+                                  names + "'); ";
+            }
+
+            // Distance has exactly one row fewer than weight.
+            run_command(exe_path + " extract weight " + vcd +
+                        " --scope tb.dut -o /tmp/walpp_cb_w.csv 2>/dev/null");
+            run_command(exe_path + " extract distance " + vcd +
+                        " --scope tb.dut -o /tmp/walpp_cb_d.csv 2>/dev/null");
+            auto [rcw, w] = run_command("wc -l < /tmp/walpp_cb_w.csv");
+            auto [rcd, d] = run_command("wc -l < /tmp/walpp_cb_d.csv");
+            if (std::stoi(w) != std::stoi(d) + 1) {
+                result.passed = false;
+                result.message += "distance should have one row fewer than weight (" +
+                                  w + " vs " + d + "); ";
+            }
+            run_command("rm -f /tmp/walpp_cb_w.csv /tmp/walpp_cb_d.csv");
+
+            if (result.passed) {
+                result.message = "every cookbook recipe gives the documented answer";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -2453,6 +2537,7 @@ int main(int argc, char* argv[]) {
     test_agent_modes(suite, exe_path);
     test_paper_cli_contract(suite, exe_path);
     test_verbs_equal_flags(suite, exe_path);
+    test_cookbook_recipes(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);
