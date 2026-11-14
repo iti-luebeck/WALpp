@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# WAL++ links Threads, and optionally ZLIB for compressed FST. A consumer linking
+# walpp needs the same transitive dependencies resolved before the target is used.
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/walppTargets.cmake")
+
+check_required_components(walpp)

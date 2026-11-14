@@ -34,6 +34,16 @@ to that core.
 | [Scaling to full-core traces](guides/scaling-extraction.md) | The `--fast-*` extraction modes, their measured throughput, and when to use each |
 | [Working with very large traces](guides/large-traces.md) | Streaming, full load, extraction: what each keeps and how to choose |
 
+### Building on WAL++
+
+| | |
+|---|---|
+| [Embedding WAL++ in a C++ program](guides/cpp-api.md) | Link the library, run queries, add operators of your own |
+| [Writing your own extraction tool](guides/writing-fast-tools.md) | Build a single-pass kernel the way `--fast-hw-*` is built, when no existing mode fits |
+
+Both have working programs in [`examples/cpp/`](../examples/cpp/README.md), which
+build against an installed WAL++ the way a consumer would.
+
 ### Coming from upstream WAL
 
 | | |

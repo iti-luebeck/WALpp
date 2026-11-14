@@ -271,10 +271,36 @@ endif()
 # the library, headers, WAL standard library and examples are installed for
 # regular CMake installs and the .deb/.rpm packages.
 if(NOT DEFINED SKBUILD_PLATLIB_DIR)
+    # Exported so a consumer can `find_package(walpp)` and link `walpp::walpp`,
+    # rather than hand-rolling include and library paths.
     install(TARGETS walpp
+        EXPORT walppTargets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
+        INCLUDES DESTINATION include
+    )
+
+    install(EXPORT walppTargets
+        FILE walppTargets.cmake
+        NAMESPACE walpp::
+        DESTINATION lib/cmake/walpp
+    )
+
+    include(CMakePackageConfigHelpers)
+    configure_package_config_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/walppConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/walppConfig.cmake
+        INSTALL_DESTINATION lib/cmake/walpp
+    )
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/walppConfigVersion.cmake
+        COMPATIBILITY SameMajorVersion
+    )
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/walppConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/walppConfigVersion.cmake
+        DESTINATION lib/cmake/walpp
     )
 endif()
 

@@ -32,6 +32,12 @@ The full documentation is in [`docs/`](docs/INDEX.md).
 - [Working with very large traces](docs/guides/large-traces.md) - streaming, and choosing between the three ways to read a trace
 - [Migrating from WAL](docs/guides/migrating-from-wal.md)
 
+**Building on WAL++**
+
+- [Embedding WAL++ in a C++ program](docs/guides/cpp-api.md) - link the library, run queries, add operators
+- [Writing your own extraction tool](docs/guides/writing-fast-tools.md) - a single-pass kernel, the way `--fast-hw-*` is built
+- [Working examples](examples/cpp/README.md) - four programs that build against an installed WAL++
+
 **Reference**
 
 - [Language reference](docs/reference/language.md)

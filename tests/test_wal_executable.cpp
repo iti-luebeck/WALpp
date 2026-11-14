@@ -1951,6 +1951,58 @@ void test_streaming_matches_full_load(ExecutableTestSuite& suite,
     suite.add_result(result);
 }
 
+// Test 34: the CMake package export exists, so find_package(walpp) can work.
+//
+// Consumers link `walpp::walpp` through an exported config. Nothing in the normal
+// build exercises that, so if the export block is removed or renamed the breakage
+// only shows up for somebody integrating the library. This checks the generated
+// config is where the install rules expect it; examples/cpp/ is the end-to-end
+// version, built against an actual install.
+void test_cmake_package_export(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "CMake package export is generated";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        (void)exe_path;
+        result.passed = true;
+
+        if (!file_exists("cmake/walppConfig.cmake.in")) {
+            result.passed = false;
+            result.message += "cmake/walppConfig.cmake.in is missing; ";
+        }
+
+        // The install rules that turn that template into a usable package. Checked
+        // in the source rather than the build tree, because the test runs from the
+        // source root and the build directory has no fixed name.
+        auto [rc, text] = run_command(
+            "grep -c 'install(EXPORT walppTargets' CMakeLists.txt 2>/dev/null || echo 0");
+        if (text.find("0") == 0) {
+            result.passed = false;
+            result.message += "CMakeLists.txt no longer exports walppTargets; "
+                              "find_package(walpp) will fail; ";
+        }
+        auto [rc2, cfg] = run_command(
+            "grep -c 'configure_package_config_file' CMakeLists.txt 2>/dev/null || echo 0");
+        if (cfg.find("0") == 0) {
+            result.passed = false;
+            result.message += "CMakeLists.txt no longer generates walppConfig.cmake; ";
+        }
+
+        if (result.passed) {
+            result.message = "the package export rules are in place";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -2021,6 +2073,7 @@ int main(int argc, char* argv[]) {
     test_remaining_operators(suite, exe_path);
     test_streaming_extraction(suite, exe_path);
     test_streaming_matches_full_load(suite, exe_path);
+    test_cmake_package_export(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);
