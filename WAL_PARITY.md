@@ -395,39 +395,126 @@ contract, so they were updated to the real one rather than worked around.
 
 ## What is left
 
-- **Arrays** (6 failures): `array`, `seta`, `geta`, `dela`, `mapa` need a new Value kind.
-- **Scopes and groups** (6): `in-scope`, `groups`, `in-group`, `resolve-scope`,
-  `LOCAL-SCOPES`. `SEval` already carries unused `current_scope` and `current_group`
-  members, and the trace side parses `scope_names`.
-- **`whenever`, `find`, `fold/signal`, `symbol-add`, `set`** (6).
-- **Macros**: `defmacro`, `macroexpand`, `gensym`. The parser reads quasiquote and
-  unquote and `SEval` has an unused `macros` map, but nothing expands.
-- **Separator spelling** (2): `SIGNALS` and `SCOPES` return `^`-joined names where
-  upstream returns dotted ones. Part of the open `^` decision.
-- **Semantic divergences** (4): `(+ 1 "hi")` concatenates upstream and raises here;
-  `!=` is n-ary upstream and binary here; `in` differs on argument count; one
-  int-vs-string mismatch.
-- **Known limitation**: a special variable is not reachable through `get-signal`, so
-  `TS@-1` fails. Special variables resolve only as bare symbols.
-- 2 failures are harness artifacts: the `print` test cannot capture C++ stdout, and two
-  tests need upstream's `Operator` enum.
+Measured, not estimated: 65 of 77 upstream tests pass, and 16 of upstream's 106
+operators are missing.
+
+### Operators still missing (16)
+
+| Group | Operators | Note |
+|---|---|---|
+| Modules | `import`, `require`, `eval-file` | Loading WAL and Python modules. `import` pulls in a Python module upstream, which has no direct C++ equivalent. |
+| Runtime eval | `eval`, `parse`, `call` | Evaluate data as code. The pieces exist (`Parser::parse_program`, `SEval::eval`); only the operators are absent. |
+| Trace authoring | `new-trace`, `dump-trace`, `defsig`, `trim-trace`, `sample-at` | Creating and writing traces, not just reading them. |
+| Trace queries | `loaded-traces`, `find/g` | Small; `find/g` is `find` across all groups. |
+| Scope | `set-scope`, `unset-scope` | The imperative form of `in-scope`, which does work. |
+| Conversion | `bits->sint` | Two's-complement reading of a bit string. Wanted by `signed` in the standard library. |
+
+### Decisions, not work
+
+These are behavior changes that need a call rather than an implementation.
+
+1. **The `^` separator.** WAL++'s interpreter uses `^` for hierarchy, its own
+   `--fast-*` paths use `.`, and upstream reserves `^` for a trace id. The resolver
+   currently accepts all spellings, which hides the question rather than answering
+   it. `SIGNALS` and `SCOPES` return `^`-joined names where upstream returns dotted
+   ones (2 test failures). This is the only decision that gets harder after the
+   first public release.
+
+2. **`(+ 1 "hi")`.** Upstream concatenates, giving `"1hi"`; WAL++ raises
+   *Expected number* (3 failures). Adopting upstream's rule is dangerous here
+   specifically because `vcd_trace.cpp` returns a BIT STRING for signals wider than
+   64 bits, so `(+ wide 1)` would quietly become string concatenation of a bit
+   pattern instead of an error. Related: `(= wide 5)` already answers false with no
+   error, which is arguably a bug regardless.
+
+3. **Integers wider than 64 bits.** `(int? 583547542375894327581)` passes upstream
+   because Python integers are unbounded; WAL++ cannot even read the literal
+   (1 failure). Either document 64 bits as a limit and reject such a literal
+   cleanly, give the bit-string representation real operators, or add an
+   arbitrary-precision value kind. This is the same question as 2 from the other
+   side, and it matters most for wide-bus analysis.
+
+4. **`0 == #f`.** Upstream inherits Python's `0 == False`; WAL++ treats an int and a
+   bool as different types. Visible at a trace boundary: at MAX-INDEX `reval` is out
+   of range and answers false, so upstream counts `(stable clk)` as 1 where WAL++
+   counts 0.
+
+5. **Standard-library names that collide with builtins.** The loader skips a
+   definition whose name WAL++ already implements, because the two are not always
+   the same function: upstream's `append` is `(append list element)` while the
+   builtin concatenates two lists. Skipped today: `append`, `car`, `cdr`, `cond`,
+   `filter`, `reverse`, `set-index`, `set!`, `sort`, `sum`, `symbol-add`, `unless`,
+   `when`. Which should instead defer to upstream is a semantics decision.
+
+6. **SV array element naming.** Upstream spells an element `data<0>`, WAL++ spells
+   it `data[1]` (1 failure). Same family as 1, smaller blast radius.
+
+### Not parity gaps (5 failures)
+
+- 2 need upstream's internal `Operator` enum, which WAL++ has no equivalent of.
+- 2 compare printed output, which Python cannot capture from C++ stdout.
+- 1 is a typo in upstream's own suite: `test_overflow` reads
+  `(count tb.overflow` with no closing parenthesis.
+
+These five can never pass and should be excluded permanently rather than counted
+against parity.
+
+## Silent wrong answers found and fixed
+
+Each of these returned a plausible value with no error, which is why none had been
+noticed. All are covered by regression tests verified to fail against the previous
+binary.
+
+| Defect | What it did |
+|---|---|
+| `Value::is_truthy` returned true for everything non-nil, non-bool | integer 0 was true, so `(&& clk (! clk@-1))` counted 0 rising edges instead of 40 |
+| `Value::operator==` compared only the variant tag for reference types | `(= (list 1 2) (list 1 3))` was true for ANY two lists, which also broke `in` and `!=` |
+| The FST reader skipped FST-flagged aliases and kept the bit range in a name | `counter.fst` listed 4 signals where the identical `counter.vcd` listed 7, and `tb.dut.counter` would not resolve against an FST |
+| `TraceContainer::step` discarded `Trace::step`'s boundary flag | `(while (step 1) ...)` could never terminate |
+| `eval_str` parsed one form, and `-f` used it | a script file ran its FIRST form and stopped |
+| `convert/bin` reinterpreted the digits as decimal | disagreed with upstream for every input |
 
 ## Branch state
 
-`github-release` is merged in, so this branch carries both halves: the signal-access
-parity work and the `-e` fixes (shared `value_printer.h`, `-e` accumulation, three
-regression tests). List results echo from `-e` without an explicit `(print ...)`, and
-several `-e` flags share one interpreter, which makes multi-step analysis on the command
-line practical:
+Conformance against upstream WAL 0.9.1's own test suite:
 
-```bash
-wal -l counter.vcd \
-  -e '(define edges (filter (lambda (i) (begin (set-index i)
-       (&& (= 1 tb.clk) (= 0 tb.clk@-1)))) (range 1 81)))' \
-  -e '(length edges)' -e '(slice edges 0 5)'
-# => 40
-# => (1 3 5 7 9)
+```
+ 18/77   before this branch (the suite had never actually run against WAL++)
+ 22/77   zero is false
+ 37/77   control flow, predicates, printf, aliases
+ 48/77   arrays, set/get, trace sweeps, structural equality, the FST reader
+ 61/77   macros, scopes and groups, operators as values
+ 65/77   the standard library
 ```
 
-22 tests pass, conformance baseline unchanged at 18/77 (the conformance runner goes
-through the Python bindings, so the `-e` fixes do not affect it).
+All 22 CTest tests pass. The ratchet in `tests/CMakeLists.txt` is at 65, so parity
+can only go up.
+
+The acceptance test is that published WAL runs unmodified and agrees with upstream:
+
+```lisp
+(alias clk "tb.clk")
+(define cnt 0)
+(while (step 1)
+  (when (&& clk (! clk@-1))
+    (set! cnt (+ cnt 1))))
+(printf "Total rising edges: %d\n" cnt)
+```
+
+`wal -l counter.vcd -f listing1.wal` prints 40, as upstream does. So does the
+idiomatic one-liner that the standard library provides:
+
+```
+wal -l counter.vcd -e '(count (rising tb.clk))'   # => 40
+```
+
+## The extraction paths are untouched
+
+The `--fast-hw-*`, `--fast-hd-*`, `--fast-values-signals` and `--fast-list` paths
+live in `include/wal/fast/` and `src/fast/`, whose entire include list is
+`<string> <vector> <unordered_map> <unordered_set> <cstdint>`. They never construct
+a `Value` or an evaluator, so no semantic change on this branch can reach them.
+
+Verified rather than assumed: on the same trace, every one of those paths produces
+byte-identical output before and after this branch, and per-run time is unchanged.
+The standard library is loaded lazily for the same reason.
