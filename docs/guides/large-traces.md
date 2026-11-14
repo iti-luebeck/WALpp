@@ -5,6 +5,14 @@ each one costs.
 
 ## Three ways to read a trace
 
+![A scan head sweeps once across a trace file. Full load keeps every decoded
+timestamp, so retained memory grows with the trace. Streaming hands each timestamp
+over and drops it, so retained memory stays
+flat.](../images/streaming-vs-full-load.svg)
+
+Both make the same single pass over the file. The difference is entirely what they
+keep afterwards, which is why the choice is about memory rather than speed.
+
 | | What it keeps | Use it for |
 |---|---|---|
 | **Extraction** (`--fast-*`) | current state only | campaigns, one shaped question per run |

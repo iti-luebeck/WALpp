@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 376" role="img"
+     aria-labelledby="t4 d4" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t4">From switching signals to a power proxy</title>
+  <desc id="d4">Several signals toggle over time. Hamming weight counts the bits that
+  are set at each timestamp; Hamming distance counts the bits that changed since the
+  previous one. Either series is the activity trace that correlation power analysis
+  and leakage assessment consume.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .cell0 { fill: #eef2f9; stroke: #dfe4ec; }
+    .cell1 { fill: #1d5fd0; }
+    .chg   { stroke: #9a6207; stroke-width: 1.5; fill: none; }
+    .hw    { fill: #1d5fd0; }
+    .hd    { fill: #9a6207; }
+    .axis  { stroke: #8d98a8; stroke-width: 1; }
+    .small { font-size: 11px; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10px; }
+    .h     { font-size: 13px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .cell0 { fill: #19212e; stroke: #263142; }
+      .cell1 { fill: #74a4f5; }
+      .chg   { stroke: #e0a94a; }
+      .hw    { fill: #74a4f5; }
+      .hd    { fill: #e0a94a; }
+      .axis  { stroke: #76829a; }
+    }
+
+    /* A cursor walks the timestamps; the bars it has passed are the series so far. */
+    .cursor { animation: walk 6s steps(8) infinite; }
+    @keyframes walk { 0% { transform: translateX(-336px); } 100% { transform: translateX(0); } }
+
+    @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+  </style>
+
+  <rect class="bg" width="760" height="376"/>
+
+  <text class="fg cap" x="28" y="30">What the activity trace is</text>
+  <text class="dim small" x="28" y="48">you cannot measure power in a simulator, but switching is recorded exactly</text>
+
+  <!-- ============ the bit grid: 4 signals x 8 timestamps ============ -->
+  <text class="faint mono" x="28" y="78">signals</text>
+
+  <!-- row 1: 1 0 1 1 0 0 1 0 -->
+  <g>
+    <rect class="cell1" x="96"  y="70" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="138" y="70" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="180" y="70" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="222" y="70" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="264" y="70" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="306" y="70" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="348" y="70" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="390" y="70" width="34" height="14" rx="2"/>
+  </g>
+  <!-- row 2: 0 1 1 0 1 1 0 0 -->
+  <g>
+    <rect class="cell0" x="96"  y="90" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="138" y="90" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="180" y="90" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="222" y="90" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="264" y="90" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="306" y="90" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="348" y="90" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="390" y="90" width="34" height="14" rx="2"/>
+  </g>
+  <!-- row 3: 1 1 0 0 0 1 1 1 -->
+  <g>
+    <rect class="cell1" x="96"  y="110" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="138" y="110" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="180" y="110" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="222" y="110" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="264" y="110" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="306" y="110" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="348" y="110" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="390" y="110" width="34" height="14" rx="2"/>
+  </g>
+  <!-- row 4: 0 0 1 1 1 0 0 1 -->
+  <g>
+    <rect class="cell0" x="96"  y="130" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="138" y="130" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="180" y="130" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="222" y="130" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="264" y="130" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="306" y="130" width="34" height="14" rx="2"/>
+    <rect class="cell0" x="348" y="130" width="34" height="14" rx="2"/>
+    <rect class="cell1" x="390" y="130" width="34" height="14" rx="2"/>
+  </g>
+
+  <text class="faint mono" x="96"  y="162">t0</text>
+  <text class="faint mono" x="390" y="162">t7</text>
+  <text class="faint small" x="440" y="100">1 = bit set</text>
+  <rect class="cell1" x="440" y="110" width="14" height="10" rx="2"/>
+  <rect class="cell0" x="460" y="110" width="14" height="10" rx="2"/>
+  <text class="faint small" x="440" y="136">0 = clear</text>
+
+  <line class="rule" x1="28" y1="180" x2="732" y2="180"/>
+
+  <!-- ============ Hamming weight ============ -->
+  <text class="hw h" x="28" y="208">Hamming weight</text>
+  <text class="dim small" x="28" y="225">bits set now</text>
+
+  <line class="axis" x1="92" y1="258" x2="432" y2="258"/>
+  <g>
+    <rect class="hw" x="96"  y="234" width="34" height="24" rx="2"/>
+    <rect class="hw" x="138" y="234" width="34" height="24" rx="2"/>
+    <rect class="hw" x="180" y="222" width="34" height="36" rx="2"/>
+    <rect class="hw" x="222" y="234" width="34" height="24" rx="2"/>
+    <rect class="hw" x="264" y="234" width="34" height="24" rx="2"/>
+    <rect class="hw" x="306" y="234" width="34" height="24" rx="2"/>
+    <rect class="hw" x="348" y="234" width="34" height="24" rx="2"/>
+    <rect class="hw" x="390" y="234" width="34" height="24" rx="2"/>
+  </g>
+  <g class="mono faint">
+    <text x="113" y="272" text-anchor="middle">2</text>
+    <text x="155" y="272" text-anchor="middle">2</text>
+    <text x="197" y="272" text-anchor="middle">3</text>
+    <text x="239" y="272" text-anchor="middle">2</text>
+    <text x="281" y="272" text-anchor="middle">2</text>
+    <text x="323" y="272" text-anchor="middle">2</text>
+    <text x="365" y="272" text-anchor="middle">2</text>
+    <text x="407" y="272" text-anchor="middle">2</text>
+  </g>
+  <text class="dim small" x="448" y="232">tracks the value held</text>
+  <text class="faint small" x="448" y="250">one row per timestamp, including the first</text>
+
+  <!-- ============ Hamming distance ============ -->
+  <text class="hd h" x="28" y="306">Hamming distance</text>
+  <text class="dim small" x="28" y="323">bits that changed</text>
+
+  <line class="axis" x1="92" y1="340" x2="432" y2="340"/>
+  <g>
+    <rect class="cell0" x="96"  y="328" width="34" height="12" rx="2"/>
+    <rect class="hd" x="138" y="316" width="34" height="24" rx="2"/>
+    <rect class="hd" x="180" y="304" width="34" height="36" rx="2"/>
+    <rect class="hd" x="222" y="328" width="34" height="12" rx="2"/>
+    <rect class="hd" x="264" y="316" width="34" height="24" rx="2"/>
+    <rect class="hd" x="306" y="316" width="34" height="24" rx="2"/>
+    <rect class="hd" x="348" y="316" width="34" height="24" rx="2"/>
+    <rect class="hd" x="390" y="316" width="34" height="24" rx="2"/>
+  </g>
+  <g class="mono faint">
+    <text x="113" y="356" text-anchor="middle">–</text>
+    <text x="155" y="356" text-anchor="middle">2</text>
+    <text x="197" y="356" text-anchor="middle">3</text>
+    <text x="239" y="356" text-anchor="middle">1</text>
+    <text x="281" y="356" text-anchor="middle">2</text>
+    <text x="323" y="356" text-anchor="middle">2</text>
+    <text x="365" y="356" text-anchor="middle">2</text>
+    <text x="407" y="356" text-anchor="middle">2</text>
+  </g>
+  <text class="dim small" x="448" y="314">closer to CMOS behaviour</text>
+  <text class="faint small" x="448" y="332">no row at the first timestamp: nothing to</text>
+  <text class="faint small" x="448" y="348">compare against yet, so one row fewer</text>
+</svg>

@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 352" role="img"
+     aria-labelledby="t1 d1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t1">Full load against streaming: what each one keeps</title>
+  <desc id="d1">A scan head sweeps once across a trace file. Under full load, retained
+  memory grows with everything read, ending near three times the file size. Under
+  streaming, each timestamp is handed to the kernel and dropped, so retained memory
+  stays flat however long the trace is.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .track { fill: #eef2f9; }
+    .file  { fill: #e6edfb; stroke: #c3d4f2; }
+    .read  { fill: #a9c3ef; }
+    .grow  { fill: #b03034; }
+    .flat  { fill: #19734b; }
+    .head  { fill: #1d5fd0; }
+    .small { font-size: 11px; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .h     { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .track { fill: #19212e; }
+      .file  { fill: #16233a; stroke: #2d4166; }
+      .read  { fill: #35507e; }
+      .grow  { fill: #f08a8d; }
+      .flat  { fill: #5cc795; }
+      .head  { fill: #74a4f5; }
+    }
+
+    /* The still frame shows the completed pass, which is the state the numbers
+       describe. The animation replays how each side got there. */
+    .readbar { animation: read 7s ease-in-out infinite; }
+    .scan    { animation: scan 7s ease-in-out infinite; }
+    .growbar { animation: grow 7s ease-in-out infinite; }
+
+    @keyframes read { 0% { width: 0; }    85%, 100% { width: 452px; } }
+    @keyframes scan { 0% { transform: translateX(-452px); }
+                      85%, 100% { transform: translateX(0); } }
+    @keyframes grow { 0% { width: 0; }    85%, 100% { width: 196px; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .readbar, .scan, .growbar { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="352"/>
+
+  <!-- ===================== the single forward pass ===================== -->
+  <text class="fg h" x="28" y="32">One forward pass over the trace</text>
+  <text class="dim small" x="28" y="50">every byte is read once, in order, by both</text>
+
+  <rect class="file" x="28" y="64" width="452" height="30" rx="3"/>
+  <rect class="readbar read" x="28" y="64" width="452" height="30" rx="3"/>
+
+  <!-- The head rests at the end of the sweep, so the still frame shows a pass that
+       has completed, which is the state the memory figures below describe. -->
+  <g class="scan">
+    <polygon class="head" points="480,58 473,46 487,46"/>
+    <rect class="head" x="478" y="60" width="4" height="38" rx="2"/>
+  </g>
+
+  <text class="faint mono" x="28" y="112">start</text>
+  <text class="faint mono" x="480" y="112" text-anchor="end">end of trace</text>
+
+  <line class="rule" x1="28" y1="130" x2="732" y2="130"/>
+
+  <!-- ===================== full load ===================== -->
+  <text class="fg h" x="28" y="162">Full load</text>
+  <text class="dim small" x="28" y="179">decodes and keeps every timestamp</text>
+
+  <text class="faint small" x="258" y="150">retained memory</text>
+  <rect class="track" x="258" y="156" width="196" height="22" rx="3"/>
+  <rect class="growbar grow" x="258" y="156" width="196" height="22" rx="3"/>
+
+  <text class="dim small" x="470" y="164">grows with the trace</text>
+  <text class="grow mono" x="470" y="180" style="font-weight:600">201 MB file → 542 MB</text>
+
+  <!-- ===================== streaming ===================== -->
+  <text class="fg h" x="28" y="240">Streaming</text>
+  <text class="dim small" x="28" y="257">hands each timestamp over, then drops it</text>
+
+  <rect class="track" x="258" y="234" width="196" height="22" rx="3"/>
+  <rect class="flat" x="258" y="234" width="11" height="22" rx="3"/>
+
+  <text class="dim small" x="470" y="242">stays flat, whatever the length</text>
+  <text class="flat mono" x="470" y="258" style="font-weight:600">201 MB file → 3.7 MB</text>
+
+  <!-- ===================== why ===================== -->
+  <line class="rule" x1="28" y1="288" x2="732" y2="288"/>
+  <text class="dim small" x="28" y="312">The kernels already read strictly forward, carrying a running state, so keeping the</text>
+  <text class="dim small" x="28" y="330">decoded trace bought nothing. The parser now reuses one buffer and keeps none of it.</text>
+</svg>

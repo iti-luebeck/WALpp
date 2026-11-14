@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 412" role="img"
+     aria-labelledby="t2 d2" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t2">Constant-time verification: two markers, one cycle count per trial</title>
+  <desc id="d2">A test program writes a marker register immediately before and after the
+  instruction under test. The latency of a trial is the number of clock edges between
+  the two markers. Across trials with different random operands, every count being
+  identical is a pass; a single differing count is a fail.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .wave  { stroke: #1d5fd0; stroke-width: 2; fill: none; }
+    .mark  { fill: #9a6207; }
+    .markl { stroke: #9a6207; stroke-width: 1.5; stroke-dasharray: 3 3; }
+    .span  { fill: #e6edfb; stroke: #9cbcf0; }
+    .pass  { fill: #19734b; }
+    .fail  { fill: #b03034; }
+    .chip  { fill: #eef2f9; }
+    .small { font-size: 11px; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .monob { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; font-weight: 600; }
+    .h     { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .wave  { stroke: #74a4f5; }
+      .mark  { fill: #e0a94a; }
+      .markl { stroke: #e0a94a; }
+      .span  { fill: #1a2740; stroke: #3b5a8c; }
+      .pass  { fill: #5cc795; }
+      .fail  { fill: #f08a8d; }
+      .chip  { fill: #19212e; }
+    }
+
+    /* The measured span sweeps open, the way the extraction walks it. */
+    .measure { animation: measure 5s ease-in-out infinite; }
+    @keyframes measure { 0%, 8% { width: 0; } 45%, 100% { width: 272px; } }
+
+    /* Each trial's chip settles in turn, so the eye reads them as a sequence. */
+    .trial   { animation: settle 5s ease-in-out infinite; }
+    .t2 { animation-delay: .35s; } .t3 { animation-delay: .7s; }
+    .t4 { animation-delay: 1.05s; } .t5 { animation-delay: 1.4s; }
+    @keyframes settle { 0%, 10% { opacity: 0; } 30%, 100% { opacity: 1; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .measure, .trial { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="412"/>
+
+  <!-- ================= one trial, on the waveform ================= -->
+  <text class="fg h" x="28" y="30">One trial</text>
+  <text class="dim small" x="28" y="48">the markers are ordinary bus writes, already visible in the trace</text>
+
+  <!-- measured span, drawn behind the clock -->
+  <rect class="measure span" x="196" y="86" width="272" height="54" rx="3"/>
+
+  <!-- clock: eight cycles -->
+  <text class="faint mono" x="28" y="118">clk</text>
+  <path class="wave" d="M 60 130 h 17 v -26 h 17 v 26 h 17 v -26 h 17 v 26 h 17 v -26 h 17
+                        v 26 h 17 v -26 h 17 v 26 h 17 v -26 h 17 v 26 h 17 v -26 h 17 v 26
+                        h 17 v -26 h 17 v 26 h 17 v -26 h 17 v 26 h 17 v -26 h 17 v 26 h 17
+                        v -26 h 17 v 26 h 17 v -26 h 17 v 26 h 17 v -26 h 17 v 26 h 17"/>
+
+  <!-- markers -->
+  <line class="markl" x1="196" y1="80" x2="196" y2="152"/>
+  <line class="markl" x1="468" y1="80" x2="468" y2="152"/>
+  <polygon class="mark" points="196,76 190,64 202,64"/>
+  <polygon class="mark" points="468,76 462,64 474,64"/>
+  <text class="mark mono" x="196" y="58" text-anchor="middle">store</text>
+  <text class="mark mono" x="468" y="58" text-anchor="middle">store</text>
+
+  <text class="dim small" x="332" y="170" text-anchor="middle">count the clock edges between them</text>
+  <text class="fg monob" x="332" y="188" text-anchor="middle">latency = 32 cycles</text>
+
+  <line class="rule" x1="28" y1="212" x2="732" y2="212"/>
+
+  <!-- ================= many trials ================= -->
+  <text class="fg h" x="28" y="242">Many trials, random operands</text>
+  <text class="dim small" x="28" y="260">the criterion is exact, not statistical: simulation is deterministic</text>
+
+  <!-- pass row -->
+  <text class="pass monob" x="28" y="300">PASS</text>
+  <text class="faint small" x="28" y="316">no variation</text>
+  <g>
+    <g class="trial t1"><rect class="chip" x="110" y="284" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="132" y="299" text-anchor="middle">32</text></g>
+    <g class="trial t2"><rect class="chip" x="162" y="284" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="184" y="299" text-anchor="middle">32</text></g>
+    <g class="trial t3"><rect class="chip" x="214" y="284" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="236" y="299" text-anchor="middle">32</text></g>
+    <g class="trial t4"><rect class="chip" x="266" y="284" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="288" y="299" text-anchor="middle">32</text></g>
+    <g class="trial t5"><rect class="chip" x="318" y="284" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="340" y="299" text-anchor="middle">32</text></g>
+  </g>
+  <text class="faint mono" x="372" y="299">… 1000 trials</text>
+  <text class="pass small" x="470" y="299">one distinct value: no timing variation found</text>
+
+  <!-- fail row -->
+  <text class="fail monob" x="28" y="350">FAIL</text>
+  <text class="faint small" x="28" y="366">one differs</text>
+  <g>
+    <g class="trial t1"><rect class="chip" x="110" y="334" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="132" y="349" text-anchor="middle">33</text></g>
+    <g class="trial t2"><rect class="chip" x="162" y="334" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="184" y="349" text-anchor="middle">33</text></g>
+    <g class="trial t3"><rect class="fail" x="214" y="334" width="44" height="22" rx="4"/>
+      <text class="bg mono" x="236" y="349" text-anchor="middle" style="font-weight:600">34</text></g>
+    <g class="trial t4"><rect class="chip" x="266" y="334" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="288" y="349" text-anchor="middle">33</text></g>
+    <g class="trial t5"><rect class="chip" x="318" y="334" width="44" height="22" rx="4"/>
+      <text class="fg mono" x="340" y="349" text-anchor="middle">33</text></g>
+  </g>
+  <text class="faint mono" x="372" y="349">… 1000 trials</text>
+  <text class="fail small" x="470" y="349">one outlier is enough to fail the group</text>
+
+  <text class="faint small" x="28" y="398">A pass means no variation in the trials run. Coverage is bounded by the diversity of the operands, not by their number.</text>
+</svg>

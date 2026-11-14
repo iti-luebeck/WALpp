@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 344" role="img"
+     aria-labelledby="t3 d3" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t3">How an extraction kernel runs: one timestamp at a time</title>
+  <desc id="d3">The parser reads the trace and hands the kernel one timestamp's changes
+  at a time through a sink. The same buffer is reused for every timestamp, so nothing
+  accumulates. The kernel keeps one running state and writes one output row per
+  timestamp.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .box   { fill: #f7f8fa; stroke: #dfe4ec; }
+    .accent{ fill: #e6edfb; stroke: #9cbcf0; }
+    .arrow { stroke: #8d98a8; stroke-width: 1.5; fill: none; }
+    .tok   { fill: #1d5fd0; }
+    .state { fill: #19734b; }
+    .row   { fill: #5a6779; }
+    .warn  { fill: #9a6207; }
+    .small { font-size: 11px; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .h     { font-size: 13px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .box   { fill: #151d29; stroke: #263142; }
+      .accent{ fill: #1a2740; stroke: #3b5a8c; }
+      .arrow { stroke: #76829a; }
+      .tok   { fill: #74a4f5; }
+      .state { fill: #5cc795; }
+      .row   { fill: #a2aec0; }
+      .warn  { fill: #e0a94a; }
+    }
+
+    /* One timestamp's changes travel from the file into the shared buffer, are
+       folded into the running state, and leave as a row. Then the buffer is reused. */
+    .tok1 { animation: travel 3s linear infinite; }
+    .tok2 { animation: travel 3s linear infinite; animation-delay: 1s; }
+    .tok3 { animation: travel 3s linear infinite; animation-delay: 2s; }
+    @keyframes travel {
+      0%   { transform: translateX(0);    opacity: 0; }
+      8%   { opacity: 1; }
+      38%  { transform: translateX(150px); opacity: 1; }
+      62%  { transform: translateX(150px); opacity: 1; }
+      92%  { transform: translateX(430px); opacity: 1; }
+      100% { transform: translateX(430px); opacity: 0; }
+    }
+
+    /* The buffer pulses as it is refilled, to show it is the same one each time. */
+    .buf { animation: pulse 3s ease-in-out infinite; }
+    @keyframes pulse { 0%,30%,70%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tok1, .tok2, .tok3, .buf { animation: none; }
+      .tok2, .tok3 { opacity: 0; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="344"/>
+
+  <text class="fg cap" x="28" y="30">One timestamp at a time, and nothing kept</text>
+  <text class="dim small" x="28" y="48">the shape every extraction mode has, and the one to copy for your own</text>
+
+  <!-- trace file -->
+  <rect class="box" x="28" y="78" width="104" height="92" rx="4"/>
+  <text class="fg h" x="80" y="100" text-anchor="middle">trace</text>
+  <text class="faint mono" x="80" y="118" text-anchor="middle">VCD</text>
+  <g class="mono faint">
+    <text x="80" y="138" text-anchor="middle">#10 …</text>
+    <text x="80" y="153" text-anchor="middle">#20 …</text>
+  </g>
+
+  <path class="arrow" d="M 136 124 H 176" marker-end="url(#a)"/>
+
+  <!-- the reused buffer -->
+  <rect class="buf accent" x="182" y="92" width="130" height="64" rx="4"/>
+  <text class="fg h" x="247" y="114" text-anchor="middle">one buffer</text>
+  <text class="dim mono" x="247" y="132" text-anchor="middle">DeltaTimestamp</text>
+  <text class="warn mono" x="247" y="148" text-anchor="middle">reused, never kept</text>
+
+  <path class="arrow" d="M 316 124 H 356" marker-end="url(#a)"/>
+
+  <!-- the kernel -->
+  <rect class="box" x="362" y="84" width="150" height="80" rx="4"/>
+  <text class="fg h" x="437" y="106" text-anchor="middle">your kernel</text>
+  <rect class="state" x="386" y="118" width="102" height="8" rx="4"/>
+  <text class="dim mono" x="437" y="144" text-anchor="middle">running state</text>
+  <text class="faint mono" x="437" y="158" text-anchor="middle">O(signals)</text>
+
+  <path class="arrow" d="M 516 124 H 556" marker-end="url(#a)"/>
+
+  <!-- output -->
+  <rect class="box" x="562" y="78" width="104" height="92" rx="4"/>
+  <text class="fg h" x="614" y="100" text-anchor="middle">one row</text>
+  <text class="faint mono" x="614" y="116" text-anchor="middle">per timestamp</text>
+  <g class="mono row">
+    <text x="614" y="136" text-anchor="middle">10,4</text>
+    <text x="614" y="151" text-anchor="middle">20,7</text>
+  </g>
+
+  <!-- travelling tokens: drawn last so they sit above the boxes -->
+  <g class="tok1"><rect class="tok" x="146" y="118" width="22" height="12" rx="3"/></g>
+  <g class="tok2"><rect class="tok" x="146" y="118" width="22" height="12" rx="3"/></g>
+  <g class="tok3"><rect class="tok" x="146" y="118" width="22" height="12" rx="3"/></g>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8d98a8"/>
+    </marker>
+  </defs>
+
+  <!-- the consequence -->
+  <text class="dim small" x="28" y="212">Because the kernel only ever needs the current changes and its own running state,</text>
+  <text class="dim small" x="28" y="230">the parser can forget each timestamp as soon as it is handed over.</text>
+
+  <rect class="box" x="28" y="250" width="704" height="72" rx="4"/>
+  <text class="fg h" x="48" y="272">What this buys</text>
+  <text class="dim small" x="48" y="292">Peak memory stops tracking the trace: a 201 MB VCD went from 542 MB to 205 MB.</text>
+  <text class="dim small" x="48" y="310">Only 3.7 MB of that is the process; the rest is the file mapping, which is clean and reclaimable.</text>
+</svg>

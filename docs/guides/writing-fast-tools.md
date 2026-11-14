@@ -29,6 +29,15 @@ throughput figures come from, and it is a pattern you can reuse.
 
 ## The shape of a kernel
 
+![The parser hands the kernel one timestamp\'s changes at a time through a sink,
+reusing the same buffer. The kernel keeps a running state and emits one row per
+timestamp, so nothing accumulates.](../images/kernel-pipeline.svg)
+
+The blue box travelling left to right is one timestamp's changes. The point of the
+figure is the box in the middle: there is only ever **one** of them. The parser fills
+it, hands it over, and fills it again. Your kernel may read it, but must not keep a
+pointer to it.
+
 Every one of them is the same three parts:
 
 1. **A tracked set.** Which signal ids this kernel follows, resolved once from the

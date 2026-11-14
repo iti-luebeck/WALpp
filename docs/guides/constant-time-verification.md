@@ -11,6 +11,18 @@ specific to that core.
 
 ## The idea
 
+![Two marker writes bracket the instruction under test. The latency of a trial is the
+number of clock edges between them. Across trials with random operands, every count
+being identical is a pass; one differing count is a
+fail.](../images/constant-time-markers.svg)
+
+Read the figure top to bottom. The upper half is a single trial: the two dashed lines
+are ordinary bus writes the test program makes before and after the operation, and
+the shaded span between them is what gets counted. The lower half is the criterion,
+which is the part that makes this cheap: the trials are compared against **each
+other**, not against an expected number, so you never need a model of what the
+latency ought to be.
+
 A specification saying an instruction is constant-time says nothing about whether a
 particular RTL implementation is. You have to measure.
 

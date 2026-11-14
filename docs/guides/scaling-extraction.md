@@ -37,6 +37,9 @@ every time the design changes.
 
 ## Why they are fast
 
+![The parser hands the kernel one timestamp at a time through a sink, reusing one
+buffer, so nothing accumulates.](../images/kernel-pipeline.svg)
+
 Three things, none of them clever:
 
 **They never build an interpreter.** `--fast-hw-*`, `--fast-hd-*`,

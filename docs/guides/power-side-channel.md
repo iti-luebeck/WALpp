@@ -10,6 +10,19 @@ applied to AES-128 on the Sailor core at both RTL and post-route netlist level.
 
 ## The idea
 
+![Four signals toggling over eight timestamps. Hamming weight counts the bits set at
+each timestamp; Hamming distance counts the bits that changed since the previous one.
+Either series is the activity trace.](../images/activity-extraction.svg)
+
+The grid at the top is the raw switching the trace already records. Everything below
+it is arithmetic on that grid: weight counts the bits that are set now, distance
+counts the bits that differ from the previous column.
+
+Two details in the figure matter later. Distance has **one row fewer** than weight,
+because the first timestamp has nothing before it to compare against. And the two
+series are not interchangeable: at a timestamp where the same number of bits are set
+as before but different ones, weight is flat and distance is not.
+
 You cannot measure power in a simulator, but you can measure a **proxy** for it.
 Switching activity correlates with dynamic power, and a waveform records every
 switch. Two proxies are standard:
