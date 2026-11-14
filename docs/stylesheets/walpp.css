@@ -59,3 +59,15 @@
   color: var(--md-default-fg-color--light);
   margin-bottom: 0.75rem;
 }
+
+/* Header and tabs run the full width of the window, which is what the playground page
+   already did by clearing .md-grid's cap for itself. Material caps .md-grid at 61rem,
+   so everywhere else the logo, the tabs and the search box sat inside a 1220px column
+   and the whole chrome jumped sideways when you moved to or from the playground.
+
+   The prose column keeps its cap on purpose: that one is a line-length decision, not a
+   chrome one, and body text measured across a 1600px monitor is hard to read. */
+.md-header__inner,
+.md-tabs__inner {
+  max-width: none;
+}
