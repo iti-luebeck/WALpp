@@ -62,6 +62,8 @@ extra:
   generator: false
 extra_css:
   - docs/stylesheets/walpp.css
+  # Interactive playground; scoped to body.walpp-playground, no effect elsewhere.
+  - docs/stylesheets/playground.css
   # Front-page particle hero; scoped to body.bc-homepage, no effect elsewhere.
   - docs/stylesheets/hero.css
   #- docs/stylesheets/doxide.css
@@ -77,6 +79,8 @@ extra_javascript:
   # must load before the init file.
   - https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js
   - docs/javascripts/particles-init.js
+  # Interactive playground; does nothing unless the page has #wal-playground.
+  - docs/javascripts/playground.js
 use_directory_urls: true
 
 nav:
@@ -88,6 +92,9 @@ nav:
       - Cookbook: docs/guides/cookbook.md
       - Getting started: docs/guides/getting-started.md
       - Troubleshooting: docs/guides/troubleshooting.md
+  # A tab of its own rather than a page inside Home: it is the one page that needs
+  # no reading first, so it should be reachable in one click from anywhere.
+  - Playground: docs/playground.md
   - Guides:
     - Security analysis:
       - Constant-time verification: docs/guides/constant-time-verification.md

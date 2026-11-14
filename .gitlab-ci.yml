@@ -3,6 +3,7 @@ stages:
   - test
   - package
   - wheel
+  - wasm
   - docs
 
 variables:
@@ -207,12 +208,28 @@ wheel:python:
 
 # Documentation site, the same build as .github/workflows/docs.yml: `make docs` copies the
 # Markdown into build/docs, doxide adds the API pages, mkdocs renders build/site.
+# The playground's WAL++ WebAssembly module. Built in the official Emscripten image,
+# handed to docs:build as an artifact so that job needs no Emscripten SDK of its own.
+wasm:build:
+  stage: wasm
+  tags: [docker]
+  image: emscripten/emsdk:4.0.10
+  needs: []
+  script:
+    - bash build-wasm.sh
+  artifacts:
+    name: "walpp-wasm-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - docs/playground/walpp.js
+      - docs/playground/walpp.wasm
+    expire_in: 1 week
+
 docs:build:
   stage: docs
   # The institute's Docker runner (#51) takes only jobs tagged docker
   tags: [docker]
   image: ubuntu:24.04
-  needs: []
+  needs: ["wasm:build"]
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq curl gpg make rsync python3-pip
@@ -222,6 +239,10 @@ docs:build:
     - apt-get install -y -qq doxide
     - pip install -q --break-system-packages -r requirements.txt
   script:
+    # The viewer half of the playground: ~15 MB, fetched rather than committed.
+    # If it cannot be fetched the playground still ships, with the console working
+    # and the viewer pane saying it is unavailable.
+    - bash tools/fetch-surfer.sh || echo "warning: no Surfer bundle, the playground ships without the viewer"
     - make docs
   artifacts:
     name: "walpp-docs-${CI_COMMIT_SHORT_SHA}"

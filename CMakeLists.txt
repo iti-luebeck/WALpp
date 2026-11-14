@@ -17,9 +17,21 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS "Setting build type to '${CMAKE_BUILD_TYPE}' as none was specified.")
 endif()
 
+# Emscripten builds the core plus the playground bridge only: the REPL needs libedit
+# and a terminal, and the Python module needs a native interpreter.
+if(EMSCRIPTEN)
+    set(WALPP_DEFAULT_PYTHON OFF)
+    set(WALPP_DEFAULT_TESTS OFF)
+    set(WALPP_DEFAULT_LIBEDIT OFF)
+else()
+    set(WALPP_DEFAULT_PYTHON ON)
+    set(WALPP_DEFAULT_TESTS ON)
+    set(WALPP_DEFAULT_LIBEDIT ON)
+endif()
+
 # Options
-option(BUILD_PYTHON_MODULE "Build Python module bindings" ON)
-option(ENABLE_TESTS "Build test suite" ON)
+option(BUILD_PYTHON_MODULE "Build Python module bindings" ${WALPP_DEFAULT_PYTHON})
+option(ENABLE_TESTS "Build test suite" ${WALPP_DEFAULT_TESTS})
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(ENABLE_FST_SUPPORT "Enable FST waveform format support" ON)
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
@@ -146,9 +158,9 @@ else()
     target_compile_options(walpp PRIVATE -Wall -Wextra -Wpedantic)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(walpp PRIVATE -Wduplicated-cond -Wduplicated-branches -fcoroutines)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(walpp PRIVATE -fcoroutines-ts)
     endif()
+    # NOTE: Clang needs no coroutine flag in C++20 mode. The old -fcoroutines-ts was
+    # removed in Clang 17, and passing it breaks every Clang build, Emscripten included.
 endif()
 
 # Link Lark if found
@@ -179,7 +191,7 @@ target_link_libraries(walpp PRIVATE Threads::Threads)
 # Debian/Ubuntu: libedit-dev; Fedora/RHEL: libedit-devel). Without libedit the
 # REPL still works, just without line editing and history recall.
 
-option(WITH_LIBEDIT "Use libedit for line editing in the REPL" ON)
+option(WITH_LIBEDIT "Use libedit for line editing in the REPL" ${WALPP_DEFAULT_LIBEDIT})
 if(WITH_LIBEDIT)
     find_path(LIBEDIT_INCLUDE_DIR editline/readline.h)
     find_library(LIBEDIT_LIBRARY edit)
@@ -202,13 +214,41 @@ set(CLI_SOURCES
     src/repl.cpp
 )
 
-add_executable(wal ${CLI_SOURCES})
-target_link_libraries(wal PRIVATE walpp)
+if(NOT EMSCRIPTEN)
+    add_executable(wal ${CLI_SOURCES})
+    target_link_libraries(wal PRIVATE walpp)
 
-if(HAVE_LIBEDIT)
-    target_include_directories(wal PRIVATE ${LIBEDIT_INCLUDE_DIR})
-    target_link_libraries(wal PRIVATE ${LIBEDIT_LIBRARY})
-    target_compile_definitions(wal PRIVATE WAL_HAVE_LIBEDIT)
+    if(HAVE_LIBEDIT)
+        target_include_directories(wal PRIVATE ${LIBEDIT_INCLUDE_DIR})
+        target_link_libraries(wal PRIVATE ${LIBEDIT_LIBRARY})
+        target_compile_definitions(wal PRIVATE WAL_HAVE_LIBEDIT)
+    endif()
+endif()
+
+# ============================================================================
+# WebAssembly bridge for the documentation playground
+# ============================================================================
+# Produces walpp.js + walpp.wasm, loaded by docs/javascripts/playground.js.
+# Only configured under emcmake; see build-wasm.sh.
+
+if(EMSCRIPTEN)
+    add_executable(walpp_wasm src/wasm/wal_wasm.cpp)
+    target_link_libraries(walpp_wasm PRIVATE walpp)
+    set_target_properties(walpp_wasm PROPERTIES OUTPUT_NAME "walpp")
+    # Exceptions are load-bearing: the evaluator reports every WAL error by throwing,
+    # and the bridge turns those into a message for the console pane.
+    target_compile_options(walpp_wasm PRIVATE -fexceptions)
+    target_link_options(walpp_wasm PRIVATE
+        -lembind
+        -fexceptions
+        -sMODULARIZE=1
+        -sEXPORT_NAME=createWalpp
+        -sALLOW_MEMORY_GROWTH=1
+        -sENVIRONMENT=web,worker
+        -sFORCE_FILESYSTEM=1
+        -sEXPORTED_RUNTIME_METHODS=FS
+        -sINVOKE_RUN=0
+    )
 endif()
 
 
@@ -305,15 +345,17 @@ if(NOT DEFINED SKBUILD_PLATLIB_DIR)
     )
 endif()
 
-if(DEFINED SKBUILD_PLATLIB_DIR)
-    # Place CLI inside the Python wheel under walpp/bin
-    install(TARGETS wal
-        RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/walpp/bin
-    )
-else()
-    install(TARGETS wal
-        RUNTIME DESTINATION bin
-    )
+if(NOT EMSCRIPTEN)
+    if(DEFINED SKBUILD_PLATLIB_DIR)
+        # Place CLI inside the Python wheel under walpp/bin
+        install(TARGETS wal
+            RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/walpp/bin
+        )
+    else()
+        install(TARGETS wal
+            RUNTIME DESTINATION bin
+        )
+    endif()
 endif()
 
 if(BUILD_PYTHON_MODULE)

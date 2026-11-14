@@ -69,3 +69,9 @@ tests/data/test_stress_large.vcd
 # Unpacked paper artifacts (keep only the .xz files)
 artifacts/traces/*.vcd
 artifacts/traces/*.npy
+
+# Documentation playground payload: built by build-wasm.sh and fetched by
+# tools/fetch-surfer.sh, not committed. The Surfer bundle alone is ~15 MB.
+docs/playground/walpp.js
+docs/playground/walpp.wasm
+docs/playground/surfer/
