@@ -47,8 +47,14 @@ def main():
                 failures.append((example["id"], bad[0]))
                 print(f"  FAIL  {example['id']}: {bad[0][:100]}")
             else:
-                first = next((l for l in output.splitlines() if l.strip()), "")
-                print(f"  ok    {example['id']}: {first[:80]}")
+                # Show every value the example produces, not just the first: an example
+                # that opens with a define starts with nil, and reporting only that
+                # makes a working example look like it returns nothing.
+                values = [l for l in output.splitlines() if l.strip()]
+                shown = " | ".join(values)
+                if len(shown) > 90:
+                    shown = shown[:87] + "..."
+                print(f"  ok    {example['id']}: {shown}")
 
     print(f"\n{total - len(failures)}/{total} examples pass")
     if failures:
