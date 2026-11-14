@@ -11,8 +11,9 @@ Measured against **upstream wal-lang 0.9.1** (`wal/ast_defs.py` operator enum pl
 
 | | At branch start | Now |
 |---|---|---|
-| Upstream tests passing | 18 of 77 | **65 of 77** |
+| Upstream tests passing | 18 of 77 | **67 of 77** |
 | Upstream operators missing from WAL++ | 66 of 106 | **16 of 106** |
+| Open decisions | 6 | **3** |
 | Upstream standard library | not loaded | loaded |
 
 WAL++ is not a subset: it has ~90 operators upstream lacks (the whole statistics,
@@ -431,27 +432,37 @@ These are behavior changes that need a call rather than an implementation.
    pattern instead of an error. Related: `(= wide 5)` already answers false with no
    error, which is arguably a bug regardless.
 
-3. **Integers wider than 64 bits.** `(int? 583547542375894327581)` passes upstream
-   because Python integers are unbounded; WAL++ cannot even read the literal
-   (1 failure). Either document 64 bits as a limit and reject such a literal
-   cleanly, give the bit-string representation real operators, or add an
-   arbitrary-precision value kind. This is the same question as 2 from the other
-   side, and it matters most for wide-bus analysis.
+3. ~~**Integers wider than 64 bits.**~~ **Settled: 64-bit default, `--bigint` mode.**
+   64-bit is what waveform values and indices need and the arbitrary-precision path
+   is slower, so it stays the default and says so when a literal overflows. The
+   conformance suite runs in bigint mode, since upstream's integers are unbounded.
 
 4. **`0 == #f`.** Upstream inherits Python's `0 == False`; WAL++ treats an int and a
    bool as different types. Visible at a trace boundary: at MAX-INDEX `reval` is out
    of range and answers false, so upstream counts `(stable clk)` as 1 where WAL++
    counts 0.
 
-5. **Standard-library names that collide with builtins.** The loader skips a
-   definition whose name WAL++ already implements, because the two are not always
-   the same function: upstream's `append` is `(append list element)` while the
-   builtin concatenates two lists. Skipped today: `append`, `car`, `cdr`, `cond`,
-   `filter`, `reverse`, `set-index`, `set!`, `sort`, `sum`, `symbol-add`, `unless`,
-   `when`. Which should instead defer to upstream is a semantics decision.
+5. ~~**Standard-library names that collide with builtins.**~~ **Settled for
+   `append`.** WAL++'s list concatenation is now `extend`, so `append` carries
+   upstream's meaning of adding one element. Both are verified against upstream. The
+   loader still skips the rest, which remain equivalent enough not to matter:
+   `car`, `cdr`, `cond`, `filter`, `reverse`, `set-index`, `set!`, `sort`, `sum`,
+   `symbol-add`, `unless`, `when`.
 
-6. **SV array element naming.** Upstream spells an element `data<0>`, WAL++ spells
-   it `data[1]` (1 failure). Same family as 1, smaller blast radius.
+6. ~~**SV array element naming.**~~ **Settled: `data<0>`, as upstream spells it.**
+   This stopped being optional when subscript syntax arrived: `[` then opened a
+   subscript, so `TOP.tb.data[0].data.something` read as the symbol `TOP.tb.data`
+   subscripted by 0 and a bracketed element could not be named at all. Upstream hit
+   the same ambiguity and solved it the same way. The old bracketed spelling still
+   resolves through `get-signal`.
+
+### What settling 3, 5 and 6 did not touch
+
+Nothing in the paper. The paper contains no code listing, no signal name and no
+separator: its only mention of the language is that upstream WAL "introduced a
+Lisp-like S-expression language". Its measurements come from the `--fast-*` paths,
+which use dotted names and never touch the interpreter. Re-verified after each
+change: byte-identical extraction output and unchanged per-run time.
 
 ### Not parity gaps (5 failures)
 
@@ -489,9 +500,10 @@ Conformance against upstream WAL 0.9.1's own test suite:
  48/77   arrays, set/get, trace sweeps, structural equality, the FST reader
  61/77   macros, scopes and groups, operators as values
  65/77   the standard library
+ 67/77   bigint mode, append/extend, data<0> names
 ```
 
-All 22 CTest tests pass. The ratchet in `tests/CMakeLists.txt` is at 65, so parity
+All 22 CTest tests pass. The ratchet in `tests/CMakeLists.txt` is at 67, so parity
 can only go up.
 
 The acceptance test is that published WAL runs unmodified and agrees with upstream:
