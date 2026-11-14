@@ -2269,6 +2269,42 @@ void test_verbs_equal_flags(ExecutableTestSuite& suite, const std::string& exe_p
                 }
             }
 
+            // `names` is the documented spelling of the signal listing; `list`
+            // shipped first and still works.
+            run_command(exe_path + " extract names " + vcd + " -o /tmp/walpp_verb_n1.txt 2>/dev/null");
+            run_command(exe_path + " extract list " + vcd + " -o /tmp/walpp_verb_n2.txt 2>/dev/null");
+            auto [rcn, samen] = run_command(
+                "cmp -s /tmp/walpp_verb_n1.txt /tmp/walpp_verb_n2.txt && echo same || echo differ");
+            if (samen.find("same") == std::string::npos) {
+                result.passed = false;
+                result.message += "`extract names` and `extract list` should agree; ";
+            }
+            run_command("rm -f /tmp/walpp_verb_n1.txt /tmp/walpp_verb_n2.txt");
+
+            // `run` and `repl` reach the script and REPL paths.
+            {
+                std::string script = "/tmp/walpp_verb_run.wal";
+                std::ofstream f(script);
+                f << "(print (+ 20 22))\n";
+                f.close();
+                auto [rcr, out] = run_command(exe_path + " run " + script + " 2>&1");
+                if (out.find("42") == std::string::npos) {
+                    result.passed = false;
+                    result.message += "`run` verb did not execute the script (got: '" + out + "'); ";
+                }
+                std::remove(script.c_str());
+            }
+
+            // Every verb the help advertises must actually exist. A help text that
+            // promises a verb the binary does not have is worse than no help.
+            for (const char* verb : {"inspect", "lint", "eval", "run", "repl", "extract"}) {
+                auto [rch, help] = run_command(exe_path + " --help 2>&1");
+                if (help.find(verb) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("--help does not mention verb '") + verb + "'; ";
+                }
+            }
+
             // The other three verbs reach the same places.
             auto [rc1, insp] = run_command(exe_path + " inspect " + vcd + " --compact-json 2>&1");
             if (insp.find("\"command\":\"inspect\"") == std::string::npos) {

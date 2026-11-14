@@ -179,21 +179,57 @@ wal -l small.vcd --no-streaming
 
 ---
 
-## Two spellings, one command
+## Verbs
 
-Since v1.2.2 the extended modes can be written as verbs as well as flags:
+| verb | what it does |
+|---|---|
+| `inspect TRACE` | what is in a trace, as JSON |
+| `lint SCRIPT.wal` | check a script without running it |
+| `eval EXPR [EXPR...]` | evaluate expressions |
+| `run SCRIPT.wal` | run a script |
+| `repl` | start the interactive REPL |
+| `extract KIND TRACE -o OUT.csv` | one pass over a trace, CSV out |
+
+`extract` takes a kind and an optional selector:
+
+| kind | what you get |
+|---|---|
+| `weight` | Hamming weight: bits set at each timestamp |
+| `distance` | Hamming distance: bits changed since the previous timestamp |
+| `values` | the decoded value of each listed signal, when it changes |
+| `names` | every signal as `width name`, plus a `# timescale` header |
+
+| selector | |
+|---|---|
+| *(none)* | every signal in the trace |
+| `--scope SCOPE` | only signals under a hierarchy prefix |
+| `--signals FILE` | only the signals named in FILE |
+
+```bash
+wal extract weight trace.vcd --scope top.core -o activity.csv
+wal extract values trace.vcd --signals markers.txt -o changes.csv
+wal inspect trace.vcd --json
+wal lint analysis.wal
+```
+
+### The flag spelling
+
+Every verb has an equivalent flag, and the flags are **not going away**:
 
 | verb | flag |
 |---|---|
-| `wal inspect trace.vcd` | `wal --inspect trace.vcd` |
-| `wal lint analysis.wal` | `wal --lint analysis.wal` |
-| `wal eval '(+ 1 2)' -l trace.vcd` | `wal -l trace.vcd -e '(+ 1 2)'` |
-| `wal extract weight trace.vcd --scope top -o a.csv` | `wal --fast-hw-scope top trace.vcd -o a.csv` |
-| `wal extract distance trace.vcd --signals l.txt -o a.csv` | `wal --fast-hd-signals l.txt trace.vcd -o a.csv` |
-| `wal extract values trace.vcd --signals l.txt -o a.csv` | `wal --fast-values-signals l.txt trace.vcd -o a.csv` |
-| `wal extract list trace.vcd -o names.txt` | `wal --fast-list trace.vcd -o names.txt` |
+| `extract weight T --scope S` | `--fast-hw-scope S T` |
+| `extract weight T --signals L` | `--fast-hw-signals L T` |
+| `extract weight T` | `--fast-hw-all T` |
+| `extract distance T --scope S` | `--fast-hd-scope S T` |
+| `extract values T --signals L` | `--fast-values-signals L T` |
+| `extract names T` | `--fast-list T` |
+| `inspect T` | `--inspect T` |
+| `lint S` | `--lint S` |
+| `run S` | `-f S` |
+| `eval E` | `-e E` |
 
-The verbs are **sugar**. A verb invocation is rewritten into the flag form before
+The verbs are **sugar**: a verb invocation is rewritten into the flag form before
 anything else runs, so there is one implementation underneath and no second code
 path that could drift.
 
@@ -204,11 +240,11 @@ A test asserts byte-identical output from both spellings of every extraction mod
 and another runs the paper's four published invocations, so neither can be broken
 by a later tidy-up without the build failing.
 
-**Nothing is deprecated.** If you are reproducing the paper, or you have scripts
-already, keep using the flags.
+If you are reproducing the paper, or you have scripts already, keep using the flags.
 
-A first argument is treated as a verb only when it matches one *and* no file of that
-name exists, so `wal script.wal` still runs a script.
+A first argument counts as a verb only when it matches one *and* no file of that
+name exists, so `wal script.wal` still runs a script. `extract list` is accepted as
+an older spelling of `extract names`.
 
 ## Agent and scripting modes
 

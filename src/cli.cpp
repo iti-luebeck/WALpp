@@ -53,7 +53,8 @@ namespace {
 bool rewrite_verbs(std::vector<std::string>& args) {
     if (args.empty()) return false;
     const std::string verb = args[0];
-    static const std::set<std::string> verbs = {"inspect", "lint", "eval", "extract"};
+    static const std::set<std::string> verbs =
+        {"inspect", "lint", "eval", "extract", "run", "repl"};
     if (!verbs.count(verb)) return false;
     if (std::filesystem::exists(verb)) return false;
 
@@ -71,7 +72,23 @@ bool rewrite_verbs(std::vector<std::string>& args) {
         return false;
     };
 
-    if (verb == "inspect" || verb == "lint") {
+    if (verb == "repl") {
+        // The REPL is what you get with no arguments, so the verb simply drops out
+        // and any modifiers (a trace to load) pass through.
+        out = rest;
+    } else if (verb == "run") {
+        out.push_back("-f");
+        std::string script;
+        for (size_t i = 0; i < rest.size(); ++i) {
+            if (!rest[i].empty() && rest[i][0] != '-') {
+                script = rest[i];
+                rest.erase(rest.begin() + i);
+                break;
+            }
+        }
+        out.push_back(script);
+        for (const auto& r : rest) out.push_back(r);
+    } else if (verb == "inspect" || verb == "lint") {
         out.push_back(verb == "inspect" ? "--inspect" : "--lint");
         // the subject first, then whatever modifiers followed
         std::string subject;
@@ -101,7 +118,7 @@ bool rewrite_verbs(std::vector<std::string>& args) {
     } else {  // extract
         if (rest.empty()) {
             std::cerr << "Error: extract needs a kind "
-                         "(weight, distance, values or list)\n";
+                         "(weight, distance, values or names)\n";
             return false;
         }
         const std::string kind = rest.front();
@@ -121,7 +138,9 @@ bool rewrite_verbs(std::vector<std::string>& args) {
         }
 
         std::string flag;
-        if (kind == "list") {
+        if (kind == "names" || kind == "list") {
+            // `names` is the documented spelling: you get signal names and widths.
+            // `list` is accepted because it shipped first and costs nothing to keep.
             flag = "--fast-list";
         } else if (kind == "values") {
             flag = "--fast-values-signals";
@@ -133,7 +152,7 @@ bool rewrite_verbs(std::vector<std::string>& args) {
                  : !signals.empty() ? "--fast-hd-signals" : "--fast-hd-all";
         } else {
             std::cerr << "Error: unknown extract kind '" << kind
-                      << "' (weight, distance, values or list)\n";
+                      << "' (weight, distance, values or names)\n";
             return false;
         }
 
@@ -309,67 +328,77 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
 }
 
 void CLI::print_usage() {
-    std::cout << "Usage: " << program_name << " [OPTIONS] [FILE]\n"
-              << "\n"
-              << "OPTIONS:\n"
-              << "  -h, --help                  Show this help message\n"
-              << "  -v, --version               Show version information\n"
-              << "  -e, --eval EXPR             Evaluate expression\n"
-              << "  -f, --file FILE             Execute WAL program file\n"
-              << "  -l, --load FILE             Load waveform trace file (for analysis)\n"
-              << "\n"
-              << "FAST MODE (optimized HD/HW calculation with CSV output):\n"
-              << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
-              << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
-              << "  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)\n"
-              << "\nVERBS (equivalent to the flags below; either spelling works):\n"
-              << "  wal inspect TRACE [--json]          what is in a trace\n"
-              << "  wal lint SCRIPT.wal [--json]        check a script without running it\n"
-              << "  wal eval EXPR [-l TRACE] [--json]   evaluate an expression\n"
-              << "  wal extract weight|distance|values|list TRACE\n"
-              << "        [--scope S | --signals FILE] -o OUT.csv\n"
-              << "\nAGENT / SCRIPTING MODES (machine-readable):\n"
-              << "  --inspect FILE                      Describe a trace as JSON\n"
-              << "                                      (signals, widths, scopes, length)\n"
-              << "  --lint FILE.wal                     Check a script without running it;\n"
-              << "                                      exits non-zero if it will not run\n"
-              << "  --json                              Emit -e results and --lint as JSON\n"
-              << "  --compact-json                      As --json, on one line\n"
-              << "  --compat-types                      Upstream's permissive type coercion\n"
-              << "                                      (default: types stay separate)\n"
-              << "  --bigint                            Arbitrary-precision integers\n"
-              << "                                      (default is 64-bit, which is faster)\n"
-              << "  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)\n"
-              << "  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)\n"
-              << "  --fast-hw-signals LIST FILE -o OUT  Hamming Weight (signal list)\n"
-              << "  --fast-values-signals LIST FILE -o OUT  Raw value-change rows (timestamp,index,value)\n"
-              << "                                      for the listed signals (1-bit AND buses)\n"
-              << "  --fast-list FILE -o OUT             List signals (width name) + a # timescale header\n"
-              << "\n"
-              << "INPUT MODES:\n"
-              << "  --pipe FILE                 Read trace data from named pipe file\n"
-              << "  --stdin                     Read trace data from standard input\n"
-              << "\n"
-              << "STREAMING OPTIONS:\n"
-              << "  --streaming                 Enable streaming (auto-detection for files > 100 MB)\n"
-              << "  --no-streaming              Disable streaming (always use full-load)\n"
-              << "  --chunk-size SIZE           Set chunk size in MB (default: 100)\n"
-              << "  --cache-capacity NUM        Set cache entries per signal (default: 1000)\n"
-              << "  --cache-stats               Show cache statistics after loading trace\n"
-              << "\n"
-              << "EXAMPLES:\n"
-              << "  " << program_name << "                              Start interactive REPL\n"
-              << "  " << program_name << " program.wal                    Execute program\n"
-              << "  " << program_name << " -e '(+ 1 2)'                  Evaluate expression\n"
-              << "  " << program_name << " -l signal.dat                 Load and analyze trace\n"
-              << "  " << program_name << " -l huge.vcd --streaming       Load with streaming enabled\n"
-              << "  " << program_name << " -l huge.vcd --no-streaming    Load without streaming\n"
-              << "  " << program_name << " -l file.csv --chunk-size 50   Load with 50 MB chunks\n"
-              << "  " << program_name << " -l file.vcd --cache-stats     Show cache statistics\n"
-              << "  " << program_name << " --pipe /tmp/trace.fifo        Read from named pipe\n"
-              << "  " << program_name << " --stdin                       Read from standard input\n"
-              << "  simulator | " << program_name << " --stdin            Pipe simulation output directly\n"
-              << "\n";
+    std::cout <<
+"Usage: " << program_name << R"( <verb> [options]        (recommended)
+       )" << program_name << R"( [flags] [FILE]          (equivalent; what the paper documents)
+
+VERBS
+  inspect TRACE                     what is in a trace, as JSON
+  lint SCRIPT.wal                   check a script without running it
+  eval EXPR [EXPR...]               evaluate expressions
+  run SCRIPT.wal                    run a script
+  repl                              start the interactive REPL
+  extract KIND TRACE -o OUT.csv     one pass over a trace, CSV out
+        KIND = weight | distance | values | names
+        [--scope SCOPE]             only signals under a hierarchy prefix
+        [--signals FILE]            only the signals named in FILE
+
+  Common to all verbs: -l TRACE, --json, --compact-json
+
+EXAMPLES
+  )" << program_name << R"( inspect trace.vcd --json
+  )" << program_name << R"( extract weight trace.vcd --scope top.core -o activity.csv
+  )" << program_name << R"( eval '(count (rising tb.clk))' -l trace.vcd
+  )" << program_name << R"( lint analysis.wal
+
+GENERAL FLAGS
+  -h, --help                        this message
+  -v, --version                     version information
+  -e, --eval EXPR                   evaluate an expression
+  -f, --file FILE                   run a WAL script
+  -l, --load FILE                   load a trace
+
+OUTPUT
+  --json                            results and findings as JSON, in the
+                                    standard envelope (ok / data / error)
+  --compact-json                    the same, on one line
+
+LANGUAGE
+  --compat-types                    upstream's permissive type coercion
+                                    (default: types stay separate)
+  --bigint                          arbitrary-precision integers
+                                    (default: 64-bit, which is faster)
+
+EXTRACTION FLAGS  (equivalent to `extract`; these are what the published
+                   artifact scripts use, and they are not going away)
+  --fast-hw-all FILE -o OUT             = extract weight FILE
+  --fast-hw-scope SCOPE FILE -o OUT     = extract weight FILE --scope SCOPE
+  --fast-hw-signals LIST FILE -o OUT    = extract weight FILE --signals LIST
+  --fast-hd-all FILE -o OUT             = extract distance FILE
+  --fast-hd-scope SCOPE FILE -o OUT     = extract distance FILE --scope SCOPE
+  --fast-hd-signals LIST FILE -o OUT    = extract distance FILE --signals LIST
+  --fast-values-signals LIST FILE -o OUT = extract values FILE --signals LIST
+  --fast-list FILE -o OUT               = extract names FILE
+
+  weight   = Hamming weight: bits set at each timestamp
+  distance = Hamming distance: bits changed since the previous timestamp
+  values   = the decoded value of each listed signal, when it changes
+  names    = every signal as "width name", plus a # timescale header
+
+AGENT MODES (flag spelling)
+  --inspect FILE                    = inspect FILE
+  --lint FILE.wal                   = lint FILE.wal
+
+INPUT MODES
+  --pipe FILE                       read trace data from a named pipe
+  --stdin                           read trace data from standard input
+
+STREAMING
+  --streaming                       stream the trace instead of loading it
+  --no-streaming                    always full-load (the default)
+  --chunk-size SIZE                 chunk size in MB (default: 100)
+  --cache-capacity NUM              cache entries per signal (default: 1000)
+)";
 }
 
 void CLI::print_help() {
