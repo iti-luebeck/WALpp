@@ -134,8 +134,12 @@ public:
             }
 
             try {
-                eval.get_traces()->step(steps, trace_id);
-                return Value(static_cast<int64_t>(steps));
+                // Returns whether the step actually happened, as upstream does: true
+                // while the cursor advances, false once a trace cannot. It used to
+                // return the step count, which is truthy for the usual `(step 1)`, so
+                // `(while (step 1) ...)` never terminated.
+                std::string ended = eval.get_traces()->step(steps, trace_id);
+                return Value(ended.empty());
             } catch (const std::exception& e) {
                 throw EvalError("step: " + std::string(e.what()));
             }
@@ -267,8 +271,14 @@ public:
                 // the interpreter's `^`, the fast paths' and upstream WAL's `.`, and an
                 // upstream `tid^path`. Falls through to the name as written, so an
                 // unresolvable name still yields the trace layer's own error.
-                std::string resolved = signal_name;
-                resolve_signal_name(eval.get_traces(), signal_name, resolved);
+                // An alias may stand in for the path, which is what makes the
+                // parser's `clk@-1` desugaring work on an aliased name.
+                std::string lookup = signal_name;
+                if (eval.has_alias(lookup)) {
+                    lookup = eval.get_aliases().at(lookup);
+                }
+                std::string resolved = lookup;
+                resolve_signal_name(eval.get_traces(), lookup, resolved);
                 return eval.get_traces()->signal_value(resolved, offset);
             } catch (const std::exception& e) {
                 throw EvalError("get-signal: " + std::string(e.what()));

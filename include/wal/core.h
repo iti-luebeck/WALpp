@@ -135,6 +135,18 @@ public:
     Value eval_str(const std::string& code);
 
     /**
+     * @brief Evaluate every top-level form in @p code, in order.
+     *
+     * eval_str parses a single expression, so input holding several top-level forms
+     * silently evaluated only the first. That is what a script file, stdin and a pipe
+     * all contain, so `wal -f script.wal` ran one form and stopped without any error.
+     *
+     * @param code source with zero or more top-level forms
+     * @return the value of the last form, or nil if there were none
+     */
+    Value eval_program(const std::string& code);
+
+    /**
      * Evaluate a parsed WAL expression
      * 
      * @param expr The already-parsed expression

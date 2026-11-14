@@ -2,6 +2,7 @@
 
 #include "ast.h"
 #include "trace/trace_container.h"
+#include "trace/trace.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -84,6 +85,58 @@ inline bool resolve_signal_name(const std::shared_ptr<TraceContainer>& traces,
         }
     }
     return false;
+}
+
+
+/**
+ * @brief Resolve one of WAL's special variables, such as INDEX or MAX-INDEX.
+ *
+ * `Trace::get_special_signal` has implemented these all along (INDEX, MAX-INDEX, TS,
+ * TRACE-NAME, TRACE-FILE, SIGNALS, SCOPES, VIRTUAL-SIGNALS), but nothing ever called
+ * it from the evaluator, so every one of them failed with *Undefined variable*. This
+ * connects the two.
+ *
+ * MAX-INDEX also closes a functional gap rather than only a compatibility one: there
+ * was no way at all to ask how long a trace is, so the timestamp count had to be
+ * inferred from `(length (hamming-weight-scope ...))`.
+ *
+ * With several traces loaded the first one answers, which matches the single-trace case
+ * every published WAL program assumes. Upstream qualifies these per trace id; that is
+ * left for the trace-id work rather than guessed at here.
+ *
+ * @return true if @p name is a special variable that resolved
+ */
+inline bool resolve_special_variable(const std::shared_ptr<TraceContainer>& traces,
+                                    const std::string& name,
+                                    Value& out) {
+    if (!traces || traces->empty()) {
+        return false;
+    }
+    // Only the names Trace::get_special_signal actually implements. The header also
+    // declares SIGNALS-NO-ALIAS, LOCAL-SIGNALS and LOCAL-SCOPES, which it does not
+    // implement; LOCAL-* need a notion of current scope, so they belong with the scope
+    // work rather than being faked here.
+    if (name != Trace::INDEX && name != Trace::MAX_INDEX &&
+        name != Trace::TIMESTAMP && name != Trace::TRACE_NAME &&
+        name != Trace::TRACE_FILE && name != Trace::SIGNALS &&
+        name != Trace::SCOPES && name != Trace::VIRTUAL_SIGNALS) {
+        return false;
+    }
+
+    auto ids = traces->get_trace_ids();
+    if (ids.empty()) {
+        return false;
+    }
+    auto trace = traces->get_trace(ids.front());
+    if (!trace) {
+        return false;
+    }
+    try {
+        out = trace->get_special_signal(name);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 } // namespace wal

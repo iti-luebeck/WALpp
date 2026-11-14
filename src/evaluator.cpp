@@ -18,6 +18,7 @@
 #include "wal/operators/data_export_operators.h"
 #include "wal/operators/visualization_operators.h"
 #include "wal/operators/trace_management_operators.h"
+#include "wal/operators/wal_compat_operators.h"
 #include "wal/operators/hamming_operators.h"
 #include <cmath>
 #include <algorithm>
@@ -125,11 +126,21 @@ Value SEval::eval(const Value& expr) {
         try {
             return current_environment->get(name);
         } catch (const EvalError&) {
+            // WAL's special variables (INDEX, MAX-INDEX, TS, SIGNALS, SCOPES, ...)
+            Value special;
+            if (resolve_special_variable(traces, name, special)) {
+                return special;
+            }
+            // An alias stands for a signal path: (alias clk "tb.clk") then clk.
+            std::string lookup = name;
+            if (has_alias(name)) {
+                lookup = aliases.at(name);
+            }
             std::string resolved;
-            if (resolve_signal_name(traces, name, resolved)) {
+            if (resolve_signal_name(traces, lookup, resolved)) {
                 return traces->signal_value(resolved, 0);
             }
-            throw;  // not a variable and not a signal: report the original error
+            throw;  // not a variable, a special, an alias or a signal
         }
     }
     
@@ -144,8 +155,19 @@ Value SEval::eval(const Value& expr) {
         // Get operator name
         const Value& operator_form = (*list)[0];
         
+        // The head of a form is usually a symbol, but it may be any expression that
+        // produces a callable, which is how an inline lambda is applied:
+        //   ((fn [x] (* x 2)) 21) => 42
+        // WAL++ rejected that outright, so a lambda had to be given a name through
+        // define before it could be called.
         if (!operator_form.is_symbol()) {
-            throw EvalError("Operator must be a symbol");
+            Value callable = eval(operator_form);
+            if (callable.is_closure()) {
+                std::vector<Value> call_args(list->begin() + 1, list->end());
+                return eval_closure(callable.to_closure(), eval_args(call_args));
+            }
+            throw EvalError("Operator must be a symbol or an expression producing a "
+                            "function, got " + operator_form.to_string_repr());
         }
         
         std::string op_name = operator_form.to_symbol()->get_name();
@@ -174,11 +196,23 @@ Value SEval::eval(const Value& expr) {
             return Value(nullptr);
         }
         
-        if (op_name == "lambda") {
-            if (args.size() != 2) {
-                throw EvalError("lambda requires exactly 2 arguments");
+        // `fn` is upstream WAL's spelling of the same form.
+        if (op_name == "lambda" || op_name == "fn") {
+            if (args.size() < 2) {
+                throw EvalError(op_name + " requires parameters and a body");
             }
-            auto closure = std::make_shared<Closure>(current_environment, args[0], args[1]);
+            // A body of several forms is wrapped in an implicit begin, as upstream
+            // allows: (fn [x] (print x) (* x 2)).
+            Value body = args[1];
+            if (args.size() > 2) {
+                std::vector<Value> seq;
+                seq.push_back(Value(std::make_shared<Symbol>("begin")));
+                for (size_t i = 1; i < args.size(); ++i) {
+                    seq.push_back(args[i]);
+                }
+                body = Value(std::make_shared<WList>(seq));
+            }
+            auto closure = std::make_shared<Closure>(current_environment, args[0], body);
             return Value(closure);
         }
         
@@ -206,7 +240,8 @@ Value SEval::eval(const Value& expr) {
             return Value(nullptr);
         }
         
-        if (op_name == "begin") {
+        // `do` is upstream WAL's spelling of the same form.
+        if (op_name == "begin" || op_name == "do") {
             if (args.empty()) {
                 return Value(nullptr);
             }
@@ -278,6 +313,11 @@ void SEval::initialize_builtins() {
     
     // Register Phase 8 - Trace File Management
     wal::operators::TraceManagementOperators::register_all(builtin_operators);
+
+    // Upstream WAL compatibility: control flow, predicates, conversions, printf,
+    // aliases. Registered last so these names are the ones that win if an earlier
+    // set happens to define the same spelling.
+    wal::operators::WalCompatOperators::register_all(builtin_operators);
 }
 
 } // namespace wal

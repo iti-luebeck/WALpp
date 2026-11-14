@@ -259,13 +259,15 @@ int main() {
         assert(result.is_int() && result.to_int() == 5);
         std::cout << "✓ Set trace index to timestep 5\n";
         
+        // `step` returns whether it advanced, not how far: see the note in
+        // test_trace_operators.cpp. Both of these are well inside this trace.
         result = wal->eval_str("(step 1)");
-        assert(result.is_int());
-        std::cout << "✓ Step forward by 1: " << result.to_int() << "\n";
-        
+        assert(result.is_bool() && result.to_bool());
+        std::cout << "✓ Step forward by 1 succeeded\n";
+
         result = wal->eval_str("(step 5)");
-        assert(result.is_int());
-        std::cout << "✓ Step forward by 5: " << result.to_int() << "\n";
+        assert(result.is_bool() && result.to_bool());
+        std::cout << "✓ Step forward by 5 succeeded\n";
         
         // =====================================================================
         // Phase 7: Data-Driven Analysis Scripts

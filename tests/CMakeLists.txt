@@ -105,7 +105,7 @@ add_test(NAME test_writer_roundtrip COMMAND test_writer_roundtrip WORKING_DIRECT
 # ratchet rather than a pass/fail: it fails only if FEWER than MIN_PASS upstream
 # tests pass. Raise MIN_PASS as parity work lands.
 if(BUILD_PYTHON_MODULE)
-    set(WALPP_CONFORMANCE_MIN_PASS 22 CACHE STRING
+    set(WALPP_CONFORMANCE_MIN_PASS 37 CACHE STRING
         "Minimum number of upstream WAL tests that must pass")
     add_test(
         NAME test_upstream_conformance

@@ -38,8 +38,10 @@ std::string Parser::read_until_delimiter() {
     std::string result;
     while (position < input.length()) {
         char c = input[position];
-        if (std::isspace(c) || c == '(' || c == ')' || c == '\'' || 
-            c == '`' || c == ',' || c == ';') {
+        // `[` and `]` delimit lists too: upstream writes binding and parameter lists
+        // that way, as in (let ([x 5]) x) and (fn [x] x).
+        if (std::isspace(c) || c == '(' || c == ')' || c == '[' || c == ']' ||
+            c == '\'' || c == '`' || c == ',' || c == ';') {
             break;
         }
         result += next();
@@ -192,10 +194,15 @@ Value Parser::parse_atom() {
 Value Parser::parse_list() {
     skip_whitespace();
     
-    if (peek() != '(') {
-        throw EvalError("Expected '(' to start list");
+    // A list may be written with parentheses or brackets; upstream uses brackets for
+    // binding and parameter lists, as in (let ([x 5]) x) and (fn [x] x). The closing
+    // delimiter must match the opening one.
+    const char opener = peek();
+    if (opener != '(' && opener != '[') {
+        throw EvalError("Expected '(' or '[' to start list");
     }
-    next(); // consume '('
+    const char closer = (opener == '[') ? ']' : ')';
+    next(); // consume the opening delimiter
 
     std::vector<Value> elements;
     
@@ -209,16 +216,21 @@ Value Parser::parse_list() {
         }
         
         if (position >= input.length()) {
-            throw EvalError("Unterminated list: expected ')' before end of input");
+            throw EvalError(std::string("Unterminated list: expected '") + closer +
+                            "' before end of input");
         }
 
-        if (peek() == ')') {
-            next(); // consume ')'
+        if (peek() == closer) {
+            next(); // consume the matching closing delimiter
             break;
+        }
+        if (peek() == ')' || peek() == ']') {
+            throw EvalError(std::string("Mismatched list delimiter: expected '") +
+                            closer + "' but found '" + peek() + "'");
         }
 
         // Parse nested expression
-        if (peek() == '(') {
+        if (peek() == '(' || peek() == '[') {
             elements.push_back(parse_list());
         } else if (peek() == '\'') {
             elements.push_back(parse_quoted("quote"));
@@ -243,7 +255,7 @@ Value Parser::parse_quoted(const std::string& quote_type) {
     Value quoted_expr;
     
     skip_whitespace();
-    if (peek() == '(') {
+    if (peek() == '(' || peek() == '[') {
         quoted_expr = parse_list();
     } else {
         quoted_expr = parse_atom();
@@ -273,7 +285,7 @@ Value Parser::parse_one() {
 
     char c = peek();
     
-    if (c == '(') {
+    if (c == '(' || c == '[') {
         return parse_list();
     } else if (c == '\'') {
         return parse_quoted("quote");

@@ -45,20 +45,24 @@ int main() {
         assert(result.is_list());
         std::cout << "✓ (get-index) works when no traces loaded\n";
         
-        wal::print_section("Trace Stepping (Stub)");
-        
-        // step - Should work even without traces (stub)
+        wal::print_section("Trace Stepping");
+
+        // `step` reports WHETHER it advanced, not how far. It used to echo its
+        // argument, which is truthy for the usual (step 1), so (while (step 1) ...)
+        // could never terminate. These assertions previously encoded that stub
+        // contract; they now check the real one. With no traces loaded there is
+        // nothing to run off the end of, so stepping vacuously succeeds.
         result = wal->eval_str("(step 1)");
-        assert(result.is_int() && result.to_int() == 1);
-        std::cout << "✓ (step 1) = 1 (stub mode)\n";
-        
+        assert(result.is_bool() && result.to_bool() == true);
+        std::cout << "✓ (step 1) is true with no traces loaded\n";
+
         result = wal->eval_str("(step 5)");
-        assert(result.is_int() && result.to_int() == 5);
-        std::cout << "✓ (step 5) = 5 (stub mode)\n";
-        
+        assert(result.is_bool() && result.to_bool() == true);
+        std::cout << "✓ (step 5) is true with no traces loaded\n";
+
         result = wal->eval_str("(step -3)");
-        assert(result.is_int() && result.to_int() == -3);
-        std::cout << "✓ (step -3) = -3 (negative stepping)\n";
+        assert(result.is_bool() && result.to_bool() == true);
+        std::cout << "✓ (step -3) is true with no traces loaded\n";
         
         wal::print_section("Operator Integration");
         
@@ -78,15 +82,16 @@ int main() {
         assert(result.is_list());
         auto list = result.to_list();
         assert(list->size() == 3);
-        assert((*list)[0].to_int() == 1);
-        assert((*list)[1].to_int() == 2);
-        assert((*list)[2].to_int() == 3);
+        assert((*list)[0].is_bool() && (*list)[0].to_bool());
+        assert((*list)[1].is_bool() && (*list)[1].to_bool());
+        assert((*list)[2].is_bool() && (*list)[2].to_bool());
         std::cout << "✓ (list (step 1) (step 2) (step 3)) creates list\n";
-        
-        // Test with conditionals
-        result = wal->eval_str("(if (>= (step 5) 3) \"large-step\" \"small-step\")");
-        assert(result.is_string() && result.to_string() == "large-step");
-        std::cout << "✓ Conditional with step operator works\n";
+
+        // Conditioning on whether the step happened, which is what the flag is for.
+        // This used to compare the step count numerically, which no longer type-checks.
+        result = wal->eval_str("(if (step 5) \"stepped\" \"at-end\")");
+        assert(result.is_string() && result.to_string() == "stepped");
+        std::cout << "✓ Conditional on the step flag works\n";
         
         // Test set-index (stub)
         result = wal->eval_str("(set-index 42)");
@@ -145,7 +150,7 @@ int main() {
         // Test with lambda
         wal->eval_str("(define make-step (lambda (n) (step n)))");
         result = wal->eval_str("(make-step 7)");
-        assert(result.is_int() && result.to_int() == 7);
+        assert(result.is_bool() && result.to_bool() == true);
         std::cout << "✓ Lambda with step operator works\n";
         
         // Test with map

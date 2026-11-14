@@ -52,7 +52,10 @@ int REPL::run() {
 
 bool REPL::execute(const std::string& expr) {
     try {
-        Value result = wal_instance->eval_str(expr);
+        // eval_program, not eval_str: the input may hold several top-level forms,
+        // which is the normal shape of a script file, stdin or a pipe. eval_str
+        // parses one expression, so everything after the first was silently ignored.
+        Value result = wal_instance->eval_program(expr);
         print_output(result);
         return true;
     } catch (const std::exception& e) {

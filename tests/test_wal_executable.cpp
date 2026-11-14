@@ -796,6 +796,180 @@ void test_zero_is_false(ExecutableTestSuite& suite, const std::string& exe_path)
     suite.add_result(result);
 }
 
+// Test 17: upstream WAL compatibility forms.
+// Semantics pinned by running each against upstream ics-jku/wal 0.9.1.
+void test_wal_compat_forms(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "upstream WAL forms: control flow, predicates, printf, alias";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        struct Case { const char* expr; const char* want; };
+        const Case cases[] = {
+            {"(when 1 42)", "42"},
+            {"(unless 0 42)", "42"},
+            {"(do 1 2 3)", "3"},
+            {"(let ([x 5] [y 2]) (+ x y))", "7"},
+            {"(cond ((= 1 2) 7) (else 9))", "9"},
+            {"(case 2 (1 11) (2 22))", "22"},
+            // An inline lambda could not be applied at all before: the evaluator
+            // required the head of a form to be a symbol.
+            {"((fn [x] (* x 2)) 21)", "42"},
+            {"((lambda (x) (* x 3)) 14)", "42"},
+            {"(mod 7 3)", "1"},
+            {"(average (list 1 2 3))", "2"},
+            {"(second (list 1 2 3))", "2"},
+            {"(last (list 1 2 3))", "3"},
+            {"(in 2 (list 1 2 3))", "true"},
+            {"(int? 1)", "true"},
+            {"(list? (list 1))", "true"},
+            {"(atom? 1)", "true"},
+            {"(atom? (list 1))", "false"},
+            {"(defined? nope)", "false"},
+            {"(string->int \"42\")", "42"},
+            {"(int->string 42)", "42"},
+            {"(convert/bin 5)", "101"},
+        };
+        for (const auto& c : cases) {
+            auto [rc, out] = run_command(exe_path + " -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should give " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+
+        // printf, including flags, width and precision
+        auto [rc1, out1] = run_command(
+            exe_path + " -e '(printf \"n=%d hex=%04x s=%s f=%.2f%%\\n\" 255 255 \"ok\" 3.14159)' 2>&1");
+        if (out1.find("n=255 hex=00ff s=ok f=3.14%") == std::string::npos) {
+            result.passed = false;
+            result.message += "printf formatting wrong (got: '" + out1 + "'); ";
+        }
+
+        if (result.passed) result.message = "all upstream forms behave as upstream does";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 18: a script file runs every top-level form, and the agentic-WAL paper's
+// Listing 1 runs unmodified.
+// Regression: Wal::eval_str parses ONE expression, and -f/--stdin/--pipe all went
+// through it, so a script silently executed only its first form and stopped.
+void test_script_runs_all_forms(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "-f runs every top-level form; paper's Listing 1 runs";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+
+        std::string script = get_temp_file("multiform.wal");
+        {
+            std::ofstream f(script);
+            f << "(define x 5)\n";
+            f << "(printf \"one x=%d\\n\" x)\n";
+            f << "(printf \"two\\n\")\n";
+        }
+        auto [rc, out] = run_command(exe_path + " -f " + script + " 2>&1");
+        if (out.find("one x=5") == std::string::npos || out.find("two") == std::string::npos) {
+            result.passed = false;
+            result.message += "not every top-level form ran (got: '" + out + "'); ";
+        }
+        cleanup_file(script);
+
+        // Listing 1 of "Agentic Programmable Waveform Analysis" (Roithmayr and
+        // Grosse, DVCon Europe 2026), structure unchanged: alias, while over step,
+        // when, an @-1 offset and printf. Upstream prints 40 for this file too.
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (file_exists(vcd)) {
+            std::string listing = get_temp_file("listing1.wal");
+            {
+                std::ofstream f(listing);
+                f << "(alias clk \"tb.clk\")\n";
+                f << "(define cnt 0)\n";
+                f << "(while (step 1)\n";
+                f << "  (when (&& clk (! clk@-1))\n";
+                f << "    (set! cnt (+ cnt 1))))\n";
+                f << "(printf \"Total rising edges: %d\\n\" cnt)\n";
+            }
+            auto [rc2, out2] = run_command(exe_path + " -l " + vcd + " -f " + listing + " 2>&1");
+            if (out2.find("Total rising edges: 40") == std::string::npos) {
+                result.passed = false;
+                result.message += "Listing 1 should report 40 (got: '" + out2 + "'); ";
+            }
+            cleanup_file(listing);
+        }
+
+        if (result.passed) result.message = "multi-form scripts and Listing 1 both run";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 19: WAL's special variables resolve.
+// Regression: Trace::get_special_signal implemented INDEX, MAX-INDEX, TS, SIGNALS,
+// SCOPES and TRACE-NAME all along, but nothing called it from the evaluator, so each
+// failed with "Undefined variable". MAX-INDEX also closed a real gap: there was no
+// way to ask how long a trace is.
+void test_special_variables(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "special variables INDEX, MAX-INDEX, TS, SIGNALS, SCOPES";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found";
+        } else {
+            result.passed = true;
+            struct Case { const char* expr; const char* want; };
+            const Case cases[] = {
+                {"INDEX", "0"},
+                {"MAX-INDEX", "80"},          // 81 timestamps, upstream agrees
+                {"(+ 1 MAX-INDEX)", "81"},
+                {"TS", "0"},
+                {"(length SIGNALS)", "7"},
+                {"(length SCOPES)", "2"},     // tb and tb.dut
+                {"(begin (set-index 40) INDEX)", "40"},
+            };
+            for (const auto& c : cases) {
+                auto [rc, out] = run_command(
+                    exe_path + " -l " + vcd + " -e '" + c.expr + "' 2>&1");
+                if (out.find(c.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(c.expr) + " should be " + c.want +
+                                      " (got: '" + out + "'); ";
+                }
+            }
+            if (result.passed) result.message = "special variables resolve from the trace";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -832,7 +1006,7 @@ int main(int argc, char* argv[]) {
     // Create test suite
     ExecutableTestSuite suite("WAL Executable Integration Tests", exe_path);
     
-    std::cout << "\nRunning " << 16 << " test cases...\n";
+    std::cout << "\nRunning " << 19 << " test cases...\n";
     std::cout << std::string(80, '-') << "\n";
     
     // Run all tests
@@ -852,6 +1026,9 @@ int main(int argc, char* argv[]) {
     test_multiple_eval_flags(suite, exe_path);
     test_index_navigation(suite, exe_path);
     test_zero_is_false(suite, exe_path);
+    test_wal_compat_forms(suite, exe_path);
+    test_script_runs_all_forms(suite, exe_path);
+    test_special_variables(suite, exe_path);
     
     // Print results
     suite.print_summary();

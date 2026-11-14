@@ -29,6 +29,16 @@ Value Wal::eval_str(const std::string& code) {
     return eval_context->eval(expr);
 }
 
+Value Wal::eval_program(const std::string& code) {
+    Parser parser;
+    std::vector<Value> forms = parser.parse_program(code);
+    Value result = Value(nullptr);
+    for (const auto& form : forms) {
+        result = eval_context->eval(form);
+    }
+    return result;
+}
+
 Value Wal::eval(const Value& expr) {
     return eval_context->eval(expr);
 }

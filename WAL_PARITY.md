@@ -321,6 +321,97 @@ differing one returns a plausible wrong answer.
   `#t`/`#f`, the `-e` result printer renders `true`/`false`. Minor, but it is the same
   two-printers problem as the list-echo defect.
 
+## Tier 1 and most of Tier 2 are done
+
+Conformance went 18 -> 22 -> 37 of 77 upstream tests. All 22 CTest tests pass.
+
+### A correctness bug found on the way: zero was true
+
+`Value::is_truthy` returned true for everything that was not nil or a bool, so the
+integer 0 was true. Signal values are integers, so this was not a nicety:
+
+```
+(if 0 THEN ELSE) -> THEN      (! 0) -> false
+(&& 1 0)         -> true      (|| 0 0) -> true
+```
+
+and `(if tb.clk 'HIGH 'LOW)` answered `'HIGH` with the clock low. The damage was
+silent: counting rising edges the idiomatic way, `(&& tb.clk (! tb.clk@-1))`, returned
+**0** instead of 40, while the explicit `(&& (= 1 tb.clk) (= 0 tb.clk@-1))` returned 40.
+Rules pinned against upstream: 0, 0.0, "", () and #f are false.
+
+### Three more "built but not connected" cases
+
+The pattern from the `set-index` stub and the `-e` printer kept repeating:
+
+- **Special variables.** `Trace::get_special_signal` already implemented `INDEX`,
+  `MAX-INDEX`, `TS`, `SIGNALS`, `SCOPES`, `TRACE-NAME` and `TRACE-FILE`. Nothing called
+  it from the evaluator, so all of them errored. `MAX-INDEX` also closes a real gap:
+  there was no way to ask how long a trace is.
+- **`step`'s boundary.** `Trace::step` returned true/false correctly;
+  `TraceContainer::step` called it, discarded the bool and returned `""`, so `step` was
+  always truthy and `(while (step 1) ...)` could not terminate.
+- **Multi-form scripts.** `Wal::eval_str` parses *one* expression, and `-f`, `--stdin`
+  and `--pipe` all went through it, so a script file silently ran its first form and
+  stopped. `Parser::parse_program`, which returns every form, already existed and was
+  unused. Added `Wal::eval_program` and pointed the REPL at it.
+
+### Added
+
+- Control flow: `when`, `unless`, `while`, `cond`, `case`, `let`, plus `do` and `fn` as
+  spellings of `begin` and `lambda`. A multi-form lambda body is wrapped in an implicit
+  `begin`, as upstream allows.
+- `printf` with full `%[flags][width][.precision]conv` specs.
+- `alias` / `unalias`, consulted by both symbol resolution and `get-signal`, so an
+  aliased name works with an `@` offset too.
+- Predicates `int? float? string? symbol? list? bool? nil? atom? defined?`.
+- Conversions `string->int`, `int->string`, `symbol->string`, `string->symbol`,
+  `convert/bin`.
+- `mod`, `average`, `second`, `last`, `in`, `exit`.
+- `[...]` as list delimiters, which upstream uses for binding and parameter lists.
+- **Inline application**: `((fn [x] (* x 2)) 21)`. The evaluator required the head of a
+  form to be a symbol, so a lambda had to be named with `define` before it could be
+  called. That was a pre-existing limitation, not a parity item.
+
+### The paper's Listing 1 now runs unmodified
+
+```lisp
+(alias clk "tb.clk")
+(define cnt 0)
+(while (step 1)
+  (when (&& clk (! clk@-1))
+    (set! cnt (+ cnt 1))))
+(printf "Total rising edges: %d\n" cnt)
+```
+
+`wal -l counter.vcd -f listing1.wal` prints `Total rising edges: 40`, and upstream
+prints the same for the same file.
+
+### Tests whose expectations were wrong
+
+`test_trace_operators.cpp` and `test_trace_script_application.cpp` asserted
+`(step n) == n` under a section named "Trace Stepping (Stub)". They encoded the stub
+contract, so they were updated to the real one rather than worked around.
+
+## What is left
+
+- **Arrays** (6 failures): `array`, `seta`, `geta`, `dela`, `mapa` need a new Value kind.
+- **Scopes and groups** (6): `in-scope`, `groups`, `in-group`, `resolve-scope`,
+  `LOCAL-SCOPES`. `SEval` already carries unused `current_scope` and `current_group`
+  members, and the trace side parses `scope_names`.
+- **`whenever`, `find`, `fold/signal`, `symbol-add`, `set`** (6).
+- **Macros**: `defmacro`, `macroexpand`, `gensym`. The parser reads quasiquote and
+  unquote and `SEval` has an unused `macros` map, but nothing expands.
+- **Separator spelling** (2): `SIGNALS` and `SCOPES` return `^`-joined names where
+  upstream returns dotted ones. Part of the open `^` decision.
+- **Semantic divergences** (4): `(+ 1 "hi")` concatenates upstream and raises here;
+  `!=` is n-ary upstream and binary here; `in` differs on argument count; one
+  int-vs-string mismatch.
+- **Known limitation**: a special variable is not reachable through `get-signal`, so
+  `TS@-1` fails. Special variables resolve only as bare symbols.
+- 2 failures are harness artifacts: the `print` test cannot capture C++ stdout, and two
+  tests need upstream's `Operator` enum.
+
 ## Branch state
 
 `github-release` is merged in, so this branch carries both halves: the signal-access

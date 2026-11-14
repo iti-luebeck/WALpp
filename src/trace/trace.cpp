@@ -29,6 +29,11 @@ Value Trace::get_special_signal(const std::string& name) {
         return Value(current_index);
     } else if (name == MAX_INDEX) {
         return Value(max_index);
+    } else if (name == TIMESTAMP) {
+        // The simulation time at the current index, as opposed to the index itself.
+        // The base class returns the index; readers that keep real timestamps
+        // override get_timestamp().
+        return Value(static_cast<int64_t>(get_timestamp()));
     } else if (name == TRACE_NAME) {
         return Value(std::make_shared<Symbol>(tid));
     } else if (name == TRACE_FILE) {

@@ -122,21 +122,30 @@ std::string TraceContainer::step(int steps, const std::string& tid) {
         return "";  // No traces loaded, silently succeed
     }
     
+    // Trace::step already reports whether it could advance; this layer used to call
+    // it and throw the bool away, returning "" unconditionally. That made `step`
+    // always look successful, so `(while (step 1) ...)`, the standard WAL iteration
+    // idiom, could never terminate. The tid of each trace that could not advance is
+    // returned instead, which is also how upstream reports it.
+    std::string ended;
+    auto note = [&ended](const std::string& trace_id) {
+        if (!ended.empty()) ended += " ";
+        ended += trace_id;
+    };
+
     if (!tid.empty()) {
-        // Step specific trace
         auto it = traces.find(tid);
         if (it != traces.end() && it->second) {
-            it->second->step(steps);
+            if (!it->second->step(steps)) note(it->first);
         }
     } else {
-        // Step all traces
-        for (auto& [_, trace] : traces) {
+        for (auto& [trace_id, trace] : traces) {
             if (trace) {
-                trace->step(steps);
+                if (!trace->step(steps)) note(trace_id);
             }
         }
     }
-    return "";
+    return ended;
 }
 
 std::string TraceContainer::set_index(int idx, const std::string& tid) {
