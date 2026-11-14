@@ -324,4 +324,6 @@ compute it outside would move gigabytes to produce eight bytes.
 
 - [Embedding WAL++ in a C++ program](cpp-api.md) for the interpreter-level API
 - [Scaling to full-core traces](scaling-extraction.md) for what the built-in modes cost
+- [Generated API reference](../../api/index.md) for the extraction reader's own types,
+  under `fast_vcd`
 - `src/fast/streaming_ops.cpp` in this repository for the kernels themselves

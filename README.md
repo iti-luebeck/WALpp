@@ -45,6 +45,12 @@ The full documentation is in [`docs/`](docs/INDEX.md).
 - [Command-line reference](docs/reference/cli.md)
 - [Python API](docs/reference/python-api.md)
 - [Compatibility with upstream WAL](docs/reference/wal-compatibility.md) - what matches, what differs and why
+- [C++ API quick reference](docs/API_QUICK_REFERENCE.md) - entry points, with code
+
+**API**
+
+- [Generated API reference](https://www.iti.uni-luebeck.de/docs/walpp/api/) - every
+  type and member, generated from the headers by doxide
 
 ---
 

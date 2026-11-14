@@ -392,5 +392,7 @@ because the parser consults them and the parser is used in several places.
 ## See also
 
 - [Writing your own extraction tool](writing-fast-tools.md) for the single-pass path
-- [API quick reference](../API_QUICK_REFERENCE.md) for more entry points
+- [C++ API quick reference](../API_QUICK_REFERENCE.md) for more entry points
+- [Generated API reference](../../api/index.md) for every type and member, from the
+  headers: `Value`, `Environment`, `UserOperator` and the rest
 - [Python API](../reference/python-api.md) if scripting suits better

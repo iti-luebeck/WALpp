@@ -48,7 +48,7 @@ build against an installed WAL++ the way a consumer would.
 ### Driving WAL++ from an agent
 
 The repository ships a Claude skill at
-[`.claude/skills/walpp-waveform-analysis/`](../.claude/skills/walpp-waveform-analysis/SKILL.md),
+[`.claude/skills/walpp-waveform-analysis/`](https://github.com/iti-luebeck/WALpp/blob/main/.claude/skills/walpp-waveform-analysis/SKILL.md),
 written from the WAL++ usage behind the paper. It carries its own `verify.sh`, which
 checks every claim it makes against the binary you have and is wired into CTest, so a
 change that makes the skill wrong fails the build instead of misleading an agent later.
@@ -74,16 +74,24 @@ in the [command-line reference](reference/cli.md#agent-and-scripting-modes).
 
 ## Generated API documentation
 
-The Doxygen build covers the C++ internals:
+[**API reference**](../api/index.md) is generated from the headers by
+[doxide](https://doxide.org) and covers the C++ internals:
 
 | | |
 |---|---|
-| [Core API](@ref Core) | `Wal`, `REPL`, `CLI` |
-| [AST types](@ref AST) | `Value`, `Symbol`, `WList`, `WArray`, `Closure`, `Environment` |
-| [Evaluator](@ref evaluator) | S-expression evaluation |
-| [Operator registry](@ref operator_registry) | How operators are registered and dispatched |
-| [Parser](@ref parser) | Reader and grammar |
-| [Trace system](@ref trace) | Waveform loading and signal access |
+| `wal` | The namespace index, everything below in one place |
+| `Value` | The tagged union every expression evaluates to |
+| `Symbol`, `WList` | The reader's output types |
+| `Closure`, `Macro` | User-defined functions and macros |
+| `Environment` | Scope chain and variable lookup |
+| `UserOperator` | The interface an operator of your own implements |
+| `fast_vcd` | The extraction reader, which bypasses the interpreter |
+
+Each of those is a page under the API tab.
+
+For the entry points you actually call from a program, with code, start at the
+[C++ API quick reference](API_QUICK_REFERENCE.md) and
+[Embedding WAL++ in a C++ program](guides/cpp-api.md).
 
 ## Two things worth knowing up front
 

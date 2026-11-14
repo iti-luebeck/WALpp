@@ -336,11 +336,24 @@ Result (Value)
 
 ## Documentation Resources
 
-- **Doxygen Guide**: See `docs/DOXYGEN_GUIDE.md`
-- **Build Docs**: `doxygen Doxyfile`
-- **View Docs**: `open docs/doxygen/html/index.html`
-- **Full API**: `@ref wal` namespace
-- **Defgroups**: See side navigation in generated HTML
+The full API, generated from the headers, is under the **API** tab, or at
+[`api/`](../api/index.md). Every type named on this page has an entry there with its
+members.
+
+It is built by [doxide](https://doxide.org), not Doxygen, from the `files:` globs in
+`doxide.yaml`:
+
+```bash
+make docs          # doxide build, then mkdocs build, into build/site
+open build/site/api/index.html
+```
+
+See also:
+
+- [Embedding WAL++ in a C++ program](guides/cpp-api.md) for the same entry points
+  with working code, lifetimes and threading
+- [Writing your own extraction tool](guides/writing-fast-tools.md) for the
+  non-interpreter path
 
 ---
 
