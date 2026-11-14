@@ -181,30 +181,28 @@ body.walpp-playground .md-content__inner > h1:first-child { margin-bottom: 0.3re
 
 /* "Run in playground" on the WAL snippets of the other documentation pages.
  * Only the snippets that actually evaluate get one; see
- * tools/mark-runnable-snippets.py. */
-.wal-run-btn {
+ * tools/mark-runnable-snippets.py.
+ *
+ * It is a Material md-code__button, so it inherits the size, spacing, hover and
+ * focus of the line-selection and copy buttons it sits next to. All that changes
+ * is the icon, drawn the same way Material draws its own: a mask-image on ::after.
+ * The glyph is Material Design Icons "play-circle-outline". */
+.wal-run-btn::after {
+  -webkit-mask-image: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Cpath d="M10,16.5L16,12L10,7.5V16.5M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z"/%3E%3C/svg%3E');
+  mask-image: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Cpath d="M10,16.5L16,12L10,7.5V16.5M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z"/%3E%3C/svg%3E');
+}
+
+/* Runnable code is the exception on these pages, so let the icon carry the accent
+ * on hover rather than staying the neutral grey of the buttons beside it. */
+.wal-run-btn:hover::after,
+.wal-run-btn:focus-visible::after { background-color: var(--md-accent-fg-color, var(--md-primary-fg-color)); }
+
+/* Fallback for a build without Material's button strip. */
+.wal-run-btn--loose {
   position: absolute;
   top: 0.3rem;
   right: 0.35rem;
   z-index: 2;
-  padding: 0.18rem 0.5rem;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  border: 1px solid var(--md-default-fg-color--lightest);
-  border-radius: 0.2rem;
-  background: var(--md-default-bg-color);
-  color: var(--md-primary-fg-color);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 125ms;
-}
-.highlight:hover .wal-run-btn,
-.wal-run-btn:focus { opacity: 1; }
-.wal-run-btn:hover { border-color: var(--md-primary-fg-color); }
-/* Touch screens have no hover, so never hide it there. */
-@media (hover: none) {
-  .wal-run-btn { opacity: 1; }
 }
 
 /* The viewer overlay when the bundle is missing from the build. */

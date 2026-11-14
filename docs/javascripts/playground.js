@@ -467,18 +467,32 @@
         var hit = index[text];
         if (!hit) return;
 
-        var button = el('button', 'wal-run-btn', 'Run in playground');
+        // Sit in Material's own button strip, beside line selection and copy,
+        // as one more md-code__button. Only the icon differs, which the
+        // stylesheet swaps through the same mask-image mechanism Material uses.
+        var nav = host.querySelector('.md-code__nav');
+        var button = el('button', 'md-code__button wal-run-btn');
         button.type = 'button';
         button.title = hit.trace
-          ? 'Opens the playground with this snippet and ' + hit.trace
-          : 'Opens the playground with this snippet';
-        button.addEventListener('click', function () {
+          ? 'Run in the playground, with ' + hit.trace
+          : 'Run in the playground';
+        button.setAttribute('aria-label', button.title);
+        button.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
           var url = playgroundUrl() + '#code=' + encodeURIComponent(text)
             + (hit.trace ? '&trace=' + encodeURIComponent(hit.trace) : '');
           window.location.href = url;
         });
-        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-        host.appendChild(button);
+
+        if (nav) {
+          nav.appendChild(button);
+        } else {
+          // No button strip on this build, so fall back to a corner of the block.
+          button.classList.add('wal-run-btn--loose');
+          if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+          host.appendChild(button);
+        }
       });
     };
 
