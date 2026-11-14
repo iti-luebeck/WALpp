@@ -444,7 +444,10 @@ std::string WArray::to_string() const {
     for (const auto& [key, value] : entries_) {
         if (!first) oss << " ";
         first = false;
-        oss << '"' << key << "\": " << value.to_string_repr();
+        // `{("x" 10)}`, the spelling upstream prints and the WAL manual shows. It
+        // used to be `{"x": 10}`, which left `-e` and `print` rendering the same
+        // array two different ways once `print` was aligned with upstream.
+        oss << "(\"" << key << "\" " << value.to_string_repr() << ")";
     }
     oss << "}";
     return oss.str();

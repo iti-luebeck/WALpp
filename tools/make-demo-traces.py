@@ -59,6 +59,32 @@ def handshake(path):
     write_vcd(path, "dut", [("clk", 1), ("data", 8), ("valid", 1), ("ready", 1)], rows)
 
 
+def fabric(path):
+    """Three ready/valid interfaces in one scope, so `groups` has something to find.
+
+    Shaped like the WAL manual's own groups example, which uses name prefixes
+    (top.in_, top.out_) rather than separate scopes. Each interface completes a
+    different number of transactions, so a per-group answer is visibly per-group
+    rather than the same number three times.
+    """
+    rows, time = [], 0
+    # (prefix, valid period, ready period): different duty cycles, different counts
+    ports = [("in", 2, 3), ("out", 3, 5), ("cmd", 6, 7)]
+    for i in range(96):
+        beat = i // 2
+        values = {"clk": i % 2}
+        for index, (prefix, vper, rper) in enumerate(ports):
+            values[f"{prefix}_valid"] = 1 if beat % vper != vper - 1 else 0
+            values[f"{prefix}_ready"] = 1 if beat % rper != rper - 1 else 0
+            values[f"{prefix}_data"] = (beat * (index + 3)) % 256
+        rows.append((time, values))
+        time += 5
+    variables = [("clk", 1)]
+    for prefix, _, _ in ports:
+        variables += [(f"{prefix}_valid", 1), (f"{prefix}_ready", 1), (f"{prefix}_data", 8)]
+    write_vcd(path, "top", variables, rows)
+
+
 def counter(path):
     """A free running 8 bit counter: every carry is a burst of toggling bits."""
     rows, time = [], 0
@@ -79,3 +105,4 @@ if __name__ == "__main__":
     os.makedirs(here, exist_ok=True)
     handshake(os.path.join(here, "handshake.vcd"))
     counter(os.path.join(here, "counter.vcd"))
+    fabric(os.path.join(here, "fabric.vcd"))

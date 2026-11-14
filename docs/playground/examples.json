@@ -1,122 +1,207 @@
 {
-  "comment": "Examples for the documentation playground. Every entry is verified by tools/check-examples.sh.",
-  "traces": {
-    "handshake.vcd": {
-      "title": "Ready/valid handshake",
-      "description": "A byte stream across a ready/valid interface, with stalls and idle gaps. Scope dut, signals clk, data[7:0], valid, ready."
-    },
-    "counter.vcd": {
-      "title": "Free running counter",
-      "description": "An 8 bit counter with a carry pulse every 16 ticks. Scope cpu, signals clk, count[7:0], carry."
-    }
+ "comment": "Examples for the documentation playground. Every entry is verified by tools/check-examples.sh.",
+ "traces": {
+  "handshake.vcd": {
+   "title": "Ready/valid handshake",
+   "description": "A byte stream across a ready/valid interface, with stalls and idle gaps. Scope dut, signals clk, data[7:0], valid, ready."
   },
-  "groups": [
+  "counter.vcd": {
+   "title": "Free running counter",
+   "description": "An 8 bit counter with a carry pulse every 16 ticks. Scope cpu, signals clk, count[7:0], carry."
+  },
+  "fabric.vcd": {
+   "title": "Three handshake interfaces",
+   "description": "One scope, top, with three ready/valid ports sharing a naming convention: in_, out_ and cmd_, each with valid, ready and data[7:0]. Shaped so that `groups` has something to find."
+  }
+ },
+ "groups": [
+  {
+   "title": "The language",
+   "examples": [
     {
-      "title": "The language",
-      "examples": [
-        {
-          "id": "arithmetic",
-          "title": "Arithmetic and variables",
-          "blurb": "WAL is an S-expression language. Operators come first, and define binds a name.",
-          "trace": null,
-          "code": ["(+ 10 20 30)", "(define x 42)", "(* x 2)"]
-        },
-        {
-          "id": "lambda",
-          "title": "Functions and lists",
-          "blurb": "lambda makes a function, and map, filter and sort work over lists.",
-          "trace": null,
-          "code": [
-            "(define double (lambda (n) (* n 2)))",
-            "(map double '(1 2 3 4 5))",
-            "(filter (lambda (n) (> n 2)) '(1 2 3 4 5))",
-            "(sort '(3 1 2))"
-          ]
-        }
-      ]
+     "id": "arithmetic",
+     "title": "Arithmetic and variables",
+     "blurb": "WAL is an S-expression language. Operators come first, and define binds a name.",
+     "trace": null,
+     "code": [
+      "(+ 10 20 30)",
+      "(define x 42)",
+      "(* x 2)"
+     ]
     },
     {
-      "title": "Looking at a trace",
-      "examples": [
-        {
-          "id": "signals",
-          "title": "What is in this waveform",
-          "blurb": "A dot joins the hierarchy, so dut.data is data inside module dut. A ^ prefix names a trace when several are loaded.",
-          "trace": "handshake.vcd",
-          "code": ["(signal-names)", "(signal-width \"dut.data\")"]
-        },
-        {
-          "id": "current-value",
-          "title": "Values at the current time",
-          "blurb": "get-signal reads a signal where the trace is positioned, and step moves it.",
-          "trace": "handshake.vcd",
-          "code": ["(get-signal \"dut.data\")", "(step 4)", "(get-signal \"dut.data\")"]
-        }
-      ]
-    },
-    {
-      "title": "Switching activity",
-      "examples": [
-        {
-          "id": "hamming-weight",
-          "title": "Hamming weight over time",
-          "blurb": "How many bits are high in the whole scope, at every timestamp. The result is a list of (time value) pairs, so the viewer can mark it.",
-          "trace": "counter.vcd",
-          "code": ["(hamming-weight-scope \"cpu\")"]
-        },
-        {
-          "id": "hamming-distance",
-          "title": "Bits that toggled",
-          "blurb": "Hamming distance between consecutive timestamps, which is the switching activity that drives dynamic power.",
-          "trace": "counter.vcd",
-          "code": ["(hamming-distance-scope \"cpu\")"]
-        },
-        {
-          "id": "activity-stats",
-          "title": "Statistics over the activity",
-          "blurb": "The pairs are ordinary lists, so pull out the values with map and summarise them.",
-          "trace": "counter.vcd",
-          "code": [
-            "(define activity (map (lambda (p) (nth 1 p)) (hamming-distance-scope \"cpu\")))",
-            "(mean activity)",
-            "(max-val activity)",
-            "(stddev activity)",
-            "(sum activity)"
-          ]
-        },
-        {
-          "id": "activity-histogram",
-          "title": "Distribution of the activity",
-          "blurb": "Most timestamps toggle a single bit, and the carries show up as the tail.",
-          "trace": "counter.vcd",
-          "code": [
-            "(define activity (map (lambda (p) (nth 1 p)) (hamming-distance-scope \"cpu\")))",
-            "(histogram activity 8)",
-            "(quartiles activity)"
-          ]
-        }
-      ]
-    },
-    {
-      "title": "Driving the viewer",
-      "examples": [
-        {
-          "id": "hotspots",
-          "title": "Find the hot spots, mark them",
-          "blurb": "Keep only the timestamps where more than four bits toggled. The result is (time value) pairs, so Send to viewer drops a marker on each one.",
-          "trace": "counter.vcd",
-          "code": ["(filter (lambda (p) (> (nth 1 p) 4)) (hamming-distance-scope \"cpu\"))"],
-          "viewer": "markers"
-        },
-        {
-          "id": "handshake-hotspots",
-          "title": "Busiest beats of the handshake",
-          "blurb": "The same idea on the handshake trace: the payload changes stand out against the clock toggling on its own.",
-          "trace": "handshake.vcd",
-          "code": ["(filter (lambda (p) (> (nth 1 p) 3)) (hamming-distance-scope \"dut\"))"],
-          "viewer": "markers"
-        }
-      ]
+     "id": "lambda",
+     "title": "Functions and lists",
+     "blurb": "lambda makes a function, and map, filter and sort work over lists.",
+     "trace": null,
+     "code": [
+      "(define double (lambda (n) (* n 2)))",
+      "(map double '(1 2 3 4 5))",
+      "(filter (lambda (n) (> n 2)) '(1 2 3 4 5))",
+      "(sort '(3 1 2))"
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "title": "Looking at a trace",
+   "examples": [
+    {
+     "id": "signals",
+     "title": "What is in this waveform",
+     "blurb": "A dot joins the hierarchy, so dut.data is data inside module dut. A ^ prefix names a trace when several are loaded.",
+     "trace": "handshake.vcd",
+     "code": [
+      "(signal-names)",
+      "(signal-width \"dut.data\")"
+     ]
+    },
+    {
+     "id": "current-value",
+     "title": "Values at the current time",
+     "blurb": "get-signal reads a signal where the trace is positioned, and step moves it.",
+     "trace": "handshake.vcd",
+     "code": [
+      "(get-signal \"dut.data\")",
+      "(step 4)",
+      "(get-signal \"dut.data\")"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "One analysis, every interface",
+   "examples": [
+    {
+     "id": "groups",
+     "title": "Find the interfaces, then measure them all",
+     "blurb": "groups asks a structural question: which name prefixes have every suffix you name? Nothing is hardcoded, so in-groups then runs one expression against each interface it found and gives you an answer per group. #valid resolves against the current group, CG is the group itself.",
+     "trace": "fabric.vcd",
+     "code": [
+      "(groups \"valid\" \"ready\")",
+      "(in-groups (groups \"valid\" \"ready\") (list CG (count (&& #valid #ready))))"
+     ]
+    },
+    {
+     "id": "scopes",
+     "title": "Work inside one level of the hierarchy",
+     "blurb": "A scope is a level of the design rather than a name prefix. Inside in-scope, CS is the scope, LOCAL-SIGNALS is what sits directly in it, and ~name reads a signal relative to it.",
+     "trace": "fabric.vcd",
+     "code": [
+      "SCOPES",
+      "(in-scope 'top (length LOCAL-SIGNALS))",
+      "(in-scope 'top ~clk)"
+     ]
+    },
+    {
+     "id": "bit-fields",
+     "title": "Pull a field out of a bus",
+     "blurb": "slice reads a bit field, upper bit first and inclusive, the way hardware is written. At index 62 the counter holds 31, so the bits are 00011111: the high nibble is 1 and the low nibble is 15. With one index it reads a single bit. This is how an opcode or an address range gets decoded without arithmetic.",
+     "trace": "counter.vcd",
+     "code": [
+      "(set-index 62)",
+      "cpu.count",
+      "(slice cpu.count 7 4)",
+      "(slice cpu.count 3 0)",
+      "(slice cpu.count 0)"
+     ]
+    },
+    {
+     "id": "timeframe",
+     "title": "Step forward without losing your place",
+     "blurb": "timeframe records where every trace is, runs the body, and puts the cursor back. That is what overlapping transactions need: step forward to find the end of one, then resume from where it started to find the next.",
+     "trace": "fabric.vcd",
+     "code": [
+      "INDEX",
+      "(timeframe (step 10) INDEX)",
+      "INDEX"
+     ]
+    },
+    {
+     "id": "tally",
+     "title": "Build a histogram while sweeping",
+     "blurb": "An array is a string-keyed map, and geta/default is what makes it an accumulator: geta raises on a missing key, so counting without a default means checking first. mapa turns the result into a list of pairs to print.",
+     "trace": "counter.vcd",
+     "code": [
+      "(define tally (array))",
+      "(define nibble (lambda () (convert/bin (slice cpu.count 7 4) 4)))",
+      "(whenever (rising cpu.clk) (seta tally (nibble) (+ 1 (geta/default tally 0 (nibble)))))",
+      "(mapa (lambda (k v) (list k v)) tally)"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Switching activity",
+   "examples": [
+    {
+     "id": "hamming-weight",
+     "title": "Hamming weight over time",
+     "blurb": "How many bits are high in the whole scope, at every timestamp. The result is a list of (time value) pairs, so the viewer can mark it.",
+     "trace": "counter.vcd",
+     "code": [
+      "(hamming-weight-scope \"cpu\")"
+     ]
+    },
+    {
+     "id": "hamming-distance",
+     "title": "Bits that toggled",
+     "blurb": "Hamming distance between consecutive timestamps, which is the switching activity that drives dynamic power.",
+     "trace": "counter.vcd",
+     "code": [
+      "(hamming-distance-scope \"cpu\")"
+     ]
+    },
+    {
+     "id": "activity-stats",
+     "title": "Statistics over the activity",
+     "blurb": "The pairs are ordinary lists, so pull out the values with map and summarise them.",
+     "trace": "counter.vcd",
+     "code": [
+      "(define activity (map (lambda (p) (nth 1 p)) (hamming-distance-scope \"cpu\")))",
+      "(mean activity)",
+      "(max-val activity)",
+      "(stddev activity)",
+      "(sum activity)"
+     ]
+    },
+    {
+     "id": "activity-histogram",
+     "title": "Distribution of the activity",
+     "blurb": "Most timestamps toggle a single bit, and the carries show up as the tail.",
+     "trace": "counter.vcd",
+     "code": [
+      "(define activity (map (lambda (p) (nth 1 p)) (hamming-distance-scope \"cpu\")))",
+      "(histogram activity 8)",
+      "(quartiles activity)"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Driving the viewer",
+   "examples": [
+    {
+     "id": "hotspots",
+     "title": "Find the hot spots, mark them",
+     "blurb": "Keep only the timestamps where more than four bits toggled. The result is (time value) pairs, so Send to viewer drops a marker on each one.",
+     "trace": "counter.vcd",
+     "code": [
+      "(filter (lambda (p) (> (nth 1 p) 4)) (hamming-distance-scope \"cpu\"))"
+     ],
+     "viewer": "markers"
+    },
+    {
+     "id": "handshake-hotspots",
+     "title": "Busiest beats of the handshake",
+     "blurb": "The same idea on the handshake trace: the payload changes stand out against the clock toggling on its own.",
+     "trace": "handshake.vcd",
+     "code": [
+      "(filter (lambda (p) (> (nth 1 p) 3)) (hamming-distance-scope \"dut\"))"
+     ],
+     "viewer": "markers"
+    }
+   ]
+  }
+ ]
 }

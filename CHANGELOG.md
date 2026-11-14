@@ -6,6 +6,29 @@ All notable changes to WAL++ are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The language reference covers the WAL manual's chapters.** Groups and scopes,
+  waveform handling, signal access and bit slicing, arrays as accumulators,
+  printing, type conversions, and running other files were all absent. Each new
+  section has runnable examples and three of them have animated diagrams, and the
+  documentation snippet count went from 19 to 35, all of them runnable.
+- **`fabric.vcd` in the playground**, a scope with three ready/valid interfaces
+  sharing a naming convention, so `groups` has something to find. The groups
+  examples were meaningless against a trace with a single interface.
+- **Five playground examples** under "One analysis, every interface": groups,
+  scopes, bit fields, `timeframe`, and building a histogram with `geta/default`.
+
+### Fixed
+
+- **`-e` and `print` rendered an array two different ways** once `print` was
+  aligned with upstream in 1.6.4. Both now give `{("x" 10)}`, which is what
+  upstream prints and what the manual shows.
+- **`groups` returned symbols where upstream returns strings**, so
+  `(string? (first (groups "valid")))` disagreed and a prefix could not be used in
+  string work under the strict `+`.
+- The stale `__version__` fallback in `src/walpp/__init__.py`, which said 1.2.2.
+
 ## [1.6.4] - 2026-11-14
 
 Checked against the [WAL Programmer Manual](https://wal-lang.org/documentation/core)

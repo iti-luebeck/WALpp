@@ -75,6 +75,70 @@
   {
    "code": "; Find signals matching criteria\n(define all-signals (signal-names))\n\n; Filter bus signals\n(define bus-signals\n  (filter (lambda (s) (> (signal-width s) 1)) all-signals))\n\n; Filter control signals\n(define control-signals\n  (filter (lambda (s) (= (signal-width s) 1)) all-signals))\n\n(list\n  \"Bus signals:\" (length bus-signals)\n  \"Control signals:\" (length control-signals))",
    "trace": null
+  },
+  {
+   "code": "(groups \"valid\" \"ready\")",
+   "trace": null
+  },
+  {
+   "code": "(in-groups (groups \"valid\" \"ready\") (list CG (count (&& #valid #ready))))",
+   "trace": null
+  },
+  {
+   "code": "(in-group \"top.in_\" (count (&& #valid #ready)))",
+   "trace": "fabric.vcd"
+  },
+  {
+   "code": "SCOPES                                            ; ('top)\n(in-scope 'top (list CS (length LOCAL-SIGNALS)))  ; (\"top\" 10)\n(in-scope 'top ~clk)                              ; 0",
+   "trace": "fabric.vcd"
+  },
+  {
+   "code": "(set-scope 'top)\nLOCAL-SIGNALS\n(unset-scope)",
+   "trace": "counter.vcd"
+  },
+  {
+   "code": "(step)                ; every trace, one index\n(step 5)              ; every trace, five\n(step 'after 5)       ; only `after`",
+   "trace": null
+  },
+  {
+   "code": "(list INDEX (timeframe (step 10) INDEX) INDEX)   ; (0 10 0)",
+   "trace": "counter.vcd"
+  },
+  {
+   "code": "(get-signal \"cpu.clk\")                      ; 0\n(map (fn [s] (get-signal s)) (signal-names))\n(signal? \"cpu.clk\")                         ; true\n(signal-width \"cpu.count\")                  ; 8",
+   "trace": "counter.vcd"
+  },
+  {
+   "code": "(set-index 62)\ncpu.count               ; 31, so the bits are 00011111\n(slice cpu.count 7 4)   ; 1    the high nibble, 0001\n(slice cpu.count 3 0)   ; 15   the low nibble, 1111\n(slice cpu.count 0)     ; 1    bit 0",
+   "trace": "counter.vcd"
+  },
+  {
+   "code": "(whenever (!= cpu.count cpu.count@-1)\n  (printf \"%d,%d\\n\" INDEX cpu.count))",
+   "trace": "counter.vcd"
+  },
+  {
+   "code": "(define hits (array))\n(seta hits \"read\" 3)\n(geta hits \"read\")                       ; 3\n(geta/default hits 0 \"write\")            ; 0, because \"write\" is absent\n(dela hits \"read\")\n(mapa (fn [k v] (list k v)) (array [\"hits\" 3] [\"misses\" 1]))",
+   "trace": null
+  },
+  {
+   "code": "(define tally (array))\n(define nibble (lambda () (convert/bin (slice cpu.count 7 4) 4)))\n(whenever (rising cpu.clk) (seta tally (nibble) (+ 1 (geta/default tally 0 (nibble)))))\n(mapa (lambda (k v) (list k v)) tally)",
+   "trace": "counter.vcd"
+  },
+  {
+   "code": "(print \"Total: \" 42)         ; Total: 42\n(print (list \"a\" \"b\"))       ; (\"a\" \"b\")",
+   "trace": null
+  },
+  {
+   "code": "(printf \"%d,%s,%04x,%.2f\\n\" 42 \"ok\" 255 3.14159)   ; 42,ok,00ff,3.14",
+   "trace": null
+  },
+  {
+   "code": "(int? 1)        (string? \"s\")    (list? (list 1))    (symbol? 'x)\n(atom? 1)       ; true    anything that is not a list\n(atom? (list 1)); false\n(type 1)        ; 'int\n(convert/bin 5)   ; \"101\"\n(convert/bin 5 8) ; \"00000101\"   padded to a width",
+   "trace": null
+  },
+  {
+   "code": "(second (list 1 2 3))        ; 2\n(last (list 1 2 3))          ; 3\n(rest (list 1 2 3))          ; (2 3)\n(zip (list 1 2) (list 3 4))  ; ((1 3) (2 4))\n(average (list 1 2 3 4))     ; 2.5\n(fold + 0 (list 1 2 3))      ; 6",
+   "trace": null
   }
  ]
 }

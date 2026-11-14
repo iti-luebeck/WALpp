@@ -849,7 +849,11 @@ private:
 
             auto results = std::make_shared<WList>();
             for (const auto& base : found) {
-                results->push_back(Value(std::make_shared<Symbol>(base)));
+                // Strings, as upstream returns them, so `(string? (first (groups
+                // "clk")))` agrees and a script may do string work on a prefix.
+                // They were symbols, which left `(+ g "_valid")` failing under the
+                // strict `+` on the one engine where that matters.
+                results->push_back(Value(base));
             }
             return Value(results);
         });

@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" role="img"
+     aria-labelledby="tg dg" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="tg">One expression, every interface</title>
+  <desc id="dg">A design has three ready/valid interfaces that share a naming
+  convention: top.in_, top.out_ and top.cmd_, each with a valid and a ready. The
+  groups function asks which name prefixes have every suffix you name, and finds all
+  three without any of them being written down. in-groups then evaluates one
+  expression once per group, with the hash macro resolving valid and ready against
+  whichever group is current, so the single expression yields one answer per
+  interface. Each of the three rows lights in turn to show the same expression
+  binding to a different interface.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .box   { fill: #f7f8fa; stroke: #dfe4ec; }
+    .key   { fill: #e6edfb; stroke: #9cbcf0; }
+    .good  { fill: #e7f4ea; stroke: #8dc69c; }
+    .flow  { stroke: #1d5fd0; stroke-width: 1.5; fill: none; }
+    .num   { fill: #1d5fd0; }
+    .green { fill: #1d6b33; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .mono2 { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; }
+    .small { font-size: 11px; }
+    .h     { font-size: 12px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .box   { fill: #151d29; stroke: #263142; }
+      .key   { fill: #1a2740; stroke: #3b5a8c; }
+      .good  { fill: #15291c; stroke: #2f5c3d; }
+      .flow  { stroke: #74a4f5; }
+      .num   { fill: #74a4f5; }
+      .green { fill: #7cc496; }
+    }
+
+    /* Each interface takes its turn being the current group. The expression in the
+       middle never changes, which is the whole point. */
+    .grp { animation: turn 7.5s ease-in-out infinite; }
+    .g2  { animation-delay: 2.5s; }
+    .g3  { animation-delay: 5s; }
+    @keyframes turn {
+      0%, 33.4%, 100% { opacity: .35; }
+      4%, 29%         { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .grp { animation: none; opacity: 1; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="420"/>
+
+  <text class="fg cap" x="28" y="32">One expression, every interface</text>
+  <text class="dim small" x="28" y="50">nothing in the query names an interface, so it finds the ones the design happens to have</text>
+
+  <!-- column headings -->
+  <text class="faint small" x="28"  y="80">what is in the trace</text>
+  <text class="faint small" x="286" y="80">what groups finds</text>
+  <text class="faint small" x="536" y="80">one answer per group</text>
+
+  <!-- in_ -->
+  <g class="grp g1">
+    <rect class="box" x="28" y="90" width="226" height="56" rx="5"/>
+    <text class="dim mono" x="42" y="112">top.in_valid</text>
+    <text class="dim mono" x="42" y="130">top.in_ready</text>
+    <rect class="key" x="286" y="90" width="150" height="56" rx="5"/>
+    <text class="num mono2" x="300" y="124">"top.in_"</text>
+    <rect class="good" x="536" y="90" width="196" height="56" rx="5"/>
+    <text class="green mono2" x="550" y="124">32 transactions</text>
+    <path class="flow" d="M 260 118 H 282" marker-end="url(#ag)"/>
+    <path class="flow" d="M 442 118 H 532" marker-end="url(#ag)"/>
+  </g>
+
+  <!-- out_ -->
+  <g class="grp g2">
+    <rect class="box" x="28" y="156" width="226" height="56" rx="5"/>
+    <text class="dim mono" x="42" y="178">top.out_valid</text>
+    <text class="dim mono" x="42" y="196">top.out_ready</text>
+    <rect class="key" x="286" y="156" width="150" height="56" rx="5"/>
+    <text class="num mono2" x="300" y="190">"top.out_"</text>
+    <rect class="good" x="536" y="156" width="196" height="56" rx="5"/>
+    <text class="green mono2" x="550" y="190">52 transactions</text>
+    <path class="flow" d="M 260 184 H 282" marker-end="url(#ag)"/>
+    <path class="flow" d="M 442 184 H 532" marker-end="url(#ag)"/>
+  </g>
+
+  <!-- cmd_ -->
+  <g class="grp g3">
+    <rect class="box" x="28" y="222" width="226" height="56" rx="5"/>
+    <text class="dim mono" x="42" y="244">top.cmd_valid</text>
+    <text class="dim mono" x="42" y="262">top.cmd_ready</text>
+    <rect class="key" x="286" y="222" width="150" height="56" rx="5"/>
+    <text class="num mono2" x="300" y="256">"top.cmd_"</text>
+    <rect class="good" x="536" y="222" width="196" height="56" rx="5"/>
+    <text class="green mono2" x="550" y="256">70 transactions</text>
+    <path class="flow" d="M 260 250 H 282" marker-end="url(#ag)"/>
+    <path class="flow" d="M 442 250 H 532" marker-end="url(#ag)"/>
+  </g>
+
+  <line class="rule" x1="28" y1="300" x2="732" y2="300"/>
+
+  <!-- the query itself -->
+  <text class="faint small" x="28" y="324">the whole query</text>
+  <rect class="key" x="28" y="334" width="704" height="64" rx="5"/>
+  <text class="num mono2" x="44" y="358">(in-groups (groups "valid" "ready")</text>
+  <text class="num mono2" x="44" y="376">  (list CG (count (&amp;&amp; #valid #ready))))</text>
+  <text class="dim small" x="398" y="358">#valid is read in whichever group is current</text>
+  <text class="dim small" x="398" y="376">CG is that group, so each answer says which</text>
+
+  <defs>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1d5fd0"/>
+    </marker>
+  </defs>
+</svg>

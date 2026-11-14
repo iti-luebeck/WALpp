@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" role="img"
+     aria-labelledby="tt dt" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="tt">Stepping forward without losing your place</title>
+  <desc id="dt">Two transactions overlap on a trace. Finding the end of the first
+  means stepping the cursor forward, which carries it past the start of the second.
+  Without timeframe the cursor stays where the search left it, so the second
+  transaction is never seen. With timeframe the cursor is recorded before the body
+  runs and restored after it, so the search for the end of the first transaction
+  costs nothing and the scan resumes where it was. The upper track animates a cursor
+  that runs away; the lower track animates one that snaps back.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .track { stroke: #c9d1de; stroke-width: 2; }
+    .box   { fill: #f7f8fa; stroke: #dfe4ec; }
+    .warn  { fill: #fdf0e3; stroke: #e8b982; }
+    .good  { fill: #e7f4ea; stroke: #8dc69c; }
+    .txa   { fill: #cfe0fa; stroke: #7ea6e8; }
+    .txb   { fill: #e4dcf7; stroke: #a995dd; }
+    .cur   { fill: #1d5fd0; }
+    .amber { fill: #9a5f12; }
+    .green { fill: #1d6b33; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .small { font-size: 11px; }
+    .h     { font-size: 12px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .track { stroke: #35415a; }
+      .box   { fill: #151d29; stroke: #263142; }
+      .warn  { fill: #2c2214; stroke: #7a5a28; }
+      .good  { fill: #15291c; stroke: #2f5c3d; }
+      .txa   { fill: #1b2d49; stroke: #3f6395; }
+      .txb   { fill: #251f3d; stroke: #5b4b8a; }
+      .cur   { fill: #74a4f5; }
+      .amber { fill: #e0ab63; }
+      .green { fill: #7cc496; }
+    }
+
+    /* Without timeframe the cursor keeps the position the search left it in. */
+    .runaway { animation: runaway 6s ease-in-out infinite; }
+    @keyframes runaway {
+      0%, 8%    { transform: translateX(0px); }
+      40%, 100% { transform: translateX(300px); }
+    }
+    /* With it, the cursor comes back to where the scan was. */
+    .snapback { animation: snapback 6s ease-in-out infinite; }
+    @keyframes snapback {
+      0%, 8%  { transform: translateX(0px); }
+      40%     { transform: translateX(300px); }
+      48%     { transform: translateX(300px); }
+      56%,100%{ transform: translateX(0px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .runaway, .snapback { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="360"/>
+
+  <text class="fg cap" x="28" y="32">Stepping forward without losing your place</text>
+  <text class="dim small" x="28" y="50">two transactions overlap, so the search for the end of the first runs past the start of the second</text>
+
+  <!-- transaction bars, shared geometry -->
+  <g>
+    <text class="faint small" x="28" y="80">transaction A</text>
+    <rect class="txa" x="140" y="68" width="320" height="16" rx="3"/>
+    <text class="faint small" x="28" y="102">transaction B</text>
+    <rect class="txb" x="300" y="90" width="320" height="16" rx="3"/>
+    <text class="dim small" x="300" y="126">B starts here, while A is still open</text>
+  </g>
+
+  <line class="rule" x1="28" y1="140" x2="732" y2="140"/>
+
+  <!-- without -->
+  <rect class="warn" x="28" y="158" width="150" height="54" rx="5"/>
+  <text class="amber h" x="42" y="180">without it</text>
+  <text class="dim small" x="42" y="200">B is never seen</text>
+
+  <line class="track" x1="200" y1="185" x2="700" y2="185"/>
+  <g class="runaway">
+    <circle class="cur" cx="200" cy="185" r="6"/>
+    <text class="cur mono" x="186" y="168">cursor</text>
+  </g>
+  <text class="dim small" x="508" y="208">the scan carries on from here</text>
+
+  <!-- with -->
+  <rect class="good" x="28" y="246" width="150" height="54" rx="5"/>
+  <text class="green h" x="42" y="268">with timeframe</text>
+  <text class="dim small" x="42" y="288">B is found</text>
+
+  <line class="track" x1="200" y1="273" x2="700" y2="273"/>
+  <g class="snapback">
+    <circle class="cur" cx="200" cy="273" r="6"/>
+    <text class="cur mono" x="186" y="256">cursor</text>
+  </g>
+  <text class="dim small" x="430" y="296">put back where the body started</text>
+
+  <rect class="box" x="28" y="318" width="704" height="30" rx="5"/>
+  <text class="dim mono" x="44" y="338">(timeframe (while (! #ready) (step)) INDEX)</text>
+  <text class="faint small" x="396" y="338">the answer is kept, the cursor is not moved</text>
+</svg>

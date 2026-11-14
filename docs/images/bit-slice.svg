@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 320" role="img"
+     aria-labelledby="tb db" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="tb">Reading a field out of a bus</title>
+  <desc id="db">An eight bit bus holds 00011111, which is 31. slice names a bit range
+  with the upper bit first and both ends included, the way hardware is written, so
+  slice 7 4 is the high nibble 0001 and reads as 1, slice 3 0 is the low nibble 1111
+  and reads as 15, and slice with a single index reads one bit. A highlight moves
+  between the two nibble ranges to show the window the indices select.</desc>
+
+  <style>
+    .bg    { fill: #ffffff; }
+    .fg    { fill: #16202e; }
+    .dim   { fill: #5a6779; }
+    .faint { fill: #8d98a8; }
+    .rule  { stroke: #dfe4ec; stroke-width: 1; }
+    .box   { fill: #f7f8fa; stroke: #dfe4ec; }
+    .cell  { fill: #f7f8fa; stroke: #c9d1de; }
+    .sel   { fill: #cfe0fa; stroke: #1d5fd0; stroke-width: 2; }
+    .num   { fill: #1d5fd0; }
+    .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; }
+    .bit   { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 15px; }
+    .idx   { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10px; }
+    .small { font-size: 11px; }
+    .h     { font-size: 12px; font-weight: 600; }
+    .cap   { font-size: 14px; font-weight: 600; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #0e141d; }
+      .fg    { fill: #e4e9f1; }
+      .dim   { fill: #a2aec0; }
+      .faint { fill: #76829a; }
+      .rule  { stroke: #263142; }
+      .box   { fill: #151d29; stroke: #263142; }
+      .cell  { fill: #151d29; stroke: #35415a; }
+      .sel   { fill: #1b2d49; stroke: #74a4f5; }
+      .num   { fill: #74a4f5; }
+    }
+
+    /* The window slides between the high and the low nibble, and the matching
+       expression lights with it. */
+    .window { animation: slide 6s ease-in-out infinite; }
+    @keyframes slide {
+      0%, 42%   { transform: translateX(0px); }
+      50%, 92%  { transform: translateX(224px); }
+      100%      { transform: translateX(0px); }
+    }
+    .hi { animation: lit 6s ease-in-out infinite; }
+    .lo { animation: lit 6s ease-in-out infinite; animation-delay: 3s; }
+    @keyframes lit {
+      0%, 42%, 100% { opacity: 1; }
+      50%, 92%      { opacity: .3; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .window, .hi, .lo { animation: none; opacity: 1; }
+    }
+  </style>
+
+  <rect class="bg" width="760" height="320"/>
+
+  <text class="fg cap" x="28" y="32">Reading a field out of a bus</text>
+  <text class="dim small" x="28" y="50">upper bit first, both ends included, the way a hardware range is written</text>
+
+  <text class="faint small" x="28" y="82">cpu.count, 8 bits wide, holding 31</text>
+
+  <!-- bit cells: bit 7 on the left, bit 0 on the right -->
+  <g>
+    <rect class="cell" x="28"  y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="84"  y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="140" y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="196" y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="252" y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="308" y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="364" y="94" width="56" height="48" rx="3"/>
+    <rect class="cell" x="420" y="94" width="56" height="48" rx="3"/>
+
+    <text class="fg bit" x="51"  y="124">0</text>
+    <text class="fg bit" x="107" y="124">0</text>
+    <text class="fg bit" x="163" y="124">0</text>
+    <text class="fg bit" x="219" y="124">1</text>
+    <text class="fg bit" x="275" y="124">1</text>
+    <text class="fg bit" x="331" y="124">1</text>
+    <text class="fg bit" x="387" y="124">1</text>
+    <text class="fg bit" x="443" y="124">1</text>
+
+    <text class="faint idx" x="52"  y="158">7</text>
+    <text class="faint idx" x="108" y="158">6</text>
+    <text class="faint idx" x="164" y="158">5</text>
+    <text class="faint idx" x="220" y="158">4</text>
+    <text class="faint idx" x="276" y="158">3</text>
+    <text class="faint idx" x="332" y="158">2</text>
+    <text class="faint idx" x="388" y="158">1</text>
+    <text class="faint idx" x="444" y="158">0</text>
+  </g>
+
+  <!-- the sliding selection, four cells wide -->
+  <g class="window">
+    <rect class="sel" x="26" y="92" width="228" height="52" rx="4" fill-opacity="0.45"/>
+  </g>
+
+  <line class="rule" x1="28" y1="186" x2="732" y2="186"/>
+
+  <g class="hi">
+    <rect class="box" x="28" y="204" width="330" height="44" rx="5"/>
+    <text class="num mono" x="44" y="222">(slice cpu.count 7 4)</text>
+    <text class="dim small" x="44" y="240">bits 7 down to 4 are 0001, which reads as 1</text>
+  </g>
+
+  <g class="lo">
+    <rect class="box" x="384" y="204" width="348" height="44" rx="5"/>
+    <text class="num mono" x="400" y="222">(slice cpu.count 3 0)</text>
+    <text class="dim small" x="400" y="240">bits 3 down to 0 are 1111, which reads as 15</text>
+  </g>
+
+  <rect class="box" x="28" y="262" width="704" height="40" rx="5"/>
+  <text class="num mono" x="44" y="280">(slice cpu.count 0)</text>
+  <text class="dim small" x="44" y="296">one index reads one bit, so this is bit 0, which is 1</text>
+  <text class="faint small" x="400" y="288">on a list or a string, slice indexes and slices the way Python does</text>
+</svg>
