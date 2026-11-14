@@ -183,7 +183,7 @@ wal -l small.vcd --no-streaming
 
 | verb | what it does |
 |---|---|
-| `inspect TRACE` | what is in a trace, as JSON |
+| `inspect TRACE [--format=F]` | what is in a trace: `json` (default) or `names` |
 | `lint SCRIPT.wal` | check a script without running it |
 | `eval EXPR [EXPR...]` | evaluate expressions |
 | `run SCRIPT.wal` | run a script |
@@ -197,7 +197,6 @@ wal -l small.vcd --no-streaming
 | `weight` | Hamming weight: bits set at each timestamp |
 | `distance` | Hamming distance: bits changed since the previous timestamp |
 | `values` | the decoded value of each listed signal, when it changes |
-| `names` | every signal as `width name`, plus a `# timescale` header |
 
 | selector | |
 |---|---|
@@ -223,7 +222,7 @@ Every verb has an equivalent flag, and the flags are **not going away**:
 | `extract weight T` | `--fast-hw-all T` |
 | `extract distance T --scope S` | `--fast-hd-scope S T` |
 | `extract values T --signals L` | `--fast-values-signals L T` |
-| `extract names T` | `--fast-list T` |
+| `inspect T --format=names` | `--fast-list T` |
 | `inspect T` | `--inspect T` |
 | `lint S` | `--lint S` |
 | `run S` | `-f S` |
@@ -243,8 +242,18 @@ by a later tidy-up without the build failing.
 If you are reproducing the paper, or you have scripts already, keep using the flags.
 
 A first argument counts as a verb only when it matches one *and* no file of that
-name exists, so `wal script.wal` still runs a script. `extract list` is accepted as
-an older spelling of `extract names`.
+name exists, so `wal script.wal` still runs a script.
+
+A signal listing comes from `inspect`, not `extract`: the two verbs should not both
+answer "what is in this trace". `extract` produces a data series and nothing else,
+which leaves it free to grow new kinds without the word meaning two things.
+
+```bash
+wal inspect trace.vcd --format=names > signals.txt   # feeds --signals
+wal inspect trace.vcd --json                         # the same facts, structured
+```
+
+Without `-o` the listing goes to stdout, like the JSON form.
 
 ## Agent and scripting modes
 

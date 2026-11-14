@@ -50,7 +50,8 @@ namespace {
  * exists, so `wal lint` cannot be hijacked by a file called `lint` in the working
  * directory, and `wal script.wal` still runs a script.
  */
-bool rewrite_verbs(std::vector<std::string>& args) {
+bool rewrite_verbs(std::vector<std::string>& args, bool& failed) {
+    failed = false;
     if (args.empty()) return false;
     const std::string verb = args[0];
     static const std::set<std::string> verbs =
@@ -89,8 +90,21 @@ bool rewrite_verbs(std::vector<std::string>& args) {
         out.push_back(script);
         for (const auto& r : rest) out.push_back(r);
     } else if (verb == "inspect" || verb == "lint") {
-        out.push_back(verb == "inspect" ? "--inspect" : "--lint");
-        // the subject first, then whatever modifiers followed
+        // `inspect` answers "what is in this trace", in whichever shape is asked
+        // for. `extract` is left to mean only "produce a data series", so the two
+        // verbs do not both answer the same question.
+        std::string format = "json";
+        if (verb == "inspect") {
+            take_option("--format", format);
+            for (size_t i = 0; i < rest.size(); ++i) {
+                if (rest[i].rfind("--format=", 0) == 0) {
+                    format = rest[i].substr(9);
+                    rest.erase(rest.begin() + i);
+                    break;
+                }
+            }
+        }
+
         std::string subject;
         for (size_t i = 0; i < rest.size(); ++i) {
             if (!rest[i].empty() && rest[i][0] != '-') {
@@ -99,6 +113,32 @@ bool rewrite_verbs(std::vector<std::string>& args) {
                 break;
             }
         }
+
+        if (verb == "inspect" && (format == "names" || format == "list")) {
+            out.push_back("--fast-list");
+            out.push_back(subject);
+            // --fast-list writes to a file; default it to stdout so `inspect` is
+            // readable without one, as its JSON form is.
+            bool has_output = false;
+            for (const auto& r : rest) {
+                if (r == "-o") has_output = true;
+            }
+            for (const auto& r : rest) out.push_back(r);
+            if (!has_output) {
+                out.push_back("-o");
+                out.push_back("/dev/stdout");
+            }
+            args = out;
+            return true;
+        }
+        if (verb == "inspect" && format != "json") {
+            std::cerr << "Error: unknown inspect format '" << format
+                      << "' (json or names)\n";
+            failed = true;
+            return false;
+        }
+
+        out.push_back(verb == "inspect" ? "--inspect" : "--lint");
         out.push_back(subject);
         for (const auto& r : rest) out.push_back(r);
     } else if (verb == "eval") {
@@ -118,7 +158,8 @@ bool rewrite_verbs(std::vector<std::string>& args) {
     } else {  // extract
         if (rest.empty()) {
             std::cerr << "Error: extract needs a kind "
-                         "(weight, distance, values or names)\n";
+                         "(weight, distance or values)\n";
+            failed = true;
             return false;
         }
         const std::string kind = rest.front();
@@ -139,9 +180,12 @@ bool rewrite_verbs(std::vector<std::string>& args) {
 
         std::string flag;
         if (kind == "names" || kind == "list") {
-            // `names` is the documented spelling: you get signal names and widths.
-            // `list` is accepted because it shipped first and costs nothing to keep.
-            flag = "--fast-list";
+            std::cerr << "Error: a signal listing comes from "
+                         "`inspect TRACE --format=names`;\n"
+                         "       extract produces data series "
+                         "(weight, distance or values)\n";
+            failed = true;
+            return false;
         } else if (kind == "values") {
             flag = "--fast-values-signals";
         } else if (kind == "weight") {
@@ -152,7 +196,8 @@ bool rewrite_verbs(std::vector<std::string>& args) {
                  : !signals.empty() ? "--fast-hd-signals" : "--fast-hd-all";
         } else {
             std::cerr << "Error: unknown extract kind '" << kind
-                      << "' (weight, distance, values or names)\n";
+                      << "' (weight, distance or values)\n";
+            failed = true;
             return false;
         }
 
@@ -162,6 +207,7 @@ bool rewrite_verbs(std::vector<std::string>& args) {
         if (flag.find("-signals") != std::string::npos) {
             if (signals.empty()) {
                 std::cerr << "Error: extract " << kind << " needs --signals <file>\n";
+                failed = true;
                 return false;
             }
             out.push_back(signals);
@@ -177,8 +223,10 @@ bool rewrite_verbs(std::vector<std::string>& args) {
 } // namespace
 
 bool CLI::parse_arguments(int argc, const char* argv[]) {
-    // Verbs are sugar over the flags below; see rewrite_verbs().
-    rewrite_verbs(args);
+    // Verbs are sugar over the flags below; see rewrite_verbs(). A verb used wrongly
+    // stops here rather than falling through to flag parsing, where the verb word
+    // would be taken as a filename and the real error buried under a second one.
+    rewrite_verbs(args, verb_usage_error);
 
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
@@ -333,13 +381,14 @@ void CLI::print_usage() {
        )" << program_name << R"( [flags] [FILE]          (equivalent; what the paper documents)
 
 VERBS
-  inspect TRACE                     what is in a trace, as JSON
+  inspect TRACE [--format=F]        what is in a trace
+        F = json (default) | names    names gives "width name" + a timescale header
   lint SCRIPT.wal                   check a script without running it
   eval EXPR [EXPR...]               evaluate expressions
   run SCRIPT.wal                    run a script
   repl                              start the interactive REPL
   extract KIND TRACE -o OUT.csv     one pass over a trace, CSV out
-        KIND = weight | distance | values | names
+        KIND = weight | distance | values
         [--scope SCOPE]             only signals under a hierarchy prefix
         [--signals FILE]            only the signals named in FILE
 
@@ -347,6 +396,7 @@ VERBS
 
 EXAMPLES
   )" << program_name << R"( inspect trace.vcd --json
+  )" << program_name << R"( inspect trace.vcd --format=names > signals.txt
   )" << program_name << R"( extract weight trace.vcd --scope top.core -o activity.csv
   )" << program_name << R"( eval '(count (rising tb.clk))' -l trace.vcd
   )" << program_name << R"( lint analysis.wal
@@ -378,12 +428,12 @@ EXTRACTION FLAGS  (equivalent to `extract`; these are what the published
   --fast-hd-scope SCOPE FILE -o OUT     = extract distance FILE --scope SCOPE
   --fast-hd-signals LIST FILE -o OUT    = extract distance FILE --signals LIST
   --fast-values-signals LIST FILE -o OUT = extract values FILE --signals LIST
-  --fast-list FILE -o OUT               = extract names FILE
+  --fast-list FILE -o OUT               = inspect FILE --format=names
 
   weight   = Hamming weight: bits set at each timestamp
   distance = Hamming distance: bits changed since the previous timestamp
   values   = the decoded value of each listed signal, when it changes
-  names    = every signal as "width name", plus a # timescale header
+  (for a signal listing, see `inspect --format=names`)
 
 AGENT MODES (flag spelling)
   --inspect FILE                    = inspect FILE
@@ -681,6 +731,10 @@ int CLI::run_fast_mode() {
 
 int CLI::run() {
     parse_arguments(args.size(), nullptr);
+
+    if (verb_usage_error) {
+        return 1;          // the message was already printed by rewrite_verbs()
+    }
     
     // Handle flags
     if (help_flag) {

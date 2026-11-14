@@ -2251,7 +2251,7 @@ void test_verbs_equal_flags(ExecutableTestSuite& suite, const std::string& exe_p
                 {"extract distance " + vcd + " --scope top",  "--fast-hd-scope top " + vcd},
                 {"extract weight " + vcd,                     "--fast-hw-all " + vcd},
                 {"extract distance " + vcd,                   "--fast-hd-all " + vcd},
-                {"extract list " + vcd,                       "--fast-list " + vcd},
+                {"inspect " + vcd + " --format=names",        "--fast-list " + vcd},
                 {"extract values " + vcd + " --signals " + siglist,
                  "--fast-values-signals " + siglist + " " + vcd},
                 {"extract weight " + vcd + " --signals " + siglist,
@@ -2269,17 +2269,32 @@ void test_verbs_equal_flags(ExecutableTestSuite& suite, const std::string& exe_p
                 }
             }
 
-            // `names` is the documented spelling of the signal listing; `list`
-            // shipped first and still works.
-            run_command(exe_path + " extract names " + vcd + " -o /tmp/walpp_verb_n1.txt 2>/dev/null");
-            run_command(exe_path + " extract list " + vcd + " -o /tmp/walpp_verb_n2.txt 2>/dev/null");
-            auto [rcn, samen] = run_command(
-                "cmp -s /tmp/walpp_verb_n1.txt /tmp/walpp_verb_n2.txt && echo same || echo differ");
-            if (samen.find("same") == std::string::npos) {
+            // A signal listing belongs to `inspect`, not `extract`: the two verbs
+            // should not both answer "what is in this trace". Without -o it goes to
+            // stdout, like inspect's JSON form.
+            auto [rcn, names] = run_command(
+                exe_path + " inspect " + vcd + " --format=names 2>/dev/null");
+            if (names.find("# timescale") == std::string::npos) {
                 result.passed = false;
-                result.message += "`extract names` and `extract list` should agree; ";
+                result.message += "`inspect --format=names` should print to stdout; ";
             }
-            run_command("rm -f /tmp/walpp_verb_n1.txt /tmp/walpp_verb_n2.txt");
+
+            // A verb used wrongly must FAIL, not fall through to flag parsing where
+            // the verb word becomes a filename and the real error is buried.
+            struct Misuse { const char* args; const char* why; };
+            const Misuse misuses[] = {
+                {"extract names", "a listing is not an extraction"},
+                {"extract bogus", "unknown kind"},
+                {"inspect --format=bogus", "unknown format"},
+            };
+            for (const auto& m : misuses) {
+                auto [rcm, out] = run_command(
+                    exe_path + " " + m.args + " " + vcd + " >/dev/null 2>&1; echo rc=$?");
+                if (out.find("rc=1") == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("misuse should exit 1 (") + m.why + "); ";
+                }
+            }
 
             // `run` and `repl` reach the script and REPL paths.
             {

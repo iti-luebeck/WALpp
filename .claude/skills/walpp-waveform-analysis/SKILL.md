@@ -55,7 +55,8 @@ script written against it keeps working. Do not write new ones that way.
 **Do not type a name from memory.** Get it from the trace:
 
 ```bash
-$WAL --inspect t.vcd | jq -r '.signals[].name'   # every name, exactly as accepted
+$WAL inspect t.vcd | jq -r '.data.signals[].name'   # every name, exactly as accepted
+$WAL inspect t.vcd --format=names                   # or as "width name" lines
 ```
 
 Note that `-e` echoes signal names as quoted symbols while `print` renders them bare,
@@ -274,6 +275,7 @@ $WAL inspect trace.vcd --json
 $WAL lint analysis.wal
 $WAL eval '(count (rising tb.clk))' -l trace.vcd
 $WAL extract weight trace.vcd --scope top -o activity.csv
+$WAL inspect trace.vcd --format=names > signals.txt   # the --signals input
 ```
 
 They are sugar over the flags, byte for byte. Use whichever reads better; the flag

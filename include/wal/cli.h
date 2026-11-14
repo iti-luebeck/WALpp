@@ -60,6 +60,7 @@ private:
     bool lint_mode = false;            // --lint FILE.wal  : check a script, do not run it
     bool json_output = false;          // --json           : -e results as JSON
     bool pretty_json = true;           // --compact-json   : one line instead
+    bool verb_usage_error = false;     // a verb was used wrongly; stop
     std::string inspect_file;
     std::string lint_file;
     std::string fast_scope;
