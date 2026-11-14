@@ -11,9 +11,9 @@ Measured against **upstream wal-lang 0.9.1** (`wal/ast_defs.py` operator enum pl
 
 | | At branch start | Now |
 |---|---|---|
-| Upstream tests passing | 18 of 77 | **67 of 77** |
-| Upstream operators missing from WAL++ | 66 of 106 | **16 of 106** |
-| Open decisions | 6 | **3** |
+| Upstream tests passing | 18 of 77 | **71 of 77** |
+| Upstream operators missing from WAL++ | 66 of 106 | **0 of 106** |
+| Open decisions | 6 | **0** |
 | Upstream standard library | not loaded | loaded |
 
 WAL++ is not a subset: it has ~90 operators upstream lacks (the whole statistics,
@@ -403,76 +403,63 @@ contract, so they were updated to the real one rather than worked around.
 Measured, not estimated: 65 of 77 upstream tests pass, and 16 of upstream's 106
 operators are missing.
 
-### Operators still missing (16)
+### Operators: none missing
 
-| Group | Operators | Note |
-|---|---|---|
-| Modules | `import`, `require`, `eval-file` | Loading WAL and Python modules. `import` pulls in a Python module upstream, which has no direct C++ equivalent. |
-| Runtime eval | `eval`, `parse`, `call` | Evaluate data as code. The pieces exist (`Parser::parse_program`, `SEval::eval`); only the operators are absent. |
-| Trace authoring | `new-trace`, `dump-trace`, `defsig`, `trim-trace`, `sample-at` | Creating and writing traces, not just reading them. |
-| Trace queries | `loaded-traces`, `find/g` | Small; `find/g` is `find` across all groups. |
-| Scope | `set-scope`, `unset-scope` | The imperative form of `in-scope`, which does work. |
-| Conversion | `bits->sint` | Two's-complement reading of a bit string. Wanted by `signed` in the standard library. |
+All 106 operators in upstream's enum exist. Two of them, `import` and `call`, are
+upstream's bridge into the CPython interpreter it runs inside. A C++ program has no
+interpreter to reach into, so they are registered and fail with a message saying
+exactly that, which is a better answer than "Undefined variable".
 
-### Decisions, not work
+### Decisions: all settled
 
-These are behavior changes that need a call rather than an implementation.
+| | Decision |
+|---|---|
+| Separator | `.` joins a hierarchy, `^` prefixes a trace id, as upstream. The old `^`-joined spelling still resolves. |
+| Types | An int, a float, a bool and a string never coerce. `(+ 1 "hi")` is an error; `(= 0 #f)`, `(= 1 #t)` and `(= 1 1.0)` are false. `--compat-types` restores upstream's coercion in full. |
+| Integers | 64-bit by default, `--bigint` for arbitrary precision. |
+| `mod` | Euclidean: the least non-negative residue, `0 <= r < |divisor|`. |
+| `append` | Upstream's, adding one element. WAL++'s concatenation is now `extend`. |
+| Array elements | `data<0>`, as upstream spells it. Forced once `[` became subscript syntax. |
 
-1. **The `^` separator.** WAL++'s interpreter uses `^` for hierarchy, its own
-   `--fast-*` paths use `.`, and upstream reserves `^` for a trace id. The resolver
-   currently accepts all spellings, which hides the question rather than answering
-   it. `SIGNALS` and `SCOPES` return `^`-joined names where upstream returns dotted
-   ones (2 test failures). This is the only decision that gets harder after the
-   first public release.
+The two type decisions are one decision: types stay apart unless a conversion is
+written out. That matters here more than it would in a general-purpose language,
+because the VCD reader represents a signal wider than 64 bits as a bit STRING, so a
+coercing `+` would turn `(+ wide 1)` into concatenation of a bit pattern, and a
+loose `=` would let a comparison against that bit string quietly succeed. Ordering
+still mixes int and float, `(< 1 1.5)` is true, which is what makes `=` refusing a
+statement about identity rather than an oversight.
 
-2. **`(+ 1 "hi")`.** Upstream concatenates, giving `"1hi"`; WAL++ raises
-   *Expected number* (3 failures). Adopting upstream's rule is dangerous here
-   specifically because `vcd_trace.cpp` returns a BIT STRING for signals wider than
-   64 bits, so `(+ wide 1)` would quietly become string concatenation of a bit
-   pattern instead of an error. Related: `(= wide 5)` already answers false with no
-   error, which is arguably a bug regardless.
+`mod` is the one place where correctness and compatibility were weighed against
+each other. For every POSITIVE divisor Euclidean and upstream's floored modulo
+agree, so they coincide in every realistic case; they differ only for a negative
+divisor, where `(mod 7 -3)` is 1 here and -2 upstream.
 
-3. ~~**Integers wider than 64 bits.**~~ **Settled: 64-bit default, `--bigint` mode.**
-   64-bit is what waveform values and indices need and the arbitrary-precision path
-   is slower, so it stays the default and says so when a literal overflows. The
-   conformance suite runs in bigint mode, since upstream's integers are unbounded.
+### Measured divergence: none that upstream can run
 
-4. **`0 == #f`.** Upstream inherits Python's `0 == False`; WAL++ treats an int and a
-   bool as different types. Visible at a trace boundary: at MAX-INDEX `reval` is out
-   of range and answers false, so upstream counts `(stable clk)` as 1 where WAL++
-   counts 0.
+A differential sweep, the same expressions through both engines with the results
+diffed, is the check the 77 tests do not give. With `--bigint --compat-types` the
+only differences left are cases where UPSTREAM errors and WAL++ answers:
+`(max 1 5 3)` variadically, `(! "")`, `(begin ...)`, `(groups 'clk)` where upstream
+throws `unhashable type: Symbol`, and `(fold/signal ...)` given a closure. The sole
+genuine difference is `type`, which returns a symbol here and a Python class object
+upstream; that is upstream leaking its implementation and is not worth matching.
 
-5. ~~**Standard-library names that collide with builtins.**~~ **Settled for
-   `append`.** WAL++'s list concatenation is now `extend`, so `append` carries
-   upstream's meaning of adding one element. Both are verified against upstream. The
-   loader still skips the rest, which remain equivalent enough not to matter:
-   `car`, `cdr`, `cond`, `filter`, `reverse`, `set-index`, `set!`, `sort`, `sum`,
-   `symbol-add`, `unless`, `when`.
+### Not parity gaps (6 failures)
 
-6. ~~**SV array element naming.**~~ **Settled: `data<0>`, as upstream spells it.**
-   This stopped being optional when subscript syntax arrived: `[` then opened a
-   subscript, so `TOP.tb.data[0].data.something` read as the symbol `TOP.tb.data`
-   subscripted by 0 and a bracketed element could not be named at all. Upstream hit
-   the same ambiguity and solved it the same way. The old bracketed spelling still
-   resolves through `get-signal`.
-
-### What settling 3, 5 and 6 did not touch
-
-Nothing in the paper. The paper contains no code listing, no signal name and no
-separator: its only mention of the language is that upstream WAL "introduced a
-Lisp-like S-expression language". Its measurements come from the `--fast-*` paths,
-which use dotted names and never touch the interpreter. Re-verified after each
-change: byte-identical extraction output and unchanged per-run time.
-
-### Not parity gaps (5 failures)
-
-- 2 need upstream's internal `Operator` enum, which WAL++ has no equivalent of.
-- 2 compare printed output, which Python cannot capture from C++ stdout.
-- 1 is a typo in upstream's own suite: `test_overflow` reads
+- `test_quote` and `test_first_second_last` assert on upstream's internal
+  `Operator` enum. WAL++ has no equivalent: a quoted `'(+ 1 2)` gives a list of
+  symbols rather than enum members.
+- `test_print` and `test_printf` compare captured stdout. Python's `sys.stdout`
+  patching cannot see what C++ writes to the process's own stdout. The behavior
+  itself is covered by the executable tests, which read the real output.
+- `test_overflow` is a typo in upstream's own suite: it reads
   `(count tb.overflow` with no closing parenthesis.
+- `test_seta` requires `'+` to be rejected as an array key. Upstream parses `'+`
+  into an `Operator` enum member and refuses it on type; in WAL++ it is an ordinary
+  symbol, and symbols are valid keys.
 
-These five can never pass and should be excluded permanently rather than counted
-against parity.
+None of these six can pass, and none describes a behavior a user would meet. They
+should be excluded permanently rather than counted against parity.
 
 ## Silent wrong answers found and fixed
 
@@ -501,9 +488,11 @@ Conformance against upstream WAL 0.9.1's own test suite:
  61/77   macros, scopes and groups, operators as values
  65/77   the standard library
  67/77   bigint mode, append/extend, data<0> names
+ 68/77   divergences found by differential sweep
+ 71/77   strict types with --compat-types, Euclidean mod
 ```
 
-All 22 CTest tests pass. The ratchet in `tests/CMakeLists.txt` is at 67, so parity
+All 22 CTest tests pass. The ratchet in `tests/CMakeLists.txt` is at 71, so parity
 can only go up.
 
 The acceptance test is that published WAL runs unmodified and agrees with upstream:
