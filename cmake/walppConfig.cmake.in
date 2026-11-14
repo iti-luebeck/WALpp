@@ -1,9 +1,11 @@
 @PACKAGE_INIT@
 
-# WAL++ links Threads, and optionally ZLIB for compressed FST. A consumer linking
-# walpp needs the same transitive dependencies resolved before the target is used.
+# WAL++ links Threads, and ZLIB through the bundled fstapi, whose header includes
+# <zlib.h> unconditionally. A consumer linking walpp needs both resolved before the
+# target file is read: a static build exports fstapi, which names ZLIB::ZLIB.
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
+find_dependency(ZLIB)
 
 include("${CMAKE_CURRENT_LIST_DIR}/walppTargets.cmake")
 

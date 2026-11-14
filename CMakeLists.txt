@@ -73,7 +73,10 @@ add_library(fstapi STATIC
     third_party/fstapi/fastlz.c
     third_party/fstapi/lz4.c
 )
-target_include_directories(fstapi PUBLIC third_party/fstapi)
+# BUILD_INTERFACE only: walpp includes these headers privately, so a consumer never
+# needs them, and a bare source path in the interface cannot be exported at all.
+target_include_directories(fstapi
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/fstapi>)
 set_target_properties(fstapi PROPERTIES LINKER_LANGUAGE C)
 # Suppress warnings in third-party C code
 target_compile_options(fstapi PRIVATE -w -fPIC
@@ -320,6 +323,16 @@ if(NOT DEFINED SKBUILD_PLATLIB_DIR)
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
         INCLUDES DESTINATION include
+    )
+
+    # fstapi goes in the same export set. A shared walpp swallows it, so this looks
+    # unnecessary, but a STATIC walpp carries its private link dependencies into the
+    # interface as $<LINK_ONLY:fstapi>, and CMake refuses to generate an export that
+    # names a target outside it. Without this, every -DBUILD_SHARED_LIBS=OFF build
+    # fails at generate time, which is what the wasm build is.
+    install(TARGETS fstapi
+        EXPORT walppTargets
+        ARCHIVE DESTINATION lib
     )
 
     install(EXPORT walppTargets
