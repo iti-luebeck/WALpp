@@ -34,6 +34,29 @@ Value Trace::get_special_signal(const std::string& name) {
         // The base class returns the index; readers that keep real timestamps
         // override get_timestamp().
         return Value(static_cast<int64_t>(get_timestamp()));
+    } else if (name == LOCAL_SCOPES || name == LOCAL_SIGNALS) {
+        // Both are relative to the evaluator's current scope, which the caller passes
+        // in through set_query_scope(). The header has declared these since the
+        // beginning; nothing implemented them, so `LOCAL-SCOPES` was an *Undefined
+        // variable* even inside an (in-scope ...) body.
+        const std::string& scope = query_scope;
+        std::string prefix = scope.empty() ? std::string() : scope + SCOPE_SEPARATOR;
+
+        auto directly_under = [&prefix](const std::string& candidate) {
+            if (candidate.size() <= prefix.size()) return false;
+            if (candidate.compare(0, prefix.size(), prefix) != 0) return false;
+            // Nothing further down the hierarchy: "tb.dut.x" is not local to "tb".
+            return candidate.find(SCOPE_SEPARATOR, prefix.size()) == std::string::npos;
+        };
+
+        auto results = std::make_shared<WList>();
+        const auto& pool = (name == LOCAL_SCOPES) ? get_scopes() : get_all_signals();
+        for (const auto& candidate : pool) {
+            if (directly_under(candidate)) {
+                results->push_back(Value(std::make_shared<Symbol>(candidate)));
+            }
+        }
+        return Value(results);
     } else if (name == TRACE_NAME) {
         return Value(std::make_shared<Symbol>(tid));
     } else if (name == TRACE_FILE) {

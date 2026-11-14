@@ -106,9 +106,19 @@ inline bool resolve_signal_name(const std::shared_ptr<TraceContainer>& traces,
  *
  * @return true if @p name is a special variable that resolved
  */
+/// Whether @p name is one of WAL's special variables, independent of any trace.
+inline bool is_special_variable(const std::string& name) {
+    return name == Trace::INDEX || name == Trace::MAX_INDEX ||
+           name == Trace::TIMESTAMP || name == Trace::TRACE_NAME ||
+           name == Trace::TRACE_FILE || name == Trace::SIGNALS ||
+           name == Trace::SCOPES || name == Trace::VIRTUAL_SIGNALS ||
+           name == Trace::LOCAL_SCOPES || name == Trace::LOCAL_SIGNALS;
+}
+
 inline bool resolve_special_variable(const std::shared_ptr<TraceContainer>& traces,
                                     const std::string& name,
-                                    Value& out) {
+                                    Value& out,
+                                    const std::string& scope = "") {
     if (!traces || traces->empty()) {
         return false;
     }
@@ -116,10 +126,26 @@ inline bool resolve_special_variable(const std::shared_ptr<TraceContainer>& trac
     // declares SIGNALS-NO-ALIAS, LOCAL-SIGNALS and LOCAL-SCOPES, which it does not
     // implement; LOCAL-* need a notion of current scope, so they belong with the scope
     // work rather than being faked here.
-    if (name != Trace::INDEX && name != Trace::MAX_INDEX &&
-        name != Trace::TIMESTAMP && name != Trace::TRACE_NAME &&
-        name != Trace::TRACE_FILE && name != Trace::SIGNALS &&
-        name != Trace::SCOPES && name != Trace::VIRTUAL_SIGNALS) {
+    // `a^INDEX` asks for trace a's INDEX. Upstream qualifies special variables per
+    // trace id this way, which is the only way to read them with several loaded.
+    std::string bare = name;
+    std::string requested_tid;
+    auto caret = name.find('^');
+    if (caret != std::string::npos && caret > 0) {
+        std::string prefix = name.substr(0, caret);
+        std::string rest = name.substr(caret + 1);
+        if (is_special_variable(rest)) {
+            for (const auto& loaded : traces->get_trace_ids()) {
+                if (loaded == prefix) {
+                    requested_tid = prefix;
+                    bare = rest;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!is_special_variable(bare)) {
         return false;
     }
 
@@ -127,12 +153,14 @@ inline bool resolve_special_variable(const std::shared_ptr<TraceContainer>& trac
     if (ids.empty()) {
         return false;
     }
-    auto trace = traces->get_trace(ids.front());
+    auto trace = traces->get_trace(requested_tid.empty() ? ids.front() : requested_tid);
     if (!trace) {
         return false;
     }
     try {
-        out = trace->get_special_signal(name);
+        // LOCAL-SCOPES and LOCAL-SIGNALS are relative to the caller's current scope.
+        trace->set_query_scope(scope);
+        out = trace->get_special_signal(bare);
         return true;
     } catch (const std::exception&) {
         return false;

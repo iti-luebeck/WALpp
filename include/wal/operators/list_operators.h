@@ -163,7 +163,7 @@ public:
             // The function stays unevaluated - we need to eval it for each element
             Value func = eval.eval(args[0]);
             
-            if (!func.is_closure()) {
+            if (!func.is_closure() && !func.is_user_operator()) {
                 throw EvalError("map: first argument must be a function");
             }
             
@@ -172,7 +172,7 @@ public:
             
             for (const auto& elem : *list) {
                 std::vector<Value> func_args = {elem};
-                results.push_back(eval.eval_closure(func.to_closure(), func_args));
+                results.push_back(eval.apply_callable(func, func_args));
             }
             
             return Value(std::make_shared<WList>(results));
@@ -194,7 +194,7 @@ public:
             // The function stays unevaluated
             Value func = eval.eval(args[0]);
             
-            if (!func.is_closure()) {
+            if (!func.is_closure() && !func.is_user_operator()) {
                 throw EvalError("fold: first argument must be a function");
             }
             
@@ -203,7 +203,7 @@ public:
             
             for (const auto& elem : *list) {
                 std::vector<Value> func_args = {accumulator, elem};
-                accumulator = eval.eval_closure(func.to_closure(), func_args);
+                accumulator = eval.apply_callable(func, func_args);
             }
             
             return accumulator;
@@ -225,7 +225,7 @@ public:
             // The predicate stays unevaluated
             Value predicate = eval.eval(args[0]);
             
-            if (!predicate.is_closure()) {
+            if (!predicate.is_closure() && !predicate.is_user_operator()) {
                 throw EvalError("filter: first argument must be a function");
             }
             
@@ -234,7 +234,7 @@ public:
             
             for (const auto& elem : *list) {
                 std::vector<Value> pred_args = {elem};
-                Value result = eval.eval_closure(predicate.to_closure(), pred_args);
+                Value result = eval.apply_callable(predicate, pred_args);
                 if (result.is_truthy()) {
                     results.push_back(elem);
                 }

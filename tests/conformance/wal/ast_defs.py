@@ -30,6 +30,12 @@ class Symbol:
     def __hash__(self):
         return hash(self.name)
 
+    def __lt__(self, other):
+        # Upstream's tests sort lists of symbols before comparing them.
+        if isinstance(other, Symbol):
+            return self.name < other.name
+        return NotImplemented
+
     def __repr__(self):
         return f"Symbol({self.name!r})"
 

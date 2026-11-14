@@ -53,6 +53,140 @@ std::vector<Value> SEval::eval_args(const std::vector<Value>& args) {
     return results;
 }
 
+/**
+ * @brief Expand a quasiquoted template.
+ *
+ * Inside `(quasiquote t)` everything is literal except `(unquote x)`, which is
+ * replaced by the value of x, and `(unquote-splicing x)`, which splices a list's
+ * elements into the surrounding list. Nesting is tracked by @p depth so that a
+ * quasiquote inside a quasiquote behaves, as upstream's standard library relies on.
+ */
+/**
+ * @brief Call whatever is callable: a lambda, or a builtin passed as a value.
+ *
+ * `(map get SIGNALS)` and `(fold + 0 lst)` hand a BUILTIN to a higher-order
+ * operator. Those operators used to require a closure, so passing an operator was
+ * an error. The arguments here are already evaluated, so they are re-wrapped in
+ * `quote` before dispatch, which is how upstream does it too.
+ */
+Value SEval::apply_callable(const Value& func, const std::vector<Value>& args) {
+    if (func.is_closure()) {
+        return eval_closure(func.to_closure(), args);
+    }
+    if (func.is_user_operator()) {
+        const std::string& name = func.to_user_operator()->get_name();
+        auto op = builtin_operators.get_operator(name);
+        if (!op) {
+            throw EvalError("Unknown operator: " + name);
+        }
+        std::vector<Value> quoted;
+        quoted.reserve(args.size());
+        for (const auto& arg : args) {
+            auto wrapper = std::make_shared<WList>();
+            wrapper->push_back(Value(std::make_shared<Symbol>("quote")));
+            wrapper->push_back(arg);
+            quoted.push_back(Value(wrapper));
+        }
+        return (*op)(*this, quoted);
+    }
+    throw EvalError("not a function");
+}
+
+Value SEval::quasiquote(const Value& tmpl, int depth) {
+    if (!tmpl.is_list()) {
+        return tmpl;
+    }
+    auto list = tmpl.to_list();
+    if (list->empty()) {
+        return tmpl;
+    }
+
+    // A bare (unquote x) / (quasiquote x) node changes the depth.
+    if ((*list)[0].is_symbol() && list->size() == 2) {
+        const std::string& head = (*list)[0].to_symbol()->get_name();
+        if (head == "unquote") {
+            if (depth == 1) return eval((*list)[1]);
+            auto inner = std::make_shared<WList>();
+            inner->push_back((*list)[0]);
+            inner->push_back(quasiquote((*list)[1], depth - 1));
+            return Value(inner);
+        }
+        if (head == "quasiquote") {
+            auto inner = std::make_shared<WList>();
+            inner->push_back((*list)[0]);
+            inner->push_back(quasiquote((*list)[1], depth + 1));
+            return Value(inner);
+        }
+    }
+
+    auto result = std::make_shared<WList>();
+    for (const auto& element : *list) {
+        bool spliced = false;
+        if (element.is_list()) {
+            auto node = element.to_list();
+            if (node->size() == 2 && (*node)[0].is_symbol() &&
+                (*node)[0].to_symbol()->get_name() == "unquote-splicing" && depth == 1) {
+                Value value = eval((*node)[1]);
+                if (!value.is_list()) {
+                    throw EvalError("unquote-splicing: argument must evaluate to a list");
+                }
+                auto items = value.to_list();
+                for (const auto& item : *items) result->push_back(item);
+                spliced = true;
+            }
+        }
+        if (!spliced) {
+            result->push_back(quasiquote(element, depth));
+        }
+    }
+    return Value(result);
+}
+
+/**
+ * @brief Expand a macro call into the form it stands for.
+ *
+ * The arguments are bound UNEVALUATED, which is what separates a macro from a
+ * function: the body receives the source expressions and builds a new expression
+ * from them. The caller evaluates the result.
+ */
+Value SEval::expand_macro(const std::string& name, const std::vector<Value>& args) {
+    Value stored = macros.at(name);
+    if (!stored.is_macro()) {
+        throw EvalError(name + " is registered as a macro but is not one");
+    }
+    auto macro = stored.to_macro();
+
+    auto parameters = std::make_shared<WList>();
+    if (macro->get_args().is_list()) {
+        parameters = macro->get_args().to_list();
+    } else if (macro->get_args().is_symbol()) {
+        parameters->push_back(macro->get_args());
+    }
+
+    auto scope = std::make_shared<Environment>(macro->get_environment());
+    for (size_t i = 0; i < parameters->size(); ++i) {
+        if (!(*parameters)[i].is_symbol()) {
+            throw EvalError(name + ": macro parameters must be symbols");
+        }
+        const std::string& parameter = (*parameters)[i].to_symbol()->get_name();
+        // A trailing &rest-style parameter is not part of upstream's macro syntax,
+        // so a missing argument simply binds nil.
+        scope->define(parameter, i < args.size() ? args[i] : Value(nullptr));
+    }
+
+    auto saved = current_environment;
+    current_environment = scope;
+    Value expansion;
+    try {
+        expansion = eval(macro->get_expression());
+    } catch (...) {
+        current_environment = saved;
+        throw;
+    }
+    current_environment = saved;
+    return expansion;
+}
+
 Value SEval::eval_closure(std::shared_ptr<Closure> closure, 
                           const std::vector<Value>& args) {
     // Create new environment for closure execution
@@ -128,19 +262,36 @@ Value SEval::eval(const Value& expr) {
         } catch (const EvalError&) {
             // WAL's special variables (INDEX, MAX-INDEX, TS, SIGNALS, SCOPES, ...)
             Value special;
-            if (resolve_special_variable(traces, name, special)) {
+            if (resolve_special_variable(traces, name, special, current_scope)) {
                 return special;
             }
-            // An alias stands for a signal path: (alias clk "tb.clk") then clk.
+            // An alias stands for a name: (alias clk "tb.clk") then clk. Upstream
+            // aliases any symbol, not only a signal path, so (alias abc 'x) has to
+            // reach the VARIABLE x as well.
             std::string lookup = name;
             if (has_alias(name)) {
                 lookup = aliases.at(name);
+                try {
+                    return current_environment->get(lookup);
+                } catch (const EvalError&) {
+                    // not a variable; fall through to the signal lookup below
+                }
+                Value aliased_special;
+                if (resolve_special_variable(traces, lookup, aliased_special, current_scope)) {
+                    return aliased_special;
+                }
             }
             std::string resolved;
             if (resolve_signal_name(traces, lookup, resolved)) {
                 return traces->signal_value(resolved, 0);
             }
-            throw;  // not a variable, a special, an alias or a signal
+            // Finally, a builtin used as a VALUE: `(map get SIGNALS)` passes the
+            // operator itself. Checked last, so a variable or a signal of the same
+            // name still wins and no existing program changes meaning.
+            if (builtin_operators.has_operator(lookup)) {
+                return Value(std::make_shared<UserOperator>(lookup));
+            }
+            throw;  // not a variable, a special, an alias, a signal or an operator
         }
     }
     
@@ -176,6 +327,77 @@ Value SEval::eval(const Value& expr) {
         std::vector<Value> args(list->begin() + 1, list->end());
         
         // Check for special forms and macros
+
+        // A macro call expands first and the expansion is then evaluated. This is
+        // checked before every other form so a macro can shadow a builtin, which is
+        // how upstream's own standard library defines `rising`, `count` and friends.
+        if (has_macro(op_name)) {
+            return eval(expand_macro(op_name, args));
+        }
+
+        if (op_name == "quasiquote") {
+            if (args.size() != 1) {
+                throw EvalError("quasiquote requires exactly 1 argument");
+            }
+            return quasiquote(args[0], 1);
+        }
+
+        if (op_name == "unquote" || op_name == "unquote-splicing") {
+            throw EvalError(op_name + " is only valid inside a quasiquote");
+        }
+
+        if (op_name == "defmacro") {
+            // (defmacro name [params] body...)
+            if (args.size() < 3) {
+                throw EvalError("defmacro requires a name, a parameter list and a body");
+            }
+            if (!args[0].is_symbol()) {
+                throw EvalError("defmacro: the name must be a symbol");
+            }
+            const std::string& macro_name = args[0].to_symbol()->get_name();
+            Value body = args[2];
+            if (args.size() > 3) {
+                // Several body forms become an implicit (begin ...).
+                auto wrapped = std::make_shared<WList>();
+                wrapped->push_back(Value(std::make_shared<Symbol>("begin")));
+                for (size_t i = 2; i < args.size(); ++i) wrapped->push_back(args[i]);
+                body = Value(wrapped);
+            }
+            add_macro(macro_name, Value(std::make_shared<Macro>(
+                current_environment, args[1], body, macro_name)));
+            return Value(std::make_shared<Symbol>(macro_name));
+        }
+
+        if (op_name == "macroexpand") {
+            if (args.size() != 1) {
+                throw EvalError("macroexpand requires exactly 1 argument");
+            }
+            // The argument is the call form itself, usually written quoted.
+            Value form = args[0];
+            if (form.is_list()) {
+                auto inner = form.to_list();
+                if (!inner->empty() && (*inner)[0].is_symbol() &&
+                    (*inner)[0].to_symbol()->get_name() == "quote" && inner->size() == 2) {
+                    form = (*inner)[1];
+                }
+            }
+            if (!form.is_list() || form.to_list()->empty()) return form;
+            auto call = form.to_list();
+            if (!(*call)[0].is_symbol()) return form;
+            const std::string& called = (*call)[0].to_symbol()->get_name();
+            if (!has_macro(called)) return form;
+            std::vector<Value> call_args(call->begin() + 1, call->end());
+            return expand_macro(called, call_args);
+        }
+
+        if (op_name == "gensym") {
+            if (!args.empty()) {
+                throw EvalError("gensym expects no arguments");
+            }
+            static int64_t counter = 0;
+            return Value(std::make_shared<Symbol>("g" + std::to_string(counter++)));
+        }
+
         if (op_name == "quote") {
             if (args.size() != 1) {
                 throw EvalError("quote requires exactly 1 argument");

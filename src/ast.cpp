@@ -131,6 +131,13 @@ std::shared_ptr<WArray> Value::to_array() const {
     return std::get<std::shared_ptr<WArray>>(data);
 }
 
+std::shared_ptr<UserOperator> Value::to_user_operator() const {
+    if (!is_user_operator()) {
+        throw std::runtime_error("Value is not a user operator");
+    }
+    return std::get<std::shared_ptr<UserOperator>>(data);
+}
+
 std::shared_ptr<Closure> Value::to_closure() const {
     if (!is_closure()) {
         throw EvalError("Expected closure, got " + to_string_repr());

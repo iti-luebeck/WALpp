@@ -125,6 +125,7 @@ protected:
 
     std::vector<std::string> signal_names;
     std::vector<std::string> scope_names;
+    std::string query_scope;  ///< see set_query_scope()
     std::unordered_map<std::string, Value> virtual_signals;
 
 public:
@@ -185,6 +186,15 @@ public:
      * @return Vector of hierarchical scope names
      */
     virtual std::vector<std::string> get_scopes() const;
+
+    /**
+     * @brief Scope that LOCAL-SCOPES and LOCAL-SIGNALS are resolved against.
+     *
+     * Upstream keeps this in the global variable CS and passes it down on every
+     * special-signal read. The evaluator sets it before reading those two names.
+     */
+    void set_query_scope(const std::string& scope) { query_scope = scope; }
+    const std::string& get_query_scope() const { return query_scope; }
     ///@}
 
     ///@name Time Navigation

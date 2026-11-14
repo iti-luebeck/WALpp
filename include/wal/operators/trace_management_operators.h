@@ -274,6 +274,35 @@ public:
                 // An alias may stand in for the path, which is what makes the
                 // parser's `clk@-1` desugaring work on an aliased name.
                 std::string lookup = signal_name;
+                // A special variable can be asked for at an offset too: upstream's
+                // `TS@-1` desugars to (get-signal "TS" -1). Resolving it as a signal
+                // could never work, since no trace contains a signal called TS.
+                {
+                    Value special;
+                    if (offset == 0 &&
+                        resolve_special_variable(eval.get_traces(), lookup, special,
+                                                 eval.get_scope())) {
+                        return special;
+                    }
+                    if (offset != 0 && is_special_variable(lookup)) {
+                        auto saved = eval.get_traces()->indices();
+                        Value result;
+                        try {
+                            eval.get_traces()->step(offset);
+                            resolve_special_variable(eval.get_traces(), lookup, result,
+                                                     eval.get_scope());
+                        } catch (...) {
+                            for (const auto& [tid, index] : saved) {
+                                eval.get_traces()->set_index(index, tid);
+                            }
+                            throw;
+                        }
+                        for (const auto& [tid, index] : saved) {
+                            eval.get_traces()->set_index(index, tid);
+                        }
+                        return result;
+                    }
+                }
                 if (eval.has_alias(lookup)) {
                     lookup = eval.get_aliases().at(lookup);
                 }

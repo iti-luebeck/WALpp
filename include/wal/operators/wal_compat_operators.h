@@ -40,6 +40,7 @@ public:
         register_arrays(registry);
         register_variables(registry);
         register_trace_analysis(registry);
+        register_scopes_and_groups(registry);
     }
 
 private:
@@ -569,13 +570,49 @@ private:
             return result;
         });
 
+        // (reval expr offset) -- evaluate expr at index+offset, then restore.
+        // Out of range answers false rather than raising, which is what makes
+        // `(rising clk)` safe at index 0 and at the end of a trace.
+        registry.register_operator("reval", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) {
+                throw EvalError("reval: expects two arguments (reval expr offset)");
+            }
+            Value offset_value = eval.eval(args[1]);
+            if (!offset_value.is_int()) {
+                throw EvalError("reval: second argument must evaluate to int");
+            }
+            int offset = static_cast<int>(offset_value.to_int());
+            if (!eval.get_traces() || eval.get_traces()->empty()) {
+                throw EvalError("reval: no trace loaded");
+            }
+            for (const auto& tid : eval.get_traces()->get_trace_ids()) {
+                auto trace = eval.get_traces()->get_trace(tid);
+                if (!trace) continue;
+                int target = trace->get_index() + offset;
+                if (target < 0 || target > trace->get_max_index()) {
+                    return Value(false);
+                }
+            }
+            auto saved = eval.get_traces()->indices();
+            Value result;
+            try {
+                eval.get_traces()->step(offset);
+                result = eval.eval(args[0]);
+            } catch (...) {
+                restore(eval, saved);
+                throw;
+            }
+            restore(eval, saved);
+            return result;
+        });
+
         // (fold/signal f acc stop signal) -- fold over a signal's values until stop.
         registry.register_operator("fold/signal", [](SEval& eval, const std::vector<Value>& args) -> Value {
             if (args.size() != 4) {
                 throw EvalError("fold/signal: expects 4 arguments (fold/signal f acc stop signal)");
             }
             Value func = eval.eval(args[0]);
-            if (!func.is_closure()) {
+            if (!func.is_closure() && !func.is_user_operator()) {
                 throw EvalError("fold/signal: first argument must be a function");
             }
             Value acc = eval.eval(args[1]);
@@ -594,7 +631,7 @@ private:
                 while (!eval.eval(stop).is_truthy() && !ended) {
                     Value current = eval.get_traces()->signal_value(signal_name, 0);
                     std::vector<Value> call_args{acc, current};
-                    acc = eval.eval_closure(func.to_closure(), call_args);
+                    acc = eval.apply_callable(func, call_args);
                     ended = !eval.get_traces()->step(1).empty();
                 }
             } catch (...) {
@@ -604,6 +641,245 @@ private:
             restore(eval, saved);
             return acc;
         });
+    }
+
+    /**
+     * Scopes and groups.
+     *
+     * A scope is a node in the design hierarchy ("tb.dut"); a group is a common
+     * prefix shared by several signals ("tb.dut.axi_"), which is how WAL talks about
+     * a bus whose members are separate signals. `SEval` has carried `current_scope`
+     * and `current_group` since the beginning with nothing setting them, and the
+     * trace side already parsed `scope_names`; this connects all three.
+     *
+     * Upstream mirrors the current scope and group into the global variables CS and
+     * CG so scripts can read them, and this does the same.
+     */
+    static void register_scopes_and_groups(OperatorRegistry& registry) {
+        // (in-scope scope body...) -- evaluate body with the scope set.
+        registry.register_operator("in-scope", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() < 2) {
+                throw EvalError("in-scope: expects at least two arguments (in-scope scope expression)");
+            }
+            std::string name = name_of(eval.eval(args[0]), "in-scope");
+            std::string previous = eval.get_scope();
+            eval.set_scope(name);
+            mirror(eval, "CS", name);
+            Value result = Value(nullptr);
+            try {
+                result = eval_body(eval, args, 1);
+            } catch (...) {
+                eval.set_scope(previous);
+                mirror(eval, "CS", previous);
+                throw;
+            }
+            eval.set_scope(previous);
+            mirror(eval, "CS", previous);
+            return result;
+        });
+
+        // (resolve-scope name) -- read `name` relative to the current scope. This is
+        // what the reader's `~name` shorthand expands to.
+        registry.register_operator("resolve-scope", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) {
+                throw EvalError("resolve-scope: exactly one argument required (resolve-scope name:symbol)");
+            }
+            std::string leaf = name_of(args[0], "resolve-scope");
+            if (eval.has_alias(leaf)) leaf = eval.get_aliases().at(leaf);
+            return Value(std::make_shared<Symbol>(qualify(eval, eval.get_scope(), leaf)));
+        });
+
+        // (resolve-group name) -- the same, relative to the current group.
+        registry.register_operator("resolve-group", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) {
+                throw EvalError("resolve-group: exactly one argument required (resolve-group name:symbol)");
+            }
+            std::string leaf = name_of(args[0], "resolve-group");
+            if (eval.has_alias(leaf)) leaf = eval.get_aliases().at(leaf);
+            // A group is already a prefix, so it joins without a separator.
+            return Value(std::make_shared<Symbol>(eval.get_group() + leaf));
+        });
+
+        // (all-scopes) -- every scope in the trace.
+        registry.register_operator("all-scopes", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (!args.empty()) {
+                throw EvalError("all-scopes: expects no arguments");
+            }
+            auto results = std::make_shared<WList>();
+            for (const auto& scope : all_scopes(eval)) {
+                results->push_back(Value(std::make_shared<Symbol>(scope)));
+            }
+            return Value(results);
+        });
+
+        // (groups suffix...) -- the common prefixes for which every suffix exists.
+        // (groups "_ready" "_valid") finds each bus that has both members.
+        registry.register_operator("groups", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.empty()) {
+                throw EvalError("groups: expects at least one argument (groups post:str+)");
+            }
+            std::vector<std::string> suffixes;
+            for (const auto& arg : args) {
+                std::string part = arg.is_list() ? name_of(eval.eval(arg), "groups")
+                                                 : name_of(arg, "groups");
+                if (eval.has_alias(part)) part = eval.get_aliases().at(part);
+                suffixes.push_back(part);
+            }
+
+            const std::string& scope = eval.get_scope();
+            std::string prefix = scope.empty() ? std::string()
+                                               : scope + Trace::SCOPE_SEPARATOR;
+
+            std::vector<std::string> found;
+            for (const auto& signal : all_signals(eval)) {
+                // The signal must end with the first suffix ...
+                if (signal.size() <= suffixes[0].size()) continue;
+                if (signal.compare(signal.size() - suffixes[0].size(),
+                                   suffixes[0].size(), suffixes[0]) != 0) continue;
+                std::string base = signal.substr(0, signal.size() - suffixes[0].size());
+                // ... and sit directly inside the current scope, if one is set.
+                if (!prefix.empty()) {
+                    if (base.compare(0, prefix.size(), prefix) != 0) continue;
+                    if (base.find(Trace::SCOPE_SEPARATOR, prefix.size()) != std::string::npos) continue;
+                }
+                // ... and every other member of the group must exist too.
+                bool complete = true;
+                for (size_t i = 1; i < suffixes.size(); ++i) {
+                    if (!eval.get_traces()->contains(base + suffixes[i])) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (complete && std::find(found.begin(), found.end(), base) == found.end()) {
+                    found.push_back(base);
+                }
+            }
+            std::sort(found.begin(), found.end());
+
+            auto results = std::make_shared<WList>();
+            for (const auto& base : found) {
+                results->push_back(Value(std::make_shared<Symbol>(base)));
+            }
+            return Value(results);
+        });
+
+        // (in-group group body...) -- evaluate body with the group, and the scope
+        // that contains it, set.
+        registry.register_operator("in-group", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() < 2) {
+                throw EvalError("in-group: expects at least two arguments (in-group group expression)");
+            }
+            std::string group = name_of(eval.eval(args[0]), "in-group");
+            std::string previous_group = eval.get_group();
+            std::string previous_scope = eval.get_scope();
+
+            eval.set_group(group);
+            auto sep = group.rfind(Trace::SCOPE_SEPARATOR);
+            std::string scope = (sep != std::string::npos) ? group.substr(0, sep + 1)
+                                                           : previous_scope;
+            eval.set_scope(scope);
+            mirror(eval, "CG", group);
+            mirror(eval, "CS", scope);
+
+            Value result = Value(nullptr);
+            try {
+                result = eval_body(eval, args, 1);
+            } catch (...) {
+                eval.set_group(previous_group);
+                eval.set_scope(previous_scope);
+                mirror(eval, "CG", previous_group);
+                mirror(eval, "CS", previous_scope);
+                throw;
+            }
+            eval.set_group(previous_group);
+            eval.set_scope(previous_scope);
+            mirror(eval, "CG", previous_group);
+            mirror(eval, "CS", previous_scope);
+            return result;
+        });
+
+        // (in-groups groups body...) -- run the body once per group.
+        registry.register_operator("in-groups", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() < 2) {
+                throw EvalError("in-groups: expects at least two arguments (in-groups groups expression)");
+            }
+            Value groups = eval.eval(args[0]);
+            if (!groups.is_list()) {
+                throw EvalError("in-groups: first argument must evaluate to a list of groups");
+            }
+            auto list = groups.to_list();
+            auto results = std::make_shared<WList>();
+            std::string previous_group = eval.get_group();
+            std::string previous_scope = eval.get_scope();
+            try {
+                for (size_t i = 0; i < list->size(); ++i) {
+                    std::string group = name_of((*list)[i], "in-groups");
+                    eval.set_group(group);
+                    auto sep = group.rfind(Trace::SCOPE_SEPARATOR);
+                    std::string scope = (sep != std::string::npos) ? group.substr(0, sep + 1)
+                                                                   : previous_scope;
+                    eval.set_scope(scope);
+                    mirror(eval, "CG", group);
+                    mirror(eval, "CS", scope);
+                    results->push_back(eval_body(eval, args, 1));
+                }
+            } catch (...) {
+                eval.set_group(previous_group);
+                eval.set_scope(previous_scope);
+                mirror(eval, "CG", previous_group);
+                mirror(eval, "CS", previous_scope);
+                throw;
+            }
+            eval.set_group(previous_group);
+            eval.set_scope(previous_scope);
+            mirror(eval, "CG", previous_group);
+            mirror(eval, "CS", previous_scope);
+            return Value(results);
+        });
+    }
+
+    /// A symbol or string argument, as a plain name.
+    static std::string name_of(const Value& v, const char* who) {
+        if (v.is_symbol()) return v.to_symbol()->get_name();
+        if (v.is_string()) return v.to_string();
+        throw EvalError(std::string(who) + ": argument must be a symbol or a string");
+    }
+
+    /// Join a scope and a leaf name. A scope that is really a group (not a node in
+    /// the hierarchy) is already a prefix, so it takes no separator.
+    static std::string qualify(SEval& eval, const std::string& scope,
+                               const std::string& leaf) {
+        if (scope.empty()) return leaf;
+        auto scopes = all_scopes(eval);
+        bool is_real_scope = std::find(scopes.begin(), scopes.end(), scope) != scopes.end();
+        return is_real_scope ? scope + Trace::SCOPE_SEPARATOR + leaf : scope + leaf;
+    }
+
+    /// Mirror the current scope/group into a global, as upstream's CS and CG.
+    static void mirror(SEval& eval, const std::string& name, const std::string& value) {
+        eval.get_global_environment()->define(name, Value(value));
+    }
+
+    static std::vector<std::string> all_scopes(SEval& eval) {
+        std::vector<std::string> scopes;
+        if (!eval.get_traces()) return scopes;
+        for (const auto& tid : eval.get_traces()->get_trace_ids()) {
+            auto trace = eval.get_traces()->get_trace(tid);
+            if (!trace) continue;
+            for (const auto& scope : trace->get_scopes()) scopes.push_back(scope);
+        }
+        return scopes;
+    }
+
+    static std::vector<std::string> all_signals(SEval& eval) {
+        std::vector<std::string> signals;
+        if (!eval.get_traces()) return signals;
+        for (const auto& tid : eval.get_traces()->get_trace_ids()) {
+            auto trace = eval.get_traces()->get_trace(tid);
+            if (!trace) continue;
+            for (const auto& signal : trace->get_all_signals()) signals.push_back(signal);
+        }
+        return signals;
     }
 
     /// Put every trace back where it was before a sweep.
@@ -693,7 +969,7 @@ private:
                 throw EvalError("mapa: requires two arguments (mapa function array)");
             }
             Value func = eval.eval(args[0]);
-            if (!func.is_closure()) {
+            if (!func.is_closure() && !func.is_user_operator()) {
                 throw EvalError("mapa: first argument must be a function");
             }
             Value target = eval.eval(args[1]);
@@ -706,7 +982,7 @@ private:
             auto snapshot = target.to_array()->entries();
             for (const auto& [key, value] : snapshot) {
                 std::vector<Value> call_args{Value(key), value};
-                results->push_back(eval.eval_closure(func.to_closure(), call_args));
+                results->push_back(eval.apply_callable(func, call_args));
             }
             return Value(results);
         });

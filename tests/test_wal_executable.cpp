@@ -1066,6 +1066,66 @@ void test_fst_matches_vcd(ExecutableTestSuite& suite, const std::string& exe_pat
     suite.add_result(result);
 }
 
+// Test 22: macros, and the standard-library idioms built on them.
+//
+// `defmacro`, quasiquote and `reval` are what upstream's own standard library is
+// written in: `rising`, `falling` and `count` are macros there, not builtins. The
+// parser read quasiquote and SEval carried an unused `macros` map, but nothing
+// expanded anything, so none of the stdlib could run.
+void test_macros(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "macros and the stdlib idioms built on them";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        result.passed = true;
+
+        struct Case { const char* expr; const char* want; bool needs_trace; };
+        const Case cases[] = {
+            // expansion happens before evaluation, and arguments stay unevaluated
+            {"-e '(defmacro twice [x] `(+ ,x ,x))' -e '(twice 21)'", "42", false},
+            // (quote ...) rather than the apostrophe, to keep the shell quoting simple
+            {"-e '(defmacro twice [x] `(+ ,x ,x))' -e '(macroexpand (quote (twice 21)))'",
+             "('+ 21 21)", false},  // symbols print with a leading quote
+            // unquote-splicing
+            {"-e '(defmacro all [xs] `(list ,@xs))' -e '(all (1 2 3))'", "(1 2 3)", false},
+            // gensym gives a fresh name each time
+            {"-e '(= (gensym) (gensym))'", "false", false},
+            // upstream's own definitions of rising and count, verbatim
+            {"-e '(defmacro rising [e] `(&& (= ,e 0) (= (reval ,e 1) 1)))' "
+             "-e '(defmacro count [c] `(length (find ,c)))' "
+             "-e '(count (rising tb.clk))'", "40", true},
+            // reval is bounds-safe, which is what makes rising safe at index 0
+            {"-e '(begin (set-index 0) (reval tb.clk -1))'", "false", true},
+            // a special variable can be read at an offset
+            {"-e '(begin (set-index 5) TS@-1)'", "40", true},
+        };
+
+        for (const auto& c : cases) {
+            if (c.needs_trace && !file_exists(vcd)) continue;
+            std::string command = exe_path;
+            if (c.needs_trace) command += " -l " + vcd;
+            command += " " + std::string(c.expr) + " 2>&1";
+            auto [rc, out] = run_command(command);
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should give " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+        if (result.passed) result.message = "macro expansion and reval behave as upstream";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1124,6 +1184,7 @@ int main(int argc, char* argv[]) {
     test_zero_is_false(suite, exe_path);
     test_structural_equality(suite, exe_path);
     test_fst_matches_vcd(suite, exe_path);
+    test_macros(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

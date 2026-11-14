@@ -237,7 +237,7 @@ Value Parser::parse_list() {
         } else if (peek() == '`') {
             elements.push_back(parse_quoted("quasiquote"));
         } else if (peek() == ',') {
-            elements.push_back(parse_quoted("unquote"));
+            elements.push_back(parse_unquote());
         } else {
             elements.push_back(parse_atom());
         }
@@ -245,7 +245,49 @@ Value Parser::parse_list() {
 
     // Create a WAL list
     auto list = std::make_shared<WList>(elements);
-    return Value(list);
+    Value result = Value(list);
+
+    // `(expr)@offset` evaluates the whole expression at a relative index, as in
+    // `(map get SIGNALS)@x`. Only a bare identifier was handled before, so `@` after
+    // a parenthesised expression was read as the start of a new symbol named "@x".
+    // A signal's `clk@-1` keeps its own desugaring in parse_atom; for a general
+    // expression the equivalent is reval.
+    if (peek() == '@') {
+        next();
+        auto wrapper = std::make_shared<WList>();
+        wrapper->push_back(Value(std::make_shared<Symbol>("reval")));
+        wrapper->push_back(result);
+        if (peek() == '(' || peek() == '[') {
+            wrapper->push_back(parse_list());
+        } else {
+            wrapper->push_back(parse_atom());
+        }
+        return Value(wrapper);
+    }
+    return result;
+}
+
+/// `,expr` is unquote, `,@expr` is unquote-splicing. The two differ only in the
+/// second character, so they are read together.
+Value Parser::parse_unquote() {
+    next();  // consume ','
+    std::string form = "unquote";
+    if (peek() == '@') {
+        next();
+        form = "unquote-splicing";
+    }
+    skip_whitespace();
+    Value target;
+    if (peek() == '(' || peek() == '[') {
+        target = parse_list();
+    } else {
+        target = parse_atom();
+    }
+    auto elements = std::vector<Value>{
+        Value(std::make_shared<Symbol>(form)),
+        target
+    };
+    return Value(std::make_shared<WList>(elements));
 }
 
 Value Parser::parse_quoted(const std::string& quote_type) {
@@ -292,7 +334,7 @@ Value Parser::parse_one() {
     } else if (c == '`') {
         return parse_quoted("quasiquote");
     } else if (c == ',') {
-        return parse_quoted("unquote");
+        return parse_unquote();
     } else {
         return parse_atom();
     }

@@ -171,6 +171,15 @@ public:
      */
     Value eval_closure(std::shared_ptr<Closure> closure, const std::vector<Value>& args);
 
+    /// Call a lambda or a builtin passed as a value. Arguments are evaluated.
+    Value apply_callable(const Value& func, const std::vector<Value>& args);
+
+    /// Expand a quasiquoted template, honouring unquote and unquote-splicing.
+    Value quasiquote(const Value& tmpl, int depth);
+
+    /// Expand a macro call. Arguments are bound UNEVALUATED.
+    Value expand_macro(const std::string& name, const std::vector<Value>& args);
+
     /**
      * Dispatch to a built-in operator
      * 

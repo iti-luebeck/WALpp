@@ -148,6 +148,7 @@ public:
     std::shared_ptr<Closure> to_closure() const;
     std::shared_ptr<Macro> to_macro() const;
     std::shared_ptr<Environment> to_environment() const;
+    std::shared_ptr<UserOperator> to_user_operator() const;
     ///@}
 
     ///@name Safe Type Extraction
