@@ -101,3 +101,13 @@ add_test(
     COMMAND $<TARGET_FILE:test_trace_integration_cli>
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
+# Concurrency: the per-instance guarantee, and the process-wide state that broke it.
+add_executable(test_concurrency test_concurrency.cpp)
+target_link_libraries(test_concurrency PRIVATE walpp Threads::Threads)
+
+add_test(
+    NAME test_concurrency
+    COMMAND $<TARGET_FILE:test_concurrency>
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)

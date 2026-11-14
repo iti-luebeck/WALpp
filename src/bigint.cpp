@@ -11,19 +11,27 @@ namespace wal {
  * flipped the extension's copy while the parser, compiled into libwalpp, kept reading
  * its own and still refused oversized literals.
  */
-bool& bigint_mode() {
-    static bool enabled = false;
+std::atomic<bool>& bigint_mode() {
+    // Atomic because it is read from the evaluator on every arithmetic operation
+    // and may be set from another thread. A relaxed load compiles to an ordinary
+    // load on the platforms WAL++ targets, so the hot path does not pay for it;
+    // what it buys is that setting the mode is not a data race.
+    static std::atomic<bool> enabled{false};
     return enabled;
 }
 
-void set_bigint_mode(bool enabled) { bigint_mode() = enabled; }
+void set_bigint_mode(bool enabled) {
+    bigint_mode().store(enabled, std::memory_order_relaxed);
+}
 
 /// Single definition, for the same shared-library reason as bigint_mode().
-bool& compat_types_mode() {
-    static bool enabled = false;
+std::atomic<bool>& compat_types_mode() {
+    static std::atomic<bool> enabled{false};
     return enabled;
 }
 
-void set_compat_types_mode(bool enabled) { compat_types_mode() = enabled; }
+void set_compat_types_mode(bool enabled) {
+    compat_types_mode().store(enabled, std::memory_order_relaxed);
+}
 
 } // namespace wal

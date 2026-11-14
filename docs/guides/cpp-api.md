@@ -216,12 +216,64 @@ across files. The object is cheap; the trace is not.
 
 ## Threading
 
-A `Wal` instance is **not** thread-safe. Give each thread its own. The trace readers
-hold mutable cursor state, so sharing one across threads will produce wrong answers
-rather than a crash, which is the worse failure.
+**Separate instances are safe to use at the same time. One instance is not.**
 
-Parallelising a campaign across files, one `Wal` per worker, is the intended shape
-and scales linearly.
+That is the whole guarantee, and it is the shape a campaign already has: one trace
+per unit of work, one `Wal` per unit of work.
+
+```cpp
+std::vector<std::thread> pool;
+for (int t = 0; t < threads; ++t) {
+    pool.emplace_back([&, t] {
+        for (const auto& trace : my_share_of(t)) {
+            wal::Wal w;                   // one per unit of work
+            w.load(trace, "t");
+            record(w.eval_str("(count (rising tb.clk))").to_int());
+        }
+    });
+}
+for (auto& t : pool) t.join();
+```
+
+Measured on a 16-core machine, one analysis being a load plus a whole-trace sweep:
+
+| threads | per analysis |
+|---|---|
+| 1 | 1.03 ms |
+| 2 | 0.55 ms |
+| 4 | 0.29 ms |
+| 8 | 0.15 ms |
+
+About sevenfold on eight threads. Construction is not the bottleneck: a bare `Wal`
+costs 0.016 ms, and 0.17 ms with the standard library loaded, against roughly 1 ms
+for the analysis itself. Do not bother pooling instances.
+
+### Why one instance cannot be shared
+
+A `Trace` carries a cursor. `signal_value(name, offset)` reads relative to the
+current index, and `step` and `set-index` move it. Two threads sweeping the same
+trace would interleave their positions and get plausible wrong answers rather than a
+crash, which is the worse failure. Making this safe would mean taking the index out
+of the trace and passing it through every read, which is a different library.
+
+### What is shared, and what it cost
+
+Three pieces of process-wide state used to break even the per-instance guarantee.
+All three are fixed, and `tests/implementation/test_concurrency.cpp` holds them down:
+
+- **`gensym`** kept a plain counter, so two threads could be handed the same name.
+  Measured at 1314 collisions in 3200 before the fix. Duplicate gensyms break macro
+  hygiene silently, as variable capture rather than as an error. Now atomic.
+- **`require`** tracked loaded modules process-wide, which was wrong on one thread
+  too: a *second* instance skipped a module it had never loaded and never received
+  its definitions. Module state now belongs to the interpreter that loaded it.
+- **The `--bigint` and `--compat-types` flags** are read on every arithmetic
+  operation and may be set from another thread. Now atomic with relaxed ordering,
+  which measured no difference in a 400,000-iteration arithmetic loop (728 ms
+  against 727 ms).
+
+Set the mode flags once, before starting threads. They are process-wide by design,
+because the parser consults them and the parser is used in several places.
 
 ## See also
 

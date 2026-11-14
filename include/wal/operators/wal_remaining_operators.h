@@ -123,19 +123,13 @@ private:
                 if (path.size() < 4 || path.compare(path.size() - 4, 4, ".wal") != 0) {
                     path += ".wal";
                 }
-                if (!required().insert(path).second) {
-                    continue;   // already required
+                if (!eval.get_required_modules().insert(path).second) {
+                    continue;   // already required by THIS interpreter
                 }
                 result = run_file(eval, path, "require");
             }
             return result;
         });
-    }
-
-    /// Modules already run by `require`, so a second require is a no-op.
-    static std::unordered_set<std::string>& required() {
-        static std::unordered_set<std::string> seen;
-        return seen;
     }
 
     static Value run_file(SEval& eval, const std::string& path, const char* who) {

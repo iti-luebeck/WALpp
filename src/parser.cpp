@@ -69,7 +69,7 @@ Value Parser::parse_number(const std::string& token) {
         // catch-all below and become a SYMBOL, so `583547542375894327581` was
         // reported as an undefined variable rather than as a number out of range.
         if (auto big = BigInt::from_decimal(token)) {
-            if (bigint_mode()) {
+            if (bigint_mode().load(std::memory_order_relaxed)) {
                 return Value(std::make_shared<BigInt>(*big));
             }
             throw EvalError(

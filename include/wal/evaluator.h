@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <optional>
 
@@ -81,6 +82,14 @@ private:
     std::unordered_map<std::string, std::string> imports;
     std::unordered_map<std::string, std::string> aliases;
     std::unordered_map<std::string, Value> macros;
+
+    /// Modules already run by `require`, per interpreter.
+    ///
+    /// This was a process-wide static, which was wrong twice over: a second Wal
+    /// instance silently skipped a module it had never loaded and so never got its
+    /// definitions, and two threads mutating one unordered_set is undefined
+    /// behaviour. Module state belongs to the interpreter that loaded it.
+    std::unordered_set<std::string> required_modules;
 
     // Scope and group tracking (for hardware signal management)
     std::string current_scope;
@@ -300,6 +309,9 @@ public:
         return macros; 
     }
     
+    /// Modules already run by `require` in THIS interpreter.
+    std::unordered_set<std::string>& get_required_modules() { return required_modules; }
+
     /// Register a new macro
     void add_macro(const std::string& name, const Value& macro) { 
         macros[name] = macro; 

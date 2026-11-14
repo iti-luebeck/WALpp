@@ -70,13 +70,13 @@ PYBIND11_MODULE(wal_cpp, m) {
     // Arbitrary-precision integers are opt-in, matching the --bigint CLI flag.
     m.def("set_bigint_mode", &set_bigint_mode,
           "Enable arbitrary-precision integers (default: 64-bit, which is faster)");
-    m.def("bigint_mode", []() { return bigint_mode(); },
+    m.def("bigint_mode", []() { return bigint_mode().load(); },
           "Whether arbitrary-precision integers are enabled");
 
     // Upstream's permissive type coercion, matching the --compat-types CLI flag.
     m.def("set_compat_types_mode", &set_compat_types_mode,
           "Enable upstream's type coercion (default: types stay separate)");
-    m.def("compat_types_mode", []() { return compat_types_mode(); },
+    m.def("compat_types_mode", []() { return compat_types_mode().load(); },
           "Whether upstream's type coercion is enabled");
 
     // ───────────────────────────────────────────────────────────────

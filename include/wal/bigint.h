@@ -6,6 +6,7 @@
 #include <vector>
 #include <optional>
 #include <algorithm>
+#include <atomic>
 
 namespace wal {
 
@@ -265,11 +266,11 @@ private:
  * running upstream scripts unchanged, and says so rather than making it the
  * silent default.
  */
-bool& compat_types_mode();
+std::atomic<bool>& compat_types_mode();
 
 void set_compat_types_mode(bool enabled);
 
-bool& bigint_mode();
+std::atomic<bool>& bigint_mode();
 
 void set_bigint_mode(bool enabled);
 
