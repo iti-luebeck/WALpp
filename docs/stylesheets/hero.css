@@ -157,18 +157,47 @@ body.bc-homepage .md-content,
   z-index: 1;
 }
 
-/* The navigation and the table of contents sit beside the hero, right over the signals.
- * A frosted panel in the page colour keeps them readable; the signals show through blurred. */
+/* The navigation and the table of contents share the viewport with the stage, and
+ * nothing small and grey reads well on top of moving signals. They used to sit on a
+ * frosted panel, which solved the reading but put two tall floating cards beside the
+ * hero, mostly empty, which is worse than the problem.
+ *
+ * So they are simply not there while the animation is. `attachParallax` sets
+ * --bc-aside-opacity from how far the layers have travelled, and the menus phase in
+ * as the signals leave the top of the viewport. No panel, nothing to read over.
+ *
+ * Hidden is the fallback here rather than visible, because the class that selects it
+ * is added synchronously and removed again the moment buildHero fails, so no script
+ * means no class means ordinary menus. */
 body.bc-homepage .md-sidebar {
   z-index: 1;
 }
 
-body.bc-homepage .md-sidebar__scrollwrap {
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--md-default-bg-color) 60%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+/* Each sidebar fades only across the widths where it is a column standing beside the
+ * hero. Below those, Material folds it into the drawer or the header, where it is
+ * opened deliberately and nothing is behind it: 60em for the table of contents,
+ * 76.25em for the navigation. Fading the drawer would hide the whole menu on a phone.
+ *
+ * `visibility: hidden` at the bottom of the ramp, because a sidebar at opacity 0 is
+ * still clickable and still takes a tab stop. */
+@media screen and (min-width: 60em) {
+  body.bc-homepage .md-sidebar--secondary {
+    opacity: var(--bc-aside-opacity, 0);
+  }
+
+  body.bc-homepage.bc-asides-hidden .md-sidebar--secondary {
+    visibility: hidden;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  body.bc-homepage .md-sidebar--primary {
+    opacity: var(--bc-aside-opacity, 0);
+  }
+
+  body.bc-homepage.bc-asides-hidden .md-sidebar--primary {
+    visibility: hidden;
+  }
 }
 
 /* Keep the header above the parallax stage.
@@ -176,9 +205,13 @@ body.bc-homepage .md-sidebar__scrollwrap {
  * Deliberately NOT transparent: the header's contents (logo, site title, theme
  * toggle, repo link) are white, and the front page's background is white, so a
  * see-through header makes all of them invisible until hovered. The opaque bar
- * costs nothing visually - the hero starts right below it. */
+ * costs nothing visually - the hero starts right below it.
+ *
+ * `sticky`, not `relative`: the z-index is what lifts it over the stage, and
+ * `relative` additionally dropped the stickiness that every other page has, so the
+ * front page was the one page whose header and tabs scrolled away. */
 body.bc-homepage .md-header {
-  position: relative;
+  position: sticky;
   z-index: 5;
 }
 

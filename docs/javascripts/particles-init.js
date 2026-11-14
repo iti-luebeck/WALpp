@@ -131,7 +131,8 @@
   }
 
   function teardown() {
-    document.body.classList.remove('bc-homepage');
+    document.body.classList.remove('bc-homepage', 'bc-asides-hidden');
+    document.body.style.removeProperty('--bc-aside-opacity');
     if (particleContainer) {
       try { particleContainer.destroy(); } catch (e) { /* already gone */ }
       particleContainer = null;
@@ -204,14 +205,47 @@
     setTimeout(function () { marker.remove(); }, MARKER_FADE_MS);
   }
 
+  // Where the menus start and finish phasing in, as a fraction of the stage's opaque
+  // band (hero.css masks the layers out below MASK, so that band is what you can
+  // actually see). The menus are clear of the signals exactly when the layers have
+  // travelled the whole band, which is where the fade ends.
+  var MASK = 0.55;          // keep in step with the mask-image stops in hero.css
+  var FADE_FROM = 0.45;     // of the band travelled
+  var FADE_TO = 1.0;
+
   function attachParallax() {
     var ticking = false;
+    var reduced = window.matchMedia &&
+                  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Reduced motion pins the layers (hero.css), so nothing would ever travel and the
+    // menus would never arrive. Leave them alone.
+    if (reduced) {
+      document.body.style.removeProperty('--bc-aside-opacity');
+      document.body.classList.remove('bc-asides-hidden');
+    }
+
+    function phaseAsides(travelled) {
+      var stage = document.querySelector('.bc-parallax');
+      if (!stage) return;
+      var band = stage.getBoundingClientRect().height * MASK;
+      if (band <= 0) return;
+      var at = travelled / band;
+      var opacity = (at - FADE_FROM) / (FADE_TO - FADE_FROM);
+      opacity = Math.max(0, Math.min(1, opacity));
+      document.body.style.setProperty('--bc-aside-opacity', opacity.toFixed(3));
+      document.body.classList.toggle('bc-asides-hidden', opacity < 0.02);
+    }
+
     function update() {
       var scrolled = window.pageYOffset;
+      var travelled = 0;
       document.querySelectorAll('.bc-parallax__layer').forEach(function (layer) {
         var speed = parseFloat(layer.getAttribute('data-speed')) || 0.5;
+        travelled = Math.max(travelled, scrolled * speed);
         layer.style.transform = 'translate3d(0, ' + (-(scrolled * speed)) + 'px, 0)';
       });
+      if (!reduced) phaseAsides(travelled);
       ticking = false;
     }
     window.addEventListener('scroll', function () {
@@ -306,11 +340,20 @@
       teardown();
       return;
     }
-    document.body.classList.add('bc-homepage');
-    if (document.querySelector('.bc-parallax')) return;  // already built
+    if (document.querySelector('.bc-parallax')) {   // already built
+      document.body.classList.add('bc-homepage');
+      return;
+    }
 
     var built = buildHero();
-    if (!built) return;
+    // No hero means no animation for the menus to wait out, so the page must stop
+    // counting as the homepage or they would stay hidden for good.
+    if (!built) {
+      document.body.classList.remove('bc-homepage', 'bc-asides-hidden');
+      document.body.style.removeProperty('--bc-aside-opacity');
+      return;
+    }
+    document.body.classList.add('bc-homepage');
     attachParallax();
     loadParticles(built.bodyBg);
   }
@@ -340,6 +383,14 @@
       attributes: true,
       attributeFilter: ['data-md-color-scheme']
     });
+  }
+
+  // init() waits 300 ms for Material to settle. Claiming the homepage now, while the
+  // document is still parsing, keeps the menus from being painted and then taken away
+  // again: this script is the last thing in <body>, and #__config is already above it.
+  if (document.body && isFrontPage()) {
+    document.body.classList.add('bc-homepage', 'bc-asides-hidden');
+    document.body.style.setProperty('--bc-aside-opacity', '0');
   }
 
   document.addEventListener('DOMContentLoaded', function () {

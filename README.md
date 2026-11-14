@@ -12,7 +12,6 @@ A powerful, expressive language and toolkit for analyzing digital simulation wav
 [![WAL Official](https://img.shields.io/badge/WAL-wal--lang.org-0066cc)](https://wal-lang.org)
 
 ---
----
 
 ## Documentation
 

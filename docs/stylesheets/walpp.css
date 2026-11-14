@@ -47,3 +47,15 @@
   margin: 0.2rem 0.4rem;
   padding: 0.2rem;
 }
+
+/* "Table of contents" came out at the same 14px/700 as the section links beneath it,
+   only dimmer, so it read as a disabled link rather than as the column's heading, and
+   it sat about nine pixels off the first entry. A label wants to look like a label. */
+.md-nav--secondary > .md-nav__title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.75rem;
+}
