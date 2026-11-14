@@ -7,8 +7,8 @@ error are written to docs/playground/runnable.json, and docs/javascripts/playgro
 puts a "Run in playground" button on exactly those.
 
 The point is that a button which opens the playground only to show an error is worse
-than no button. Roughly two thirds of the README's snippets do not evaluate: they use
-operators WAL++ does not implement, or they are abstract templates with placeholders.
+than no button. A good share of the snippets do not evaluate: they use operators WAL++ does not
+implement, or they are abstract templates with placeholders.
 Those are listed in the report this prints, which is worth reading now and then.
 
 Usage: tools/mark-runnable-snippets.py [path/to/wal]
@@ -20,7 +20,28 @@ import subprocess
 import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-DOCS = ["README.md", "docs/API_QUICK_REFERENCE.md", "docs/INDEX.md"]
+# Every Markdown page the site builds from, discovered rather than listed. A fixed
+# list went stale the moment the README was split into docs/guides and
+# docs/reference: the three files named here still existed, so the tool reported
+# 0/0 runnable and wrote an empty catalogue instead of failing.
+DOC_ROOTS = ["README.md", "docs"]
+SKIP_DIRS = {"playground", "images", "stylesheets", "javascripts", "overrides"}
+
+
+def find_docs(root):
+    """Markdown pages that can hold snippets, in a stable order."""
+    found = []
+    for entry in DOC_ROOTS:
+        path = os.path.join(root, entry)
+        if os.path.isfile(path):
+            found.append(entry)
+            continue
+        for dirpath, dirnames, filenames in os.walk(path):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            for name in sorted(filenames):
+                if name.endswith(".md"):
+                    found.append(os.path.relpath(os.path.join(dirpath, name), root))
+    return found
 TRACE_DIR = os.path.join("docs", "playground", "traces")
 OUT = os.path.join(ROOT, "docs", "playground", "runnable.json")
 
@@ -108,7 +129,7 @@ def main():
                    for f in sorted(os.listdir(trace_path)) if f.endswith(".vcd")]
 
     runnable, rejected = [], []
-    for doc in DOCS:
+    for doc in find_docs(ROOT):
         path = os.path.join(ROOT, doc)
         if not os.path.exists(path):
             continue
