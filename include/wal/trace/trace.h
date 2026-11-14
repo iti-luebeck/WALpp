@@ -141,6 +141,7 @@ protected:
     std::vector<std::string> scope_names;
     std::string query_scope;  ///< see set_query_scope()
     std::unordered_map<std::string, Value> virtual_signals;
+    std::vector<int> sampling_points;   ///< see set_sampling_points()
 
 public:
     virtual ~Trace() = default;
@@ -248,6 +249,38 @@ public:
     
     /// Get maximum time index
     int get_max_index() const { return max_index; }
+
+    /**
+     * @brief Shorten the trace, for `trim-trace`.
+     *
+     * Only ever downwards: a trace cannot grow data it never read.
+     */
+    void set_max_index(int idx) {
+        if (idx >= 0 && idx <= max_index) {
+            max_index = idx;
+        }
+    }
+
+    /**
+     * @brief Restrict the trace to the listed indices, for `sample-at`.
+     *
+     * Sampling points are a view, not a rewrite: the data stays, and the points say
+     * which indices an analysis should visit. An empty list clears the restriction.
+     */
+    void set_sampling_points(const std::vector<int>& points) {
+        sampling_points = points;
+    }
+
+    const std::vector<int>& get_sampling_points() const { return sampling_points; }
+
+    /**
+     * @brief Write this trace out as VCD, for `dump-trace`.
+     *
+     * With no path, the text goes to stdout and the returned string is empty;
+     * otherwise it is the path written. Virtual signals are not included: their
+     * values are expressions evaluated against a trace, not stored samples.
+     */
+    std::string dump_vcd(const std::string& path = "");
 
     /// Get actual simulation timestamp at current index (default: returns index)
     virtual int64_t get_timestamp() const { return static_cast<int64_t>(current_index); }

@@ -19,6 +19,7 @@
 #include "wal/operators/visualization_operators.h"
 #include "wal/operators/trace_management_operators.h"
 #include "wal/operators/wal_compat_operators.h"
+#include "wal/operators/wal_remaining_operators.h"
 #include "wal/operators/hamming_operators.h"
 #include <cmath>
 #include <algorithm>
@@ -579,6 +580,7 @@ void SEval::initialize_builtins() {
     // aliases. Registered last so these names are the ones that win if an earlier
     // set happens to define the same spelling.
     wal::operators::WalCompatOperators::register_all(builtin_operators);
+    wal::operators::WalRemainingOperators::register_all(builtin_operators);
 }
 
 } // namespace wal

@@ -1,4 +1,5 @@
 #include "wal/trace/trace_container.h"
+#include "wal/trace/virtual_trace.h"
 #include "wal/trace/vcd_trace.h"
 #include "wal/trace/csv_trace.h"
 #include "wal/trace/fst_trace.h"
@@ -192,6 +193,18 @@ std::shared_ptr<Trace> TraceContainer::get_trace(const std::string& tid) const {
         return it->second;
     }
     return nullptr;
+}
+
+void TraceContainer::new_virtual_trace(const std::string& tid, int max_index) {
+    if (tid.empty()) {
+        throw std::runtime_error("new-trace: trace id must not be empty");
+    }
+    if (traces.count(tid)) {
+        throw std::runtime_error("new-trace: a trace with id " + tid + " is already loaded");
+    }
+    traces[tid] = std::make_shared<VirtualTrace>(tid, max_index,
+                                                 std::make_shared<TraceContainer>(*this));
+    num_traces++;
 }
 
 void TraceContainer::clear() {

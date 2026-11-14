@@ -323,6 +323,13 @@ public:
      * 
      * Frees all loaded traces. Useful for clean reset.
      */
+    /**
+     * @brief Register an empty trace with only a timeline, for `(new-trace ...)`.
+     *
+     * It has no file and no samples; `defsig` gives it signals.
+     */
+    void new_virtual_trace(const std::string& tid, int max_index);
+
     void clear();
 
     /**

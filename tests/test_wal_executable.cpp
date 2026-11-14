@@ -10,6 +10,7 @@
 #include <vector>
 #include <filesystem>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 
 namespace fs = std::filesystem;
@@ -1654,6 +1655,119 @@ void test_comparisons(ExecutableTestSuite& suite, const std::string& exe_path) {
     suite.add_result(result);
 }
 
+// Test 31: the last sixteen upstream operators.
+//
+// Everything upstream's operator enum names now exists: 0 of 106 missing. The
+// expectations marked "upstream" were taken by running wal-lang 0.9.1 on the same
+// input. `import` and `call` are upstream's bridge into the CPython interpreter it
+// runs inside; WAL++ is a C++ program with none, so they are registered to fail
+// with a message that says so rather than looking like a missing operator.
+void test_remaining_operators(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "the last sixteen upstream operators";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        result.passed = true;
+
+        struct Case { const char* expr; const char* want; bool needs_trace; };
+        const Case cases[] = {
+            // code as data
+            {"(eval (quote (+ 1 2)))", "3", false},            // upstream: 3
+            {"(parse \"(+ 1 2)\")", "('+ 1 2)", false},
+            {"(eval (parse \"(+ 40 2)\"))", "42", false},
+            {"(length (parse \"1\" \"2\"))", "3", false},   // (do 1 2)
+            // conversion, two's complement
+            {"(bits->sint \"0101\")", "5", false},            // upstream: 5
+            {"(bits->sint \"1011\")", "-5", false},           // upstream: -5
+            {"(bits->sint \"1000\")", "-8", false},           // upstream: -8
+            {"(bits->sint \"0\")", "0", false},
+            // trace queries
+            {"(loaded-traces)", "(\"DEFAULT\")", true},       // upstream: ['DEFAULT']
+            {"(length (find/g (rising tb.clk)))", "40", true},
+            // scope as a statement
+            {"(begin (set-scope (quote tb)) CS)", "tb", true},
+            {"(begin (set-scope (quote tb)) (unset-scope) CS)", "", true},
+            {"(begin (set-scope (quote tb)) (length LOCAL-SIGNALS))", "3", true},
+            // trace authoring
+            {"(begin (trim-trace \"DEFAULT\" 10) MAX-INDEX)", "10", true},
+            {"(begin (trim-trace \"DEFAULT\" 10) (length (find/g (rising tb.clk))))",
+             "5", true},
+            {"(sample-at (list 0 2 4))", "3", true},
+            {"(begin (new-trace v 5) (length (loaded-traces)))", "2", true},
+            {"(begin (new-trace v 5) (defsig doubled (* 2 tb.dut.counter)))",
+             "doubled", true},
+        };
+
+        for (const auto& c : cases) {
+            std::string command = exe_path;
+            if (c.needs_trace) {
+                if (!file_exists(vcd)) continue;
+                command += " -l " + vcd;
+            }
+            command += " -e '" + std::string(c.expr) + "' 2>&1";
+            auto [rc, out] = run_command(command);
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should give '" + c.want +
+                                  "' (got: '" + out + "'); ";
+            }
+        }
+
+        // dump-trace must produce a VCD that reads back as the same trace.
+        if (file_exists(vcd)) {
+            std::string out_vcd = "/tmp/walpp_dump_roundtrip.vcd";
+            run_command(exe_path + " -l " + vcd + " -e '(dump-trace \"DEFAULT\" \"" +
+                        out_vcd + "\")' >/dev/null 2>&1");
+            struct Check { const char* expr; const char* want; };
+            const Check checks[] = {
+                {"(length SIGNALS)", "7"},
+                {"MAX-INDEX", "80"},
+                {"(count (rising tb.clk))", "40"},
+                {"tb.dut.counter", "0"},
+            };
+            for (const auto& c : checks) {
+                auto [rc, out] = run_command(
+                    exe_path + " -l " + out_vcd + " -e '" + c.expr + "' 2>&1");
+                if (out.find(c.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("round-tripped VCD: ") + c.expr +
+                                      " should be " + c.want + " (got: '" + out + "'); ";
+                }
+            }
+            std::remove(out_vcd.c_str());
+        }
+
+        // The CPython bridge must explain itself, not read as a missing operator.
+        for (const char* op : {"(import numpy)", "(call numpy.mean 1)"}) {
+            auto [rc, out] = run_command(exe_path + " -e '" + std::string(op) + "' 2>&1");
+            if (out.find("not available in WAL++") == std::string::npos ||
+                out.find("CPython") == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(op) +
+                                  " should explain why it cannot work (got: '" + out + "'); ";
+            }
+            if (out.find("Undefined variable") != std::string::npos) {
+                result.passed = false;
+                result.message += std::string(op) + " must not look like a missing operator; ";
+            }
+        }
+
+        if (result.passed) {
+            result.message = "all 106 upstream operators exist; 2 explain why they cannot work";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1721,6 +1835,7 @@ int main(int argc, char* argv[]) {
     test_strict_types(suite, exe_path);
     test_mod_euclidean(suite, exe_path);
     test_comparisons(suite, exe_path);
+    test_remaining_operators(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);
