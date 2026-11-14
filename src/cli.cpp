@@ -10,6 +10,8 @@
 #include "wal/fast/streaming_ops.h"
 #include <iostream>
 #include <fstream>
+#include <filesystem>
+#include <set>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
@@ -30,7 +32,135 @@ CLI::CLI(int argc, const char* argv[])
     repl_instance = std::make_shared<REPL>(wal_instance);
 }
 
+namespace {
+
+/**
+ * @brief Rewrite a verb invocation into the equivalent flags.
+ *
+ * `wal extract weight trace.vcd --scope top -o out.csv` becomes
+ * `wal --fast-hw-scope top trace.vcd -o out.csv`.
+ *
+ * Desugaring rather than a second code path is the point. The flag forms are what
+ * the published paper's artifact runs and what Table II was measured through, so
+ * there must be exactly ONE implementation underneath; a verb that reached the
+ * kernels by its own route could drift from the flag that the paper documents, and
+ * nothing would say so.
+ *
+ * A first argument is a verb only when it matches one AND no file of that name
+ * exists, so `wal lint` cannot be hijacked by a file called `lint` in the working
+ * directory, and `wal script.wal` still runs a script.
+ */
+bool rewrite_verbs(std::vector<std::string>& args) {
+    if (args.empty()) return false;
+    const std::string verb = args[0];
+    static const std::set<std::string> verbs = {"inspect", "lint", "eval", "extract"};
+    if (!verbs.count(verb)) return false;
+    if (std::filesystem::exists(verb)) return false;
+
+    std::vector<std::string> rest(args.begin() + 1, args.end());
+    std::vector<std::string> out;
+
+    auto take_option = [&rest](const std::string& name, std::string& into) {
+        for (size_t i = 0; i + 1 < rest.size(); ++i) {
+            if (rest[i] == name) {
+                into = rest[i + 1];
+                rest.erase(rest.begin() + i, rest.begin() + i + 2);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (verb == "inspect" || verb == "lint") {
+        out.push_back(verb == "inspect" ? "--inspect" : "--lint");
+        // the subject first, then whatever modifiers followed
+        std::string subject;
+        for (size_t i = 0; i < rest.size(); ++i) {
+            if (!rest[i].empty() && rest[i][0] != '-') {
+                subject = rest[i];
+                rest.erase(rest.begin() + i);
+                break;
+            }
+        }
+        out.push_back(subject);
+        for (const auto& r : rest) out.push_back(r);
+    } else if (verb == "eval") {
+        // every bare word is an expression; flags pass through
+        for (size_t i = 0; i < rest.size(); ++i) {
+            if (!rest[i].empty() && rest[i][0] != '-') {
+                out.push_back("-e");
+                out.push_back(rest[i]);
+            } else {
+                out.push_back(rest[i]);
+                // -l and -o take a value
+                if ((rest[i] == "-l" || rest[i] == "-o") && i + 1 < rest.size()) {
+                    out.push_back(rest[++i]);
+                }
+            }
+        }
+    } else {  // extract
+        if (rest.empty()) {
+            std::cerr << "Error: extract needs a kind "
+                         "(weight, distance, values or list)\n";
+            return false;
+        }
+        const std::string kind = rest.front();
+        rest.erase(rest.begin());
+
+        std::string scope, signals;
+        take_option("--scope", scope);
+        take_option("--signals", signals);
+
+        std::string trace;
+        for (size_t i = 0; i < rest.size(); ++i) {
+            if (!rest[i].empty() && rest[i][0] != '-') {
+                trace = rest[i];
+                rest.erase(rest.begin() + i);
+                break;
+            }
+        }
+
+        std::string flag;
+        if (kind == "list") {
+            flag = "--fast-list";
+        } else if (kind == "values") {
+            flag = "--fast-values-signals";
+        } else if (kind == "weight") {
+            flag = !scope.empty()   ? "--fast-hw-scope"
+                 : !signals.empty() ? "--fast-hw-signals" : "--fast-hw-all";
+        } else if (kind == "distance") {
+            flag = !scope.empty()   ? "--fast-hd-scope"
+                 : !signals.empty() ? "--fast-hd-signals" : "--fast-hd-all";
+        } else {
+            std::cerr << "Error: unknown extract kind '" << kind
+                      << "' (weight, distance, values or list)\n";
+            return false;
+        }
+
+        out.push_back(flag);
+        // The flag forms take the selector before the trace.
+        if (flag.find("-scope") != std::string::npos) out.push_back(scope);
+        if (flag.find("-signals") != std::string::npos) {
+            if (signals.empty()) {
+                std::cerr << "Error: extract " << kind << " needs --signals <file>\n";
+                return false;
+            }
+            out.push_back(signals);
+        }
+        out.push_back(trace);
+        for (const auto& r : rest) out.push_back(r);
+    }
+
+    args = out;
+    return true;
+}
+
+} // namespace
+
 bool CLI::parse_arguments(int argc, const char* argv[]) {
+    // Verbs are sugar over the flags below; see rewrite_verbs().
+    rewrite_verbs(args);
+
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
         
@@ -192,6 +322,12 @@ void CLI::print_usage() {
               << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
               << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
               << "  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)\n"
+              << "\nVERBS (equivalent to the flags below; either spelling works):\n"
+              << "  wal inspect TRACE [--json]          what is in a trace\n"
+              << "  wal lint SCRIPT.wal [--json]        check a script without running it\n"
+              << "  wal eval EXPR [-l TRACE] [--json]   evaluate an expression\n"
+              << "  wal extract weight|distance|values|list TRACE\n"
+              << "        [--scope S | --signals FILE] -o OUT.csv\n"
               << "\nAGENT / SCRIPTING MODES (machine-readable):\n"
               << "  --inspect FILE                      Describe a trace as JSON\n"
               << "                                      (signals, widths, scopes, length)\n"

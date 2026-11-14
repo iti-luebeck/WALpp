@@ -265,6 +265,20 @@ Two defaults differ from upstream on purpose, both switchable:
 
 To run an upstream script exactly: `wal --compat-types --bigint -f script.wal`
 
+### Verbs
+
+The extended modes have a verb spelling as well as the flags:
+
+```bash
+$WAL inspect trace.vcd --json
+$WAL lint analysis.wal
+$WAL eval '(count (rising tb.clk))' -l trace.vcd
+$WAL extract weight trace.vcd --scope top -o activity.csv
+```
+
+They are sugar over the flags, byte for byte. Use whichever reads better; the flag
+forms are what the paper's scripts use and are not going away.
+
 ### Checking a script before running it
 
 ```bash

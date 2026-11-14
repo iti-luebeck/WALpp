@@ -2141,6 +2141,179 @@ void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
     suite.add_result(result);
 }
 
+// Test 36: the command lines the published paper's artifact depends on.
+//
+// Nešković et al., "Security-Driven Verification of RISC-V Crypto Extensions",
+// reports Table II throughput measured through exactly these invocations, and the
+// artifact scripts in artifacts/scripts/ run them. They are the public contract of
+// the released tool: a reader reproducing the paper types these.
+//
+// This test exists so that any later change to the CLI -- a verb grammar, a rename,
+// a tidy-up -- has to keep them working or fail here. Being careful is not the same
+// as being able to prove it.
+void test_paper_cli_contract(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "the paper's command lines still work";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/data/test_perf_read.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: perf trace not found";
+        } else {
+            result.passed = true;
+
+            std::string siglist = "/tmp/walpp_paper_siglist.txt";
+            run_command(exe_path + " --fast-list " + vcd +
+                        " -o /tmp/walpp_paper_list.txt 2>/dev/null");
+            run_command("grep -v '^#' /tmp/walpp_paper_list.txt | awk '{print $2}' > " +
+                        siglist);
+
+            // walpp_tools.py builds: wal <args> -o <tmp.csv>
+            struct Invocation { std::string args; const char* what; };
+            const Invocation paper[] = {
+                {"--fast-values-signals " + siglist + " " + vcd,
+                 "constant-time latency extraction (walpp_tools.bus_events)"},
+                {"--fast-hw-scope top " + vcd,
+                 "power activity trace, weight (walpp_tools.activity_series)"},
+                {"--fast-hd-scope top " + vcd,
+                 "power activity trace, distance (walpp_tools.activity_series)"},
+                {"--fast-hw-all " + vcd,
+                 "Table II row 2, the Hamming-weight benchmark (bench_hw.py)"},
+            };
+
+            for (const auto& inv : paper) {
+                std::string out = "/tmp/walpp_paper_out.csv";
+                auto [rc, log] = run_command(exe_path + " " + inv.args + " -o " + out +
+                                             " 2>/dev/null; echo rc=$?");
+                if (log.find("rc=0") == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("FAILED: ") + inv.what + "; ";
+                    continue;
+                }
+                auto [rc2, count] = run_command("wc -l < " + out + " 2>/dev/null || echo 0");
+                if (std::stoi(count) < 10) {
+                    result.passed = false;
+                    result.message += std::string("produced no rows: ") + inv.what + "; ";
+                }
+                std::remove(out.c_str());
+            }
+
+            std::remove(siglist.c_str());
+            std::remove("/tmp/walpp_paper_list.txt");
+
+            if (result.passed) {
+                result.message = "all four published invocations run and produce rows";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 37: a verb and its flag are the same command.
+//
+// The verbs are sugar: rewrite_verbs() turns them into the flag form before anything
+// else runs, so there is one implementation underneath. This asserts that, by
+// requiring byte-identical output from both spellings of every extraction mode.
+//
+// It matters because the flag forms are what the published paper documents. A verb
+// that reached the kernels by its own route could drift from the flag, and the
+// divergence would show up as two papers' worth of numbers that no longer agree.
+void test_verbs_equal_flags(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "verb form and flag form agree exactly";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/data/test_perf_read.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: perf trace not found";
+        } else {
+            result.passed = true;
+
+            std::string siglist = "/tmp/walpp_verb_siglist.txt";
+            run_command(exe_path + " --fast-list " + vcd + " -o /tmp/walpp_verb_list.txt 2>/dev/null");
+            run_command("grep -v '^#' /tmp/walpp_verb_list.txt | awk '{print $2}' > " + siglist);
+
+            struct Pair { std::string verb; std::string flag; };
+            const Pair pairs[] = {
+                {"extract weight " + vcd + " --scope top",    "--fast-hw-scope top " + vcd},
+                {"extract distance " + vcd + " --scope top",  "--fast-hd-scope top " + vcd},
+                {"extract weight " + vcd,                     "--fast-hw-all " + vcd},
+                {"extract distance " + vcd,                   "--fast-hd-all " + vcd},
+                {"extract list " + vcd,                       "--fast-list " + vcd},
+                {"extract values " + vcd + " --signals " + siglist,
+                 "--fast-values-signals " + siglist + " " + vcd},
+                {"extract weight " + vcd + " --signals " + siglist,
+                 "--fast-hw-signals " + siglist + " " + vcd},
+            };
+
+            for (const auto& p : pairs) {
+                run_command(exe_path + " " + p.verb + " -o /tmp/walpp_verb_v.out 2>/dev/null");
+                run_command(exe_path + " " + p.flag + " -o /tmp/walpp_verb_f.out 2>/dev/null");
+                auto [rc, same] = run_command(
+                    "cmp -s /tmp/walpp_verb_v.out /tmp/walpp_verb_f.out && echo same || echo differ");
+                if (same.find("same") == std::string::npos) {
+                    result.passed = false;
+                    result.message += "'" + p.verb + "' differs from '" + p.flag + "'; ";
+                }
+            }
+
+            // The other three verbs reach the same places.
+            auto [rc1, insp] = run_command(exe_path + " inspect " + vcd + " --compact-json 2>&1");
+            if (insp.find("\"command\":\"inspect\"") == std::string::npos) {
+                result.passed = false;
+                result.message += "`inspect` verb did not reach --inspect; ";
+            }
+            auto [rc2, ev] = run_command(
+                exe_path + " eval '(+ 1 2)' --compact-json 2>&1");
+            if (ev.find("[3]") == std::string::npos) {
+                result.passed = false;
+                result.message += "`eval` verb did not reach -e (got: '" + ev + "'); ";
+            }
+
+            // A script is still a script: the verbs must not have eaten the
+            // positional form that runs one.
+            {
+                std::string script = "/tmp/walpp_verb_script.wal";
+                std::ofstream f(script);
+                f << "(print (+ 20 22))\n";
+                f.close();
+                auto [rc3, out] = run_command(exe_path + " " + script + " 2>&1");
+                if (out.find("42") == std::string::npos) {
+                    result.passed = false;
+                    result.message += "a bare script path should still run (got: '" + out + "'); ";
+                }
+                std::remove(script.c_str());
+            }
+
+            run_command("rm -f /tmp/walpp_verb_v.out /tmp/walpp_verb_f.out "
+                        "/tmp/walpp_verb_list.txt " + siglist);
+
+            if (result.passed) {
+                result.message = "every verb produces byte-identical output to its flag";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -2213,6 +2386,8 @@ int main(int argc, char* argv[]) {
     test_streaming_matches_full_load(suite, exe_path);
     test_cmake_package_export(suite, exe_path);
     test_agent_modes(suite, exe_path);
+    test_paper_cli_contract(suite, exe_path);
+    test_verbs_equal_flags(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

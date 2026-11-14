@@ -151,6 +151,10 @@ check "--lint accepts a clean script" \
     "no problems found" "$(printf '(define a 1)\n(+ a 1)\n' > /tmp/wal_skill_ok.wal; "$WAL_BIN" --lint /tmp/wal_skill_ok.wal 2>&1)"
 check "--lint catches a mistyped call" \
     "unknown-operator" "$(printf '(cont 1)\n' > /tmp/wal_skill_bad.wal; "$WAL_BIN" --lint /tmp/wal_skill_bad.wal 2>&1)"
+check "the verb form equals the flag form" \
+    "$("$WAL_BIN" --fast-hw-all "$TRACE" -o /tmp/wal_skill_f.csv >/dev/null 2>&1; md5 -q /tmp/wal_skill_f.csv 2>/dev/null || md5sum /tmp/wal_skill_f.csv | cut -d' ' -f1)" \
+    "$("$WAL_BIN" extract weight "$TRACE" -o /tmp/wal_skill_v.csv >/dev/null 2>&1; md5 -q /tmp/wal_skill_v.csv 2>/dev/null || md5sum /tmp/wal_skill_v.csv | cut -d' ' -f1)"
+rm -f /tmp/wal_skill_f.csv /tmp/wal_skill_v.csv
 check "--inspect materialises the trace's age" \
     '"age_seconds"' "$("$WAL_BIN" --compact-json --inspect "$TRACE" 2>&1)"
 rm -f /tmp/wal_skill_ok.wal /tmp/wal_skill_bad.wal

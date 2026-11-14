@@ -179,6 +179,37 @@ wal -l small.vcd --no-streaming
 
 ---
 
+## Two spellings, one command
+
+Since v1.2.2 the extended modes can be written as verbs as well as flags:
+
+| verb | flag |
+|---|---|
+| `wal inspect trace.vcd` | `wal --inspect trace.vcd` |
+| `wal lint analysis.wal` | `wal --lint analysis.wal` |
+| `wal eval '(+ 1 2)' -l trace.vcd` | `wal -l trace.vcd -e '(+ 1 2)'` |
+| `wal extract weight trace.vcd --scope top -o a.csv` | `wal --fast-hw-scope top trace.vcd -o a.csv` |
+| `wal extract distance trace.vcd --signals l.txt -o a.csv` | `wal --fast-hd-signals l.txt trace.vcd -o a.csv` |
+| `wal extract values trace.vcd --signals l.txt -o a.csv` | `wal --fast-values-signals l.txt trace.vcd -o a.csv` |
+| `wal extract list trace.vcd -o names.txt` | `wal --fast-list trace.vcd -o names.txt` |
+
+The verbs are **sugar**. A verb invocation is rewritten into the flag form before
+anything else runs, so there is one implementation underneath and no second code
+path that could drift.
+
+That matters more than tidiness. The flag forms are what
+[Nešković et al.](../INDEX.md) documents, and what its Table II throughput was
+measured through: the artifact scripts in `artifacts/scripts/` run them literally.
+A test asserts byte-identical output from both spellings of every extraction mode,
+and another runs the paper's four published invocations, so neither can be broken
+by a later tidy-up without the build failing.
+
+**Nothing is deprecated.** If you are reproducing the paper, or you have scripts
+already, keep using the flags.
+
+A first argument is treated as a verb only when it matches one *and* no file of that
+name exists, so `wal script.wal` still runs a script.
+
 ## Agent and scripting modes
 
 Machine-readable entry points, for a program driving `wal` rather than a person
