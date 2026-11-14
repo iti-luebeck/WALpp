@@ -84,7 +84,7 @@ wal -l trace.vcd -e '(signal-names)'
 wal -e '(if (is-list x) (length x) 0)'
 
 # Convert types explicitly
-wal -e '(string-length (number->string 42))'
+wal -e '(string-length (int->string 42))'
 
 # Use correct operators for types
 wal -e '(+ 1 2)'        ; Integer addition

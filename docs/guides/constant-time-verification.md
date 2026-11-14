@@ -62,6 +62,8 @@ Then pull every value change of those four signals out of the waveform:
 
 ```bash
 wal --fast-values-signals markers.txt trial.vcd -o changes.csv
+# or, the same command in verb form:
+wal extract values trial.vcd --signals markers.txt -o changes.csv
 ```
 
 The output is `timestamp,signal_index,value`, one row per change, where

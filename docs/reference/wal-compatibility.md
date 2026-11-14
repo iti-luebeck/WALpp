@@ -167,13 +167,15 @@ other way round.
 
 These are not upstream differences, but they are the defaults that surprise people.
 
-**Streaming is off.** A trace is fully loaded unless `--streaming` is given. Full
-load is faster for repeated queries and is the right default; streaming is for
-traces that do not fit. See
+**Streaming depends on size.** Below 100 MB a trace is fully loaded, which is faster
+for repeated queries; above it, streaming engages on its own, which is what lets an
+oversized trace work at all. `--streaming` and `--no-streaming` force either way at
+any size, and all three give the same answers. See
 [Working with very large traces](../guides/large-traces.md).
 
-**The extraction modes do not run the interpreter.** `--fast-hw-*`, `--fast-hd-*`,
-`--fast-values-signals` and `--fast-list` go through a dedicated reader. No language
+**The extraction modes do not run the interpreter.** `extract weight|distance|values`
+and `inspect --format=names`, and their `--fast-*` flag spellings, go through a
+dedicated reader. No language
 semantics apply to them, so none of the differences on this page affect their output.
 
 **Signals wider than 64 bits read as bit strings.** `--fast-hw-*` and `--fast-hd-*`

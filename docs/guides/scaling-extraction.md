@@ -74,15 +74,20 @@ larger than memory is no longer a problem.
 
 ## Choosing a mode
 
-| Question | Mode |
+| Question | Command |
 |---|---|
-| How much is switching, overall? | `--fast-hw-scope <scope>` |
-| How much is *changing*? | `--fast-hd-scope <scope>` |
-| What value does this bus carry? | `--fast-values-signals <list>` |
-| What is in this trace? | `--fast-list` |
+| How much is switching, overall? | `extract weight TRACE --scope S` |
+| How much is *changing*? | `extract distance TRACE --scope S` |
+| What value does this bus carry? | `extract values TRACE --signals L` |
+| What is in this trace? | `inspect TRACE` |
 
-`--fast-hw-all` and `--fast-hd-all` cover the whole trace, including the testbench.
-Prefer `-scope` or `-signals`: the testbench switches too, and that activity is noise.
+Each has a flag spelling (`--fast-hw-scope`, `--fast-hd-scope`,
+`--fast-values-signals`, `--fast-list`) which is what the paper's scripts use. The
+two are the same command: see the
+[command-line reference](../reference/cli.md#verbs).
+
+Without a selector, `extract` covers the whole trace, testbench included. Prefer
+`--scope` or `--signals`: the testbench switches too, and that activity is noise.
 
 ## Keeping extraction honest
 
@@ -113,7 +118,7 @@ wal -l trace.vcd -e '(count (rising top.core.clk))'
 
 # then run the campaign
 for f in traces/*.vcd; do
-  wal --fast-hw-scope top.core "$f" -o "${f%.vcd}.csv"
+  wal extract weight "$f" --scope top.core -o "${f%.vcd}.csv"
 done
 ```
 

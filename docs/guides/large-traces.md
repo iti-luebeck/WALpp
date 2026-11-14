@@ -99,7 +99,12 @@ chunk reader, which parses the header but does not answer indexed value reads.
 ## Which to choose
 
 **Start with the default.** If the trace loads and queries are quick, nothing else is
-worth the complexity.
+worth the complexity. Note that the default is not "never stream": a trace above
+100 MB streams on its own, which is what lets an oversized one work at all. Below
+that it is fully loaded, because that is faster for repeated queries.
+
+`--streaming` forces it on at any size, `--no-streaming` forces it off at any size.
+All three give the same answers.
 
 **Use `--streaming`** when a load fails or thrashes, and you have an interpreter
 question to ask. Expect the first read of each signal to cost a pass.

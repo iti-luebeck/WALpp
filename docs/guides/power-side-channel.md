@@ -56,11 +56,14 @@ noise without adding information:
 
 ```bash
 # Hamming weight of everything under the core, per timestamp
-wal --fast-hw-scope top.core trace_0001.vcd -o activity_0001.csv
+wal extract weight trace_0001.vcd --scope top.core -o activity_0001.csv
 
 # Hamming distance instead, if transitions are the better proxy
-wal --fast-hd-scope top.core trace_0001.vcd -o activity_0001.csv
+wal extract distance trace_0001.vcd --scope top.core -o activity_0001.csv
 ```
+
+The flag spelling is identical in effect and is what the paper's scripts use:
+`wal --fast-hw-scope top.core trace_0001.vcd -o activity_0001.csv`.
 
 The output is `timestamp,value`. Distance has exactly one row fewer than weight: the
 first timestamp only establishes a state to compare against.

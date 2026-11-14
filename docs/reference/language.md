@@ -3,6 +3,79 @@
 The S-expression language: values, operators, signal access and the
 standard library.
 
+## Control flow, definitions and macros
+
+WAL++ runs upstream WAL's language, including its standard library, so the full set
+of forms is available. Earlier versions of this page described a much smaller
+language; that is no longer accurate.
+
+```lisp
+(if (> 5 3) "bigger" "smaller")        ; "bigger"
+(let ([a 1] [b 2]) (+ a b))            ; 3
+(when (> 3 2) 7)                       ; 7
+(unless (> 2 3) 7)                     ; 7
+(cond [(> 1 2) 10] [else 20])          ; 20
+(case 2 (1 "one") (2 "two") (default "other"))   ; "two"
+
+(define n 0)
+(while (< n 5) (set! n (+ n 1)))       ; n is 5
+
+(defun dbl [x] (* x 2))                ; or (define dbl (fn [x] (* x 2)))
+(dbl 21)                               ; 42
+
+(defmacro twice [x] `(+ ,x ,x))        ; quasiquote, unquote, unquote-splicing
+(twice 21)                             ; 42
+```
+
+Arrays are string-keyed maps, and `[...]` subscripts a list, an array or a string:
+
+```lisp
+(define a (array (1 "one") (2 "two")))
+(geta a 2)                             ; "two"
+(seta a 3 "three")                     ; mutates in place
+
+(define l (list 10 20 30))
+l[1]                                   ; 20
+```
+
+## Reading signals
+
+A bare symbol that names a signal reads its value at the current index. `@` reads at
+an offset from it, and the special variables describe the trace:
+
+```lisp
+tb.dut.counter                         ; value now
+tb.clk@-1                              ; value one index earlier
+INDEX   MAX-INDEX   TS                 ; where we are, how long, simulation time
+SIGNALS   SCOPES                       ; what is in the trace
+a^tb.dut.counter                       ; the same signal in the trace loaded as `a`
+```
+
+The standard library gives the analysis vocabulary, all of it upstream's:
+
+```lisp
+(count (rising tb.clk))                ; 40
+(count (falling tb.clk))               ; 40
+(find (= tb.dut.counter 3))            ; the indices where it held
+(whenever (rising tb.clk) (inc cnt))   ; run a body at every matching index
+```
+
+### Sweeps start at the cursor
+
+`find`, `whenever`, `count` and `fold/signal` walk from the **current index** to the
+end, then put the cursor back where they found it. So a `set-index` before a sweep
+narrows it:
+
+```lisp
+(count (rising tb.clk))                       ; 40, from index 0
+(begin (set-index 40) (count (rising tb.clk))) ; 20, from index 40
+```
+
+That is upstream's behaviour and it is useful for windowing an analysis, but it
+surprises people who expect a whole-trace answer. `(set-index 0)` first if you want
+one.
+
+
 ## Basic Syntax
 
 WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
@@ -84,9 +157,9 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 ```scheme
 (concat "hello" " " "world")  ; "hello world"
 (string-length "hello")       ; 5
-(substr "hello" 1 3)          ; "ell"
-(string-upper "hello")        ; "HELLO"
-(string-lower "HELLO")        ; "hello"
+(substring "hello" 1 3)       ; "ell"
+(uppercase "hello")           ; "HELLO"
+(lowercase "HELLO")           ; "hello"
 ```
 
 ### Type Checking
@@ -99,40 +172,6 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 (is-list '(1 2))    ; true
 (is-bool true)      ; true
 (is-nil nil)        ; true
-```
-
-## Control Flow
-
-### If Expression
-
-```scheme
-(if condition
-  then-expr
-  else-expr)
-
-(if (> 5 3)
-  "five is greater"
-  "five is not greater")
-```
-
-### Cond Expression
-
-```scheme
-(cond
-  (test1 result1)
-  (test2 result2)
-  (else default-result))
-```
-
-### Define Variables
-
-```scheme
-(define x 42)
-(define square (lambda (x) (* x x)))
-
-; Using defined values
-(+ x 10)            ; 52
-(square 5)          ; 25
 ```
 
 ## Functions
@@ -158,8 +197,8 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 (filter (lambda (x) (> x 2)) '(1 2 3 4 5))  ; (3 4 5)
 
 ; Reduce: combine all elements
-(reduce + 0 '(1 2 3 4))    ; 10
-(reduce * 1 '(1 2 3 4))    ; 24
+(fold + 0 '(1 2 3 4))      ; 10
+(fold * 1 '(1 2 3 4))      ; 24
 ```
 
 ---
@@ -168,25 +207,26 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 
 ## Streaming Mode
 
-For large waveform files (> 100 MB), WAL++ can stream data in chunks:
+Three states, which the flags distinguish:
 
 ```bash
-# Auto-detect and enable streaming
-wal -l huge_simulation.vcd --streaming
-
-# Customize streaming parameters
-wal -l trace.vcd \
-    --streaming \
-    --chunk-size 256 \
-    --cache-capacity 10000 \
-    --cache-stats
+wal -l trace.vcd                  # stream only if the file is above 100 MB
+wal -l trace.vcd --streaming      # always stream
+wal -l trace.vcd --no-streaming   # never stream, whatever the size
 ```
 
-**Streaming Parameters:**
+Streaming reads the header once and builds a signal's history only when that signal
+is first read, so memory follows what the analysis touches rather than the size of
+the trace. Full load decodes everything up front, which is faster for repeated
+queries and is why it stays the default below the threshold.
 
-- `--chunk-size SIZE` : Chunk size in MB (default: 100)
-- `--cache-capacity NUM` : Cache entries per signal (default: 1000)
-- `--cache-stats` : Display cache statistics
+All three give the same answers. See
+[Working with very large traces](../guides/large-traces.md) for which to pick.
+
+**Parameters**
+
+- `--chunk-size SIZE` : chunk size in MB (default: 100)
+- `--cache-capacity NUM` : cache entries per signal (default: 1000)
 
 ## Pipe Input
 

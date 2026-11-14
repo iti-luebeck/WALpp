@@ -326,7 +326,7 @@ wal -l trace.vcd -e '(get-index)'       # Get current index
 (length '(a b c))          ; 3
 (map (lambda (x) (* x 2)) '(1 2 3))  ; (2 4 6)
 (filter (lambda (x) (> x 2)) '(1 2 3 4 5))  ; (3 4 5)
-(reduce + 0 '(1 2 3 4))    ; 10
+(fold + 0 '(1 2 3 4))      ; 10
 ```
 
 ### Conditionals

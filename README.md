@@ -148,7 +148,7 @@ If you're familiar with WAL from wal-lang.org, WAL++ provides the same expressiv
 - **Mathematical**: +, -, *, /, mod, abs, min, max, etc.
 - **Logical**: and, or, not, if, cond
 - **List Processing**: map, filter, reduce, length, car, cdr, etc.
-- **String Operations**: concat, substr, string-length, etc.
+- **String Operations**: concat, substring, string-length, etc.
 - **Statistical**: mean, variance, stddev, min, max, etc.
 - **Signal Processing**: FFT, filtering, windowing, etc.
 - **Data Export**: write-vcd, write-csv, write-fst

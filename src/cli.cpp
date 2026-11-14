@@ -444,8 +444,9 @@ INPUT MODES
   --stdin                           read trace data from standard input
 
 STREAMING
-  --streaming                       stream the trace instead of loading it
-  --no-streaming                    always full-load (the default)
+  --streaming                       always stream the trace
+  --no-streaming                    never stream, whatever the size
+  (neither)                         stream only above --auto-threshold
   --chunk-size SIZE                 chunk size in MB (default: 100)
   --cache-capacity NUM              cache entries per signal (default: 1000)
 )";
@@ -474,9 +475,21 @@ void CLI::apply_streaming_config() {
                 container->set_streaming_enabled(streaming_enabled);
             }
             
-            // Create and apply configuration
+            // Create and apply configuration.
+            //
+            // Three states, which the flags did not previously distinguish:
+            //   --streaming      always stream
+            //   --no-streaming   never stream
+            //   neither          stream only when the file is above the threshold
+            //
+            // `--no-streaming` used to leave the auto-threshold in place, so a file
+            // over 100 MB streamed anyway -- exactly the file someone passes the
+            // flag for. Clearing the threshold is what makes "never" mean never.
             StreamingConfig config;
             config.enabled = streaming_enabled;
+            if (streaming_explicit && !streaming_enabled) {
+                config.auto_threshold_bytes = 0;
+            }
             config.chunk_size_bytes = chunk_size_bytes;
             config.cache_capacity_per_signal = cache_capacity;
             config.report_cache_stats = false;  // Stats will be printed manually if requested

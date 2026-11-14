@@ -2279,6 +2279,20 @@ void test_verbs_equal_flags(ExecutableTestSuite& suite, const std::string& exe_p
                 result.message += "`inspect --format=names` should print to stdout; ";
             }
 
+            // The three streaming states must be distinguishable, and must agree.
+            // `--no-streaming` used to leave the auto-threshold in place, so a file
+            // over 100 MB streamed anyway -- exactly the file the flag is for.
+            for (const char* mode : {"", "--no-streaming", "--streaming"}) {
+                auto [rcs, out] = run_command(
+                    exe_path + " " + mode + " -l " + vcd +
+                    " -e '(length SIGNALS)' -e 'MAX-INDEX' 2>&1");
+                if (out.find("100") == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string("streaming mode '") + mode +
+                                      "' disagrees (got: '" + out + "'); ";
+                }
+            }
+
             // A verb used wrongly must FAIL, not fall through to flag parsing where
             // the verb word becomes a filename and the real error is buried.
             struct Misuse { const char* args; const char* why; };
