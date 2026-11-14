@@ -80,8 +80,10 @@ private:
         // (while (step 1) ...). It depends on `step` reporting that it could not
         // advance; before that was fixed this loop could not terminate.
         registry.register_operator("while", [](SEval& eval, const std::vector<Value>& args) -> Value {
-            if (args.empty()) {
-                throw EvalError("while expects at least 1 argument (condition [body...])");
+            // Upstream requires a body: (while cond) alone is an error, not a
+            // silent infinite loop over an expression with no effect.
+            if (args.size() < 2) {
+                throw EvalError("while expects at least 2 arguments (condition body...)");
             }
             Value result = Value(nullptr);
             while (eval.eval(args[0]).is_truthy()) {
@@ -125,6 +127,22 @@ private:
         registry.register_operator("case", [](SEval& eval, const std::vector<Value>& args) -> Value {
             if (args.empty()) {
                 throw EvalError("case expects at least 1 argument (key [clauses...])");
+            }
+            // A duplicate label means the second clause is unreachable, which is
+            // almost always a typo. Upstream rejects it rather than silently
+            // choosing the first.
+            {
+                std::vector<std::string> seen;
+                for (size_t c = 1; c < args.size(); ++c) {
+                    if (!args[c].is_list()) continue;
+                    auto parts = args[c].to_list();
+                    if (parts->empty()) continue;
+                    std::string label = (*parts)[0].to_string_repr();
+                    if (std::find(seen.begin(), seen.end(), label) != seen.end()) {
+                        throw EvalError("case: duplicate label " + label);
+                    }
+                    seen.push_back(label);
+                }
             }
             Value key = eval.eval(args[0]);
             for (size_t c = 1; c < args.size(); ++c) {
@@ -225,7 +243,9 @@ private:
         registry.register_operator("bool?", one("bool?", [](const Value& v) { return v.is_bool(); }));
         registry.register_operator("nil?", one("nil?", [](const Value& v) { return v.is_nil(); }));
         // An atom is anything that is not a list.
-        registry.register_operator("atom?", one("atom?", [](const Value& v) { return !v.is_list(); }));
+        registry.register_operator("atom?", one("atom?", [](const Value& v) {
+            return !v.is_list() && !v.is_array();   // a collection is not an atom
+        }));
 
         // (defined? name) - whether the symbol is bound. The name is NOT evaluated,
         // since evaluating an undefined symbol is exactly what this asks about.
@@ -913,6 +933,45 @@ private:
                 array->set(WArray::key_of(key), value);
             }
             return Value(array);
+        });
+
+        // (subscript container index) -- what `lst[0]` and `arr["key"]` desugar to.
+        registry.register_operator("subscript", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) {
+                throw EvalError("subscript expects 2 arguments (container index)");
+            }
+            auto evaluated = eval.eval_args(args);
+            const Value& container = evaluated[0];
+            const Value& index = evaluated[1];
+
+            if (container.is_array()) {
+                std::string key = WArray::key_of(index);
+                const Value* found = container.to_array()->find(key);
+                if (!found) throw EvalError("subscript: key " + key + " not found");
+                return *found;
+            }
+            if (!index.is_int()) {
+                throw EvalError("subscript: index must be an integer");
+            }
+            int64_t i = index.to_int();
+            if (container.is_list()) {
+                auto list = container.to_list();
+                // A negative index counts from the end, as upstream does.
+                if (i < 0) i += static_cast<int64_t>(list->size());
+                if (i < 0 || i >= static_cast<int64_t>(list->size())) {
+                    throw EvalError("subscript: index out of range");
+                }
+                return (*list)[static_cast<size_t>(i)];
+            }
+            if (container.is_string()) {
+                const std::string& text = container.to_string();
+                if (i < 0) i += static_cast<int64_t>(text.size());
+                if (i < 0 || i >= static_cast<int64_t>(text.size())) {
+                    throw EvalError("subscript: index out of range");
+                }
+                return Value(std::string(1, text[static_cast<size_t>(i)]));
+            }
+            throw EvalError("subscript: first argument must be a list, array or string");
         });
 
         // (seta array key value) -- mutates in place and returns the array.

@@ -12,8 +12,15 @@ class WalError(Exception):
     """Base error, as upstream."""
 
 
-class WalEvalError(WalError):
-    """Raised when evaluation fails. Upstream's tests assert on this type."""
+class WalEvalError(WalError, ValueError):
+    """Raised when evaluation fails. Upstream's tests assert on this type.
+
+    Also a ValueError: upstream raises a mix of error types from its evaluator
+    (WalEvalError in most places, a bare ValueError or AssertionError in others)
+    and its tests assert on whichever one that call site happens to use. WAL++ has
+    a single EvalError, so this shim answers to both rather than the adapter having
+    to guess which type each upstream call site raises.
+    """
 
 
 class Symbol:

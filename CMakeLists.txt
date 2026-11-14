@@ -113,10 +113,24 @@ set(WALPP_CORE_SOURCES
 # Create main library
 add_library(walpp ${WALPP_CORE_SOURCES})
 
+# Embed the standard library.
+#
+# lib/std/std.wal is upstream WAL's own standard library, vendored verbatim. It
+# defines rising, falling, count, defun and the rest of the vocabulary analysis
+# scripts are written in. Generating the header from the file rather than keeping a
+# hand-copied duplicate means the two cannot drift.
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/lib/std/std.wal WALPP_STD_LIBRARY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/std_library.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/wal/std_library.h
+    @ONLY
+)
+
 # Include directories
 target_include_directories(walpp
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

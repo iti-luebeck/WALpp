@@ -51,6 +51,7 @@ namespace wal {
  */
 class Wal {
 private:
+    bool std_library_loaded = false;  ///< see ensure_std_library()
     std::shared_ptr<TraceContainer> traces;
     std::shared_ptr<SEval> eval_context;
 
@@ -132,6 +133,9 @@ public:
      * @throws EvalError if evaluation fails
      * @see @anchor Wal::load for trace access
      */
+    /// Define the standard library on first use. Idempotent.
+    void ensure_std_library();
+
     Value eval_str(const std::string& code);
 
     /**

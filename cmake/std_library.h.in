@@ -1,0 +1,31 @@
+#pragma once
+
+#include <string>
+
+namespace wal {
+
+/**
+ * @brief Upstream WAL's standard library, embedded.
+ *
+ * Generated at configure time from `lib/std/std.wal`, which is upstream
+ * ics-jku/wal's own file, vendored verbatim (see THIRD_PARTY_NOTICES.md). It is
+ * generated rather than hand-copied so the two can never drift.
+ *
+ * It defines the vocabulary real analysis scripts are written in -- `rising`,
+ * `falling`, `stable`, `count`, `defun`, `for` -- which upstream ships as WAL
+ * source rather than as builtins. The file was already vendored, installed by
+ * CMake and documented in the README, but nothing ever loaded it, so none of these
+ * names existed.
+ *
+ * Loaded LAZILY, on first use of the interpreter: see Wal::ensure_std_library().
+ * The --fast-* extraction paths never construct an interpreter environment, so
+ * they must not pay to parse this.
+ */
+inline const std::string& std_library_source() {
+    static const std::string source = R"WALSTDLIB(
+@WALPP_STD_LIBRARY@
+)WALSTDLIB";
+    return source;
+}
+
+} // namespace wal

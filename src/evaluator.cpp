@@ -156,14 +156,34 @@ Value SEval::expand_macro(const std::string& name, const std::vector<Value>& arg
     }
     auto macro = stored.to_macro();
 
+    auto scope = std::make_shared<Environment>(macro->get_environment());
+
+    // A SYMBOL where the parameter list would be is upstream's variadic form:
+    // (defmacro defun args ...) binds `args` to the whole argument list. Binding it
+    // to just the first argument, as a one-element list would, silently truncated
+    // every variadic macro.
+    if (macro->get_args().is_symbol()) {
+        auto all = std::make_shared<WList>();
+        for (const auto& arg : args) all->push_back(arg);
+        scope->define(macro->get_args().to_symbol()->get_name(), Value(all));
+        auto saved_variadic = current_environment;
+        current_environment = scope;
+        Value expansion;
+        try {
+            expansion = eval(macro->get_expression());
+        } catch (...) {
+            current_environment = saved_variadic;
+            throw;
+        }
+        current_environment = saved_variadic;
+        return expansion;
+    }
+
     auto parameters = std::make_shared<WList>();
     if (macro->get_args().is_list()) {
         parameters = macro->get_args().to_list();
-    } else if (macro->get_args().is_symbol()) {
-        parameters->push_back(macro->get_args());
     }
 
-    auto scope = std::make_shared<Environment>(macro->get_environment());
     for (size_t i = 0; i < parameters->size(); ++i) {
         if (!(*parameters)[i].is_symbol()) {
             throw EvalError(name + ": macro parameters must be symbols");
@@ -422,6 +442,20 @@ Value SEval::eval(const Value& expr) {
         if (op_name == "lambda" || op_name == "fn") {
             if (args.size() < 2) {
                 throw EvalError(op_name + " requires parameters and a body");
+            }
+            // Every parameter must be a symbol. `(fn (x 1) x)` is an error upstream;
+            // accepting it bound nothing to the literal and then failed confusingly
+            // at call time instead of at the definition.
+            if (args[0].is_list()) {
+                auto parameters = args[0].to_list();
+                for (const auto& parameter : *parameters) {
+                    if (!parameter.is_symbol()) {
+                        throw EvalError(op_name + ": parameters must be symbols, got " +
+                                        parameter.to_string_repr());
+                    }
+                }
+            } else if (!args[0].is_symbol()) {
+                throw EvalError(op_name + ": parameters must be a list of symbols");
             }
             // A body of several forms is wrapped in an implicit begin, as upstream
             // allows: (fn [x] (print x) (* x 2)).

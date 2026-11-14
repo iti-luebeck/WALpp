@@ -105,6 +105,38 @@ Value Parser::parse_atom() {
         return Value(str);
     }
 
+    // `~name` reads a name relative to the current scope, `#name` relative to the
+    // current group. Upstream's standard library uses both, as in `#INDEX`.
+    if (c == '~' || c == '#') {
+        char marker = c;
+        bool is_shorthand = false;
+        if (position + 1 < input.length()) {
+            char after = input[position + 1];
+            // Read the whole word after the marker, so `#t`, `#f` and `#nil` stay
+            // literals while `#INDEX` and `#ready` are group references.
+            size_t end = position + 1;
+            while (end < input.length() &&
+                   (std::isalnum(static_cast<unsigned char>(input[end])) ||
+                    input[end] == '_' || input[end] == '-')) {
+                ++end;
+            }
+            std::string word = input.substr(position + 1, end - (position + 1));
+            bool literal = (marker == '#') &&
+                           (word == "t" || word == "f" || word == "nil" || word == "n");
+            is_shorthand = !literal && !word.empty() &&
+                           (std::isalpha(static_cast<unsigned char>(after)) || after == '_');
+        }
+        if (is_shorthand) {
+            next();  // consume the marker
+            Value target = parse_atom();
+            auto call = std::make_shared<WList>();
+            call->push_back(Value(std::make_shared<Symbol>(
+                marker == '~' ? "resolve-scope" : "resolve-group")));
+            call->push_back(target);
+            return Value(call);
+        }
+    }
+
     // Booleans and nil
     if (c == '#') {
         next(); // consume #
@@ -239,7 +271,7 @@ Value Parser::parse_list() {
         } else if (peek() == ',') {
             elements.push_back(parse_unquote());
         } else {
-            elements.push_back(parse_atom());
+            elements.push_back(parse_subscripts(parse_atom()));
         }
     }
 
@@ -269,6 +301,32 @@ Value Parser::parse_list() {
 
 /// `,expr` is unquote, `,@expr` is unquote-splicing. The two differ only in the
 /// second character, so they are read together.
+/**
+ * @brief Apply postfix `[index]` subscripts to an already-parsed expression.
+ *
+ * Upstream writes `lst[0]`, `args[0][1]` and `arr["key"]`. The bracket binds only
+ * when it follows the expression with NO whitespace, so a binding list such as
+ * `(let ([x 5]) x)` is still read as a list, not as a subscript of `let`.
+ */
+Value Parser::parse_subscripts(Value target) {
+    while (position < input.length() && peek() == '[') {
+        next();  // consume '['
+        skip_whitespace();
+        Value index = parse_one();
+        skip_whitespace();
+        if (position >= input.length() || peek() != ']') {
+            throw EvalError("Unterminated subscript: expected ']'");
+        }
+        next();  // consume ']'
+        auto call = std::make_shared<WList>();
+        call->push_back(Value(std::make_shared<Symbol>("subscript")));
+        call->push_back(target);
+        call->push_back(index);
+        target = Value(call);
+    }
+    return target;
+}
+
 Value Parser::parse_unquote() {
     next();  // consume ','
     std::string form = "unquote";
@@ -277,12 +335,10 @@ Value Parser::parse_unquote() {
         form = "unquote-splicing";
     }
     skip_whitespace();
-    Value target;
-    if (peek() == '(' || peek() == '[') {
-        target = parse_list();
-    } else {
-        target = parse_atom();
-    }
+    // parse_one handles every form a target can take, including a nested quote,
+    // quasiquote or unquote and a postfix subscript. Dispatching on only '(' and an
+    // atom here meant `,'x` and `,,x` were read as an empty token.
+    Value target = parse_one();
     auto elements = std::vector<Value>{
         Value(std::make_shared<Symbol>(form)),
         target
@@ -297,11 +353,9 @@ Value Parser::parse_quoted(const std::string& quote_type) {
     Value quoted_expr;
     
     skip_whitespace();
-    if (peek() == '(' || peek() == '[') {
-        quoted_expr = parse_list();
-    } else {
-        quoted_expr = parse_atom();
-    }
+    // Same as parse_unquote: a quoted target can itself be quoted or unquoted.
+    // `',symbol`, which upstream's standard library uses, was an "Empty token".
+    quoted_expr = parse_one();
 
     auto quote_symbol = std::make_shared<Symbol>(quote_type);
     std::vector<Value> quote_form;
@@ -328,7 +382,8 @@ Value Parser::parse_one() {
     char c = peek();
     
     if (c == '(' || c == '[') {
-        return parse_list();
+        // A subscript may follow a parenthesised expression: (first xs)[0].
+        return parse_subscripts(parse_list());
     } else if (c == '\'') {
         return parse_quoted("quote");
     } else if (c == '`') {
@@ -336,7 +391,7 @@ Value Parser::parse_one() {
     } else if (c == ',') {
         return parse_unquote();
     } else {
-        return parse_atom();
+        return parse_subscripts(parse_atom());
     }
 }
 

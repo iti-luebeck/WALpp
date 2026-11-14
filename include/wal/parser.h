@@ -109,6 +109,7 @@ private:
     /// Parse quoted expression (handles ', `, ,)
     Value parse_quoted(const std::string& quote_type);
     Value parse_unquote();  ///< `,expr` and `,@expr`
+    Value parse_subscripts(Value target);  ///< postfix `expr[i]`
     
     /// Parse number literal (integer or float)
     Value parse_number(const std::string& token);

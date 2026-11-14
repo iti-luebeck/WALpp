@@ -1126,6 +1126,63 @@ void test_macros(ExecutableTestSuite& suite, const std::string& exe_path) {
     suite.add_result(result);
 }
 
+// Test 23: the standard library is loaded and agrees with upstream.
+//
+// lib/std/std.wal is upstream's own standard library, vendored verbatim. It was
+// installed by CMake and documented in the README, but nothing loaded it, so
+// `rising`, `count` and `defun` did not exist. The expected values below were
+// taken by running upstream 0.9.1 on the same trace.
+void test_std_library(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "standard library matches upstream";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        result.passed = true;
+
+        struct Case { const char* expr; const char* want; bool needs_trace; };
+        const Case cases[] = {
+            {"(count (rising tb.clk))", "40", true},     // upstream: 40
+            {"(count (falling tb.clk))", "40", true},    // upstream: 40
+            {"(length (find (= tb.dut.counter 3)))", "6", true},  // upstream: 6
+            {"(begin (defun sq [x] (* x x)) (sq 12))", "144", false},
+            {"(for/list [x (list 1 2 3)] (* x 10))", "(10 20 30)", false},
+            {"(cadr (list 1 2 3))", "2", false},
+            // A builtin must NOT be replaced by the library's version of the same
+            // name: upstream's `append` adds one element, WAL++'s concatenates.
+            {"(append (list 1 2) (list 3 4))", "(1 2 3 4)", false},
+        };
+
+        for (const auto& c : cases) {
+            if (c.needs_trace && !file_exists(vcd)) continue;
+            std::string command = exe_path;
+            if (c.needs_trace) command += " -l " + vcd;
+            command += " -e '" + std::string(c.expr) + "' 2>&1";
+            auto [rc, out] = run_command(command);
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should give " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+            // Loading the library must be silent.
+            if (out.find("warning:") != std::string::npos) {
+                result.passed = false;
+                result.message += "standard library warned on: " + std::string(c.expr) + "; ";
+            }
+        }
+        if (result.passed) result.message = "stdlib loads silently and agrees with upstream";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1185,6 +1242,7 @@ int main(int argc, char* argv[]) {
     test_structural_equality(suite, exe_path);
     test_fst_matches_vcd(suite, exe_path);
     test_macros(suite, exe_path);
+    test_std_library(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);
