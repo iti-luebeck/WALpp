@@ -1,0 +1,32 @@
+{
+ "snippets": [
+  {
+   "code": "(define square (lambda (x) (* x x)))\n(square 5)                 ; 25\n\n(map (lambda (x) (* x 2)) '(1 2 3 4))  ; (2 4 6)",
+   "trace": null
+  },
+  {
+   "code": "(= 5 5)       ; Equal: true\n(< 3 5)       ; Less than: true\n(> 5 3)       ; Greater than: true\n(<= 3 3)      ; Less or equal: true\n(>= 5 3)      ; Greater or equal: true\n(!= 3 5)      ; Not equal: true",
+   "trace": null
+  },
+  {
+   "code": "(list 1 2 3)        ; Create list: (1 2 3)\n(length '(a b c))   ; Length: 3\n(append '(1 2) '(3 4))  ; (1 2 3 4)\n(reverse '(1 2 3))  ; (3 2 1)\n(sort '(3 1 2))     ; (1 2 3)",
+   "trace": null
+  },
+  {
+   "code": "(define x 42)\n(define square (lambda (x) (* x x)))\n\n; Using defined values\n(+ x 10)            ; 52\n(square 5)          ; 25",
+   "trace": null
+  },
+  {
+   "code": "; analysis.wal - Signal statistical analysis\n\n; Load and process signals\n(define signals (signal-names))\n(define num-signals (length signals))\n\n; Display results\n(list\n  \"Trace Analysis Report\"\n  (list \"Total signals:\" num-signals)\n  (list \"Signal names:\" signals))\n\n; Conditional analysis\n(if (> num-signals 100)\n  (list \"Large design\" num-signals)\n  (list \"Small design\" num-signals))",
+   "trace": null
+  },
+  {
+   "code": "; Calculate signal statistics\n(define clk-width (signal-width \"clk\"))\n(define data-width (signal-width \"data\"))\n\n; Analysis results\n(list\n  \"Clock width:\" clk-width\n  \"Data width:\" data-width\n  \"Total bits:\" (+ clk-width data-width))",
+   "trace": "handshake.vcd"
+  },
+  {
+   "code": "; Find signals matching criteria\n(define all-signals (signal-names))\n\n; Filter bus signals\n(define bus-signals\n  (filter (lambda (s) (> (signal-width s) 1)) all-signals))\n\n; Filter control signals\n(define control-signals\n  (filter (lambda (s) (= (signal-width s) 1)) all-signals))\n\n(list\n  \"Bus signals:\" (length bus-signals)\n  \"Control signals:\" (length control-signals))",
+   "trace": null
+  }
+ ]
+}

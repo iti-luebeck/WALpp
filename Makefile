@@ -28,7 +28,7 @@ build:
 	cd build ; cmake -DCMAKE_BUILD_TYPE="$(BUILD_TYPE)" ..
 	make -C build
 
-.PHONY: docs
+.PHONY: snippets docs
 
 # Builds the WAL++ WebAssembly module for the playground. Needs the Emscripten SDK.
 wasm:
@@ -42,7 +42,17 @@ surfer:
 check-examples:
 	python3 tools/check-examples.py
 
-docs:
+# Decides which documentation snippets get a "Run in playground" button, by
+# running them. Needs build/wal; skipped with a warning if it is not built yet.
+snippets:
+	@if [ -x build/wal ]; then python3 tools/mark-runnable-snippets.py; \
+	else echo "note: build/wal missing, keeping the existing runnable.json"; fi
+
+docs: snippets
+	# The viewer bundle is not committed, so fetch it unless it is already here.
+	# Without it the playground still ships, with the console working and the
+	# viewer pane saying who needs to run what.
+	@bash tools/fetch-surfer.sh || echo "warning: no Surfer bundle, the playground ships without the viewer"
 	mkdir -p build/docs
 	rsync -am \
 	      --exclude="build" \

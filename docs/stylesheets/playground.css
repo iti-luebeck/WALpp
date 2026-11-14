@@ -178,3 +178,34 @@ body.walpp-playground .md-content__inner > h1:first-child { margin-bottom: 0.3re
   .wal-pg__examples { max-height: 14rem; }
   .wal-pg__viewer { height: 44vh; }
 }
+
+/* "Run in playground" on the WAL snippets of the other documentation pages.
+ * Only the snippets that actually evaluate get one; see
+ * tools/mark-runnable-snippets.py. */
+.wal-run-btn {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.35rem;
+  z-index: 2;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+  background: var(--md-default-bg-color);
+  color: var(--md-primary-fg-color);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 125ms;
+}
+.highlight:hover .wal-run-btn,
+.wal-run-btn:focus { opacity: 1; }
+.wal-run-btn:hover { border-color: var(--md-primary-fg-color); }
+/* Touch screens have no hover, so never hide it there. */
+@media (hover: none) {
+  .wal-run-btn { opacity: 1; }
+}
+
+/* The viewer overlay when the bundle is missing from the build. */
+.wal-pg__overlay.is-failed p { opacity: 1; color: #ffb3ad; }

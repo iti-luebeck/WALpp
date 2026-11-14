@@ -119,9 +119,10 @@
     ui.overlay = el('div', 'wal-pg__overlay');
     ui.start = el('button', null, 'Start the waveform viewer');
     ui.overlay.appendChild(ui.start);
-    ui.overlay.appendChild(el('p', null,
+    ui.reason = el('p', null,
       'Surfer is a 15 MB WebAssembly bundle, so it is not downloaded until you ask for it. ' +
-      'The WAL++ console below works either way.'));
+      'The WAL++ console below works either way.');
+    ui.overlay.appendChild(ui.reason);
     viewer.appendChild(ui.overlay);
     root.appendChild(viewer);
 
@@ -267,8 +268,18 @@
       ctx.ui.start.disabled = false;
       ctx.ui.overlay.style.display = '';
       ctx.ui.status.textContent = 'viewer unavailable';
+      // Say it on the overlay too. The usual cause is a docs build where
+      // tools/fetch-surfer.sh never ran, and the bundle is deliberately not
+      // committed, so the reader needs to be told rather than left with a
+      // button that does nothing.
+      ctx.ui.overlay.classList.add('is-failed');
+      ctx.ui.start.textContent = 'Try again';
+      ctx.ui.reason.textContent =
+        'The viewer bundle is not part of this documentation build. '
+        + 'Whoever built it needs to run "make surfer" (tools/fetch-surfer.sh) '
+        + 'and build the docs again. Everything below still works without it.';
       say(ctx.ui, 'the viewer could not start: ' + e.message, 'is-error');
-      say(ctx.ui, 'Run tools/fetch-surfer.sh and rebuild the docs to bundle it.', 'is-note');
+      say(ctx.ui, 'Run make surfer and rebuild the docs to bundle it.', 'is-note');
     });
   }
 
@@ -374,6 +385,21 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); evaluate(ctx, ui.editor.value); }
     });
 
+    // A "Run in playground" button on a documentation page sends its snippet here.
+    function handover() {
+      var hash = window.location.hash || '';
+      if (hash.indexOf('code=') < 0) return null;
+      var out = { code: null, trace: null };
+      hash.replace(/^#/, '').split('&').forEach(function (part) {
+        var eq = part.indexOf('=');
+        if (eq < 0) return;
+        var key = part.slice(0, eq), value = decodeURIComponent(part.slice(eq + 1));
+        if (key === 'code') out.code = value;
+        if (key === 'trace') out.trace = value;
+      });
+      return out.code ? out : null;
+    }
+
     loadScript(ctx.base + 'walpp.js').then(function () {
       return window.createWalpp();
     }).then(function (module) {
@@ -386,6 +412,13 @@
     }).then(function (catalogue) {
       if (!ctx.alive || !catalogue) return;
       renderExamples(ctx, catalogue);
+      var sent = handover();
+      if (!sent) return;
+      ui.editor.value = sent.code;
+      ui.trace.value = sent.trace || '';
+      say(ui, 'loaded a snippet from the documentation', 'is-note');
+      var ready = sent.trace ? loadTrace(ctx, sent.trace) : Promise.resolve();
+      return ready.then(function () { evaluate(ctx, sent.code); });
     }).catch(function (e) {
       ui.status.textContent = 'WAL++ unavailable';
       say(ui, 'WAL++ could not start: ' + e.message, 'is-error');
@@ -393,8 +426,85 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // ------------------------------------------------- buttons on the doc pages
+  //
+  // Every other page gets a "Run in playground" button on the WAL snippets that
+  // actually evaluate. Which ones those are is decided at build time by
+  // tools/mark-runnable-snippets.py, not guessed here: roughly two thirds of the
+  // snippets in the README use operators WAL++ does not implement or are abstract
+  // templates, and a button that opens the playground only to show an error is
+  // worse than no button at all.
+
+  var snippetIndex = null;
+
+  function normalise(code) {
+    return code.replace(/[ \t]+$/gm, '').trim();
+  }
+
+  // Where the playground lives, relative to the page we are on now.
+  function playgroundUrl() {
+    var base = document.querySelector('link[rel="canonical"]');
+    var root = window.location.pathname;
+    // Walk up to the site root the same way Material's own links do.
+    var link = document.querySelector('.md-nav__link[href$="playground/"], a[href$="/docs/playground/"]');
+    if (link) return link.href;
+    if (base && base.href) return new URL('../playground/', base.href).href;
+    return new URL('/docs/playground/', window.location.origin + root).href;
+  }
+
+  function decorateSnippets() {
+    // pymdownx puts the language class on the wrapping .highlight div, and with
+    // linenums on, the code sits in the second cell of a highlighttable.
+    var blocks = document.querySelectorAll('.highlight.language-scheme');
+    if (!blocks.length) return;
+
+    var attach = function (index) {
+      blocks.forEach(function (host) {
+        if (host.querySelector('.wal-run-btn')) return;
+        var code = host.querySelector('code');
+        if (!code) return;
+        var text = normalise(code.textContent || '');
+        var hit = index[text];
+        if (!hit) return;
+
+        var button = el('button', 'wal-run-btn', 'Run in playground');
+        button.type = 'button';
+        button.title = hit.trace
+          ? 'Opens the playground with this snippet and ' + hit.trace
+          : 'Opens the playground with this snippet';
+        button.addEventListener('click', function () {
+          var url = playgroundUrl() + '#code=' + encodeURIComponent(text)
+            + (hit.trace ? '&trace=' + encodeURIComponent(hit.trace) : '');
+          window.location.href = url;
+        });
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        host.appendChild(button);
+      });
+    };
+
+    if (snippetIndex) { attach(snippetIndex); return; }
+
+    // The catalogue sits next to the playground page.
+    fetch(new URL('runnable.json', playgroundUrl()).href)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.snippets) return;
+        snippetIndex = {};
+        data.snippets.forEach(function (entry) {
+          snippetIndex[normalise(entry.code)] = entry;
+        });
+        attach(snippetIndex);
+      })
+      .catch(function () { /* no catalogue, no buttons; the pages still read fine */ });
+  }
+
+  function start() {
+    init();
+    decorateSnippets();
+  }
+
+  document.addEventListener('DOMContentLoaded', start);
   if (typeof document$ !== 'undefined' && document$.subscribe) {
-    document$.subscribe(function () { setTimeout(init, 50); });
+    document$.subscribe(function () { setTimeout(start, 50); });
   }
 })();
