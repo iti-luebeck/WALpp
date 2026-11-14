@@ -13,6 +13,9 @@ variables:
 # Build job for Linux
 build:linux:
   stage: build
+  # Runner #51 is the only one online and it takes tagged jobs only
+  # (run_untagged: false). Untagged, this job is never picked up.
+  tags: [docker]
   image: gcc:latest
   before_script:
     - apt-get update -qq
@@ -38,6 +41,7 @@ build:linux:
 # Test job for Linux
 test:linux:
   stage: test
+  tags: [docker]
   image: gcc:latest
   dependencies:
     - build:linux
@@ -62,6 +66,7 @@ test:linux:
 # Package job for Ubuntu 22.04
 package:ubuntu22:
   stage: package
+  tags: [docker]
   image: ubuntu:22.04
   dependencies:
     - build:linux
@@ -87,6 +92,7 @@ package:ubuntu22:
 # Package job for Ubuntu 24.04
 package:ubuntu24:
   stage: package
+  tags: [docker]
   image: ubuntu:24.04
   dependencies:
     - build:linux
@@ -113,6 +119,7 @@ package:ubuntu24:
 # Package job for Debian 12 (Bookworm)
 package:debian12:
   stage: package
+  tags: [docker]
   image: debian:12
   dependencies:
     - build:linux
@@ -138,6 +145,7 @@ package:debian12:
 # Package job for CentOS Stream 9
 package:centos9:
   stage: package
+  tags: [docker]
   image: quay.io/centos/centos:stream9
   dependencies:
     - build:linux
@@ -164,6 +172,7 @@ package:centos9:
 # Package job for Rocky Linux 9
 package:rocky9:
   stage: package
+  tags: [docker]
   image: rockylinux:9
   dependencies:
     - build:linux
@@ -190,6 +199,7 @@ package:rocky9:
 # Build Python wheel in a container
 wheel:python:
   stage: wheel
+  tags: [docker]
   image: python:3.10-bullseye
   before_script:
     - apt-get update -qq
