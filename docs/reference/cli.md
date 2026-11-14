@@ -182,21 +182,69 @@ wal -l small.vcd --no-streaming
 ## Agent and scripting modes
 
 Machine-readable entry points, for a program driving `wal` rather than a person
-reading its output. Each answers one question and exits, so nothing has to be
-separated from REPL chatter or a trace-loading message.
+reading its output.
 
-### `--inspect FILE`
+### The envelope
 
-Describe a trace as JSON: its length, its scopes, and every signal with the width and
-the exact spelling the engine accepts.
-
-```bash
-wal --inspect trace.vcd | jq -r '.signals[].name'
-```
+Every `--json` answer has the same shape, which is the one the ITI `ekumen` tool
+uses, so an assistant that has learned one can read the other:
 
 ```json
 {
-  "file": "counter.vcd",
+  "envelope_version": 1,
+  "tool": "walpp",
+  "tool_version": "1.2.2",
+  "command": "inspect",
+  "generated_at": "2026-11-14T12:25:39Z",
+  "source": {
+    "path": "counter.vcd",
+    "modified_at": "2026-11-13T23:06:12Z",
+    "age_seconds": 47966
+  },
+  "ok": true,
+  "warnings": [],
+  "data": { }
+}
+```
+
+Two parts of that are safety properties rather than conveniences.
+
+**A failure has the same envelope as a success.** `ok` is always present, and a
+failure adds an `error` with a stable `code`:
+
+```json
+{ "ok": false,
+  "error": { "code": "walpp.eval.failed",
+             "message": "Eval error: Undefined variable: no.such",
+             "subject": "(count (rising no.such))",
+             "hint": "the expressions before this one are in data.results" },
+  "data": { "results": [40] } }
+```
+
+A consumer that had to tell "the command failed" from "the command returned nothing"
+by reading prose would eventually get it wrong in the direction that matters. Note
+that `data` still carries what did succeed, so a caller can see how far the run got.
+
+**The source's age is materialised.** A trace is a file, and an agent can easily be
+reading one produced before the change it is trying to evaluate. `source.age_seconds`
+makes that visible rather than leaving an answer from a week-old trace to be read as
+current. No freshness budget is applied: WAL++ cannot know what the trace ought to be
+newer *than*, so it reports and the caller decides.
+
+Error codes are namespaced: `walpp.trace.unreadable`, `walpp.eval.failed`,
+`walpp.lint.failed`, and per-finding codes such as `walpp.lint.unknown-operator`.
+
+### `--inspect FILE`
+
+What is in a trace: its length, its scopes, and every signal with the width and the
+exact spelling the engine accepts.
+
+```bash
+wal --inspect trace.vcd | jq -r '.data.signals[].name'
+```
+
+```json
+"data": {
   "max_index": 80,
   "index_count": 81,
   "signal_count": 7,
@@ -214,9 +262,7 @@ likely to read this is one building signal names by hand.
 
 ### `--lint FILE.wal`
 
-Parse and check a script **without running it**, and exit non-zero if it will not
-run. Catches source that does not parse, located by line and column, and calls to
-operators that do not exist.
+Parse and check a script **without running it**; exit non-zero if it will not run.
 
 ```bash
 wal --lint analysis.wal
@@ -238,23 +284,19 @@ exist is an error.
 
 ### `--json`, `--compact-json`
 
-Emit `-e` results, and `--lint` findings, as JSON. One value per `-e`.
+Wrap `-e` results and `--lint` findings in the envelope. `--compact-json` is the same
+content on one line.
 
 ```bash
 wal -l trace.vcd --json -e '(count (rising tb.clk))' -e 'SIGNALS'
 ```
 
 ```json
-40
-["tb.overflow","tb.clk","tb.reset","tb.dut.clk","tb.dut.reset","tb.dut.overflow","tb.dut.counter"]
+"data": { "results": [40, ["tb.overflow", "tb.clk", "..."]] }
 ```
 
-A failed query is reported **as JSON on stdout** as well as exiting non-zero, so a
-caller reading stdout does not also have to scrape stderr to learn it failed:
-
-```json
-{"error": "Eval error: Undefined variable: no.such.signal"}
-```
+One command produces one envelope, so `ok` describes the whole run rather than
+whichever `-e` printed last.
 
 A bigint is emitted as a string, because JSON numbers carry no more precision than a
 double and a bigint is used exactly when that is not enough.

@@ -15,17 +15,48 @@ namespace wal {
  * both go wrong on the details, which is how a wrong signal name ends up in a script
  * that then runs and produces a plausible number.
  *
- * So these three say the same things the human-facing modes do, in JSON:
+ * The output follows the envelope used by the ITI `ekumen` tool, so an assistant that
+ * has learned one of them can read the other. Two properties of it are safety
+ * properties rather than conveniences:
  *
- *  - inspect_trace()  what is in the trace: timescale, length, scopes, every signal
- *                     with its width, spelled exactly as the engine will accept it
- *  - lint_script()    what is wrong with a script, WITHOUT running it, located by
- *                     line and column
- *  - to_json()        a result value, so it can be read without parsing WAL syntax
+ *   **Failures have the same envelope as successes.** A consumer that must tell "the
+ *   command failed" from "the command returned nothing" by reading prose will
+ *   eventually get it wrong in the direction that matters. `ok` is always present.
+ *
+ *   **Age is materialised.** A trace is a file, and an agent can easily be reading one
+ *   produced before the change it is trying to evaluate. Every payload carries the
+ *   source's modification time and its age, so an answer from a stale trace cannot be
+ *   skimmed as current. No freshness budget is invented here, because WAL++ has no way
+ *   to know what the trace should be newer THAN; the facts are reported and the
+ *   consumer decides.
  *
  * JSON is emitted directly rather than through a library: the shapes are small and
  * fixed, and a dependency for this would be out of proportion.
  */
+
+/// Bumped when the envelope's own shape changes, never for payload additions.
+inline constexpr int ENVELOPE_VERSION = 1;
+
+/// A failure, in the shape the envelope carries it.
+struct AgentError {
+    std::string code;      ///< stable, machine-matchable, e.g. "walpp.trace.not_found"
+    std::string message;
+    std::string subject;   ///< what it was about, when there is one
+    std::string hint;      ///< what to do about it, when there is something to say
+};
+
+/**
+ * @brief Wrap a payload in the standard envelope.
+ * @param command  the mode that produced it, e.g. "inspect"
+ * @param payload  already-rendered JSON, or "null"
+ * @param source   the file the answer came from, for the age fields; may be empty
+ */
+std::string envelope(const std::string& command, const std::string& payload,
+                     const std::string& source, bool pretty);
+
+/// The same envelope, carrying a failure instead of a payload.
+std::string error_envelope(const std::string& command, const AgentError& error,
+                           const std::string& source, bool pretty);
 
 /// Escape a string for JSON, including the control characters a signal name can carry.
 std::string json_escape(const std::string& text);

@@ -143,12 +143,16 @@ check "--inspect states the separator rather than assuming it" \
     '"hierarchy_separator":"."' "$("$WAL_BIN" --compact-json --inspect "$TRACE" 2>&1)"
 check "--inspect gives names exactly as accepted" \
     '"name":"tb.dut.counter"' "$("$WAL_BIN" --compact-json --inspect "$TRACE" 2>&1)"
-check "-e --json emits JSON" \
-    '[1,"two",true]' "$("$WAL_BIN" --json -e '(list 1 "two" #t)' 2>&1)"
+check "-e --json emits JSON in the envelope" \
+    '"results":[[1,"two",true]]' "$("$WAL_BIN" --compact-json -e '(list 1 "two" #t)' 2>&1)"
+check "a failure carries the same envelope" \
+    '"ok":false' "$("$WAL_BIN" --compact-json -e '(bogus)' 2>/dev/null)"
 check "--lint accepts a clean script" \
     "no problems found" "$(printf '(define a 1)\n(+ a 1)\n' > /tmp/wal_skill_ok.wal; "$WAL_BIN" --lint /tmp/wal_skill_ok.wal 2>&1)"
 check "--lint catches a mistyped call" \
     "unknown-operator" "$(printf '(cont 1)\n' > /tmp/wal_skill_bad.wal; "$WAL_BIN" --lint /tmp/wal_skill_bad.wal 2>&1)"
+check "--inspect materialises the trace's age" \
+    '"age_seconds"' "$("$WAL_BIN" --compact-json --inspect "$TRACE" 2>&1)"
 rm -f /tmp/wal_skill_ok.wal /tmp/wal_skill_bad.wal
 
 echo

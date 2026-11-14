@@ -2026,6 +2026,11 @@ void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
             struct Want { const char* text; const char* why; };
             const Want wants[] = {
                 {"\"signal_count\":7", "signal count"},
+                {"\"envelope_version\":1", "the envelope version"},
+                {"\"tool\":\"walpp\"", "the tool name"},
+                {"\"command\":\"inspect\"", "the command"},
+                {"\"ok\":true", "the ok flag"},
+                {"\"age_seconds\"", "the source age, so a stale trace is visible"},
                 {"\"index_count\":81", "index count"},
                 {"\"hierarchy_separator\":\".\"", "the separator, stated not assumed"},
                 {"\"trace_id_separator\":\"^\"", "the trace-id separator"},
@@ -2042,10 +2047,12 @@ void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
 
             // -e --json: results a caller can parse.
             auto [rc2, json] = run_command(
-                exe_path + " -l " + vcd + " --json -e '(count (rising tb.clk))'"
+                exe_path + " -l " + vcd + " --compact-json -e '(count (rising tb.clk))'"
                 " -e '(list 1 \"two\" #t)' 2>&1");
             if (json.find("40") == std::string::npos ||
-                json.find("[1,\"two\",true]") == std::string::npos) {
+                json.find("[1,\"two\",true]") == std::string::npos ||
+                json.find("\"command\":\"eval\"") == std::string::npos ||
+                json.find("\"ok\":true") == std::string::npos) {
                 result.passed = false;
                 result.message += "-e --json did not emit JSON values (got: '" + json + "'); ";
             }
@@ -2053,10 +2060,14 @@ void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
             // A failed query is reported AS JSON, not only on stderr, so a caller
             // reading stdout learns that it failed.
             auto [rc3, err] = run_command(
-                exe_path + " -l " + vcd + " --json -e '(count (rising no.such))' 2>/dev/null");
-            if (err.find("\"error\"") == std::string::npos) {
+                exe_path + " -l " + vcd + " --compact-json -e '(count (rising no.such))' 2>/dev/null");
+            // A failure carries the SAME envelope, so a consumer never tells failure
+            // from an empty result by reading prose.
+            if (err.find("\"ok\":false") == std::string::npos ||
+                err.find("\"walpp.eval.failed\"") == std::string::npos) {
                 result.passed = false;
-                result.message += "a failing query should still yield JSON (got: '" + err + "'); ";
+                result.message += "a failing query should yield the failure envelope (got: '" +
+                                  err + "'); ";
             }
         }
 
@@ -2093,7 +2104,8 @@ void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
             }
             auto [rc2, js] = run_command(exe_path + " --lint " + bad + " --json 2>&1");
             if (js.find("\"ok\": false") == std::string::npos ||
-                js.find("\"code\": \"unknown-operator\"") == std::string::npos) {
+                js.find("walpp.lint.unknown-operator") == std::string::npos ||
+                js.find("\"walpp.lint.failed\"") == std::string::npos) {
                 result.passed = false;
                 result.message += "--lint --json should report the finding (got: '" + js + "'); ";
             }

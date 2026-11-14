@@ -6,7 +6,15 @@
 
 #include <algorithm>
 #include <sstream>
+#include <filesystem>
+#include <ctime>
+#include <chrono>
 #include <unordered_set>
+
+// Kept beside the version the CLI prints; CMake owns the number.
+#ifndef WALPP_VERSION
+#define WALPP_VERSION "1.2.2"
+#endif
 
 namespace wal {
 
@@ -43,6 +51,60 @@ namespace {
 
 std::string quoted(const std::string& s) { return "\"" + json_escape(s) + "\""; }
 
+/// Current UTC time, ISO 8601 to the second, as the envelope's generated_at.
+std::string iso_now() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return buf;
+}
+
+/// The source file's modification time and age, so a stale trace cannot be read as
+/// current. No budget is applied: WAL++ cannot know what the trace should be newer
+/// than, so it reports and leaves the judgement to the caller.
+std::string source_block(const std::string& file, const char* i1, const char* kv,
+                         const char* nl) {
+    std::ostringstream out;
+    out << i1 << quoted("source") << kv;
+    if (file.empty()) {
+        out << "null," << nl;
+        return out.str();
+    }
+    std::error_code ec;
+    auto mtime = std::filesystem::last_write_time(file, ec);
+    if (ec) {
+        out << "{" << quoted("path") << kv << quoted(file) << "}," << nl;
+        return out.str();
+    }
+    auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        mtime - std::filesystem::file_time_type::clock::now() +
+        std::chrono::system_clock::now());
+    std::time_t t = std::chrono::system_clock::to_time_t(sys);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now() - sys).count();
+    if (age < 0) age = 0;
+
+    out << "{" << quoted("path") << kv << quoted(file) << ","
+        << quoted("modified_at") << kv << quoted(buf) << ","
+        << quoted("age_seconds") << kv << age << "}," << nl;
+    return out.str();
+}
+
 /// Scope prefix of a dotted name, empty for a top-level signal.
 std::string scope_of(const std::string& name) {
     auto cut = name.rfind(Trace::SCOPE_SEPARATOR);
@@ -55,6 +117,58 @@ std::string leaf_of(const std::string& name) {
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// the envelope
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string envelope_impl(const std::string& command, const std::string& payload,
+                          const std::string& source, bool ok,
+                          const AgentError* error, bool pretty) {
+    const char* nl = pretty ? "\n" : "";
+    const char* i1 = pretty ? "  " : "";
+    const char* kv = pretty ? ": " : ":";
+
+    std::ostringstream out;
+    out << "{" << nl;
+    out << i1 << quoted("envelope_version") << kv << ENVELOPE_VERSION << "," << nl;
+    out << i1 << quoted("tool") << kv << quoted("walpp") << "," << nl;
+    out << i1 << quoted("tool_version") << kv << quoted(WALPP_VERSION) << "," << nl;
+    out << i1 << quoted("command") << kv << quoted(command) << "," << nl;
+    out << i1 << quoted("generated_at") << kv << quoted(iso_now()) << "," << nl;
+    out << source_block(source, i1, kv, nl);
+    out << i1 << quoted("ok") << kv << (ok ? "true" : "false") << "," << nl;
+    out << i1 << quoted("warnings") << kv << "[]," << nl;
+    if (error) {
+        out << i1 << quoted("error") << kv << "{"
+            << quoted("code") << kv << quoted(error->code) << ","
+            << quoted("message") << kv << quoted(error->message);
+        if (!error->subject.empty()) {
+            out << "," << quoted("subject") << kv << quoted(error->subject);
+        }
+        if (!error->hint.empty()) {
+            out << "," << quoted("hint") << kv << quoted(error->hint);
+        }
+        out << "}," << nl;
+    }
+    out << i1 << quoted("data") << kv << (payload.empty() ? "null" : payload) << nl;
+    out << "}";
+    return out.str();
+}
+
+} // namespace
+
+std::string envelope(const std::string& command, const std::string& payload,
+                     const std::string& source, bool pretty) {
+    return envelope_impl(command, payload, source, true, nullptr, pretty);
+}
+
+std::string error_envelope(const std::string& command, const AgentError& error,
+                           const std::string& source, bool pretty) {
+    return envelope_impl(command, "null", source, false, &error, pretty);
+}
 
 // ---------------------------------------------------------------------------
 // inspect
@@ -76,16 +190,13 @@ std::string inspect_trace(const std::string& file, bool pretty) {
 
     std::ostringstream out;
     out << "{" << nl;
-    out << i1 << quoted("file") << kv << quoted(file) << "," << nl;
-
-    if (!trace) {
-        out << i1 << quoted("error") << kv << quoted("trace did not load") << nl << "}";
-        return out.str();
-    }
 
     auto signals = trace->get_all_signals();
     auto scopes  = trace->get_scopes();
 
+    if (!trace) {
+        throw std::runtime_error("trace did not load");
+    }
     out << i1 << quoted("max_index") << kv << trace->get_max_index() << "," << nl;
     out << i1 << quoted("index_count") << kv << (trace->get_max_index() + 1) << "," << nl;
     out << i1 << quoted("signal_count") << kv << signals.size() << "," << nl;
@@ -332,9 +443,9 @@ std::string lint_findings_text(const std::vector<LintFinding>& findings,
 std::string lint_findings_json(const std::vector<LintFinding>& findings,
                                const std::string& filename, bool pretty) {
     const char* nl = pretty ? "\n" : "";
-    const char* i1 = pretty ? "  " : "";
-    const char* i2 = pretty ? "    " : "";
-    const char* i3 = pretty ? "      " : "";
+    const char* i1 = pretty ? "    " : "";
+    const char* i2 = pretty ? "      " : "";
+    const char* i3 = pretty ? "        " : "";
     const char* kv = pretty ? ": " : ":";
 
     size_t errors = 0;
@@ -342,27 +453,28 @@ std::string lint_findings_json(const std::vector<LintFinding>& findings,
         if (f.severity == LintFinding::Severity::Error) ++errors;
     }
 
+    // The payload only: the caller wraps it in the envelope, so `ok` at the top
+    // level always means the same thing whichever command produced it.
     std::ostringstream out;
     out << "{" << nl;
     out << i1 << quoted("file") << kv << quoted(filename) << "," << nl;
-    out << i1 << quoted("ok") << kv << (errors == 0 ? "true" : "false") << "," << nl;
     out << i1 << quoted("error_count") << kv << errors << "," << nl;
     out << i1 << quoted("finding_count") << kv << findings.size() << "," << nl;
-    out << i1 << quoted("findings") << ": [" << nl;
+    out << i1 << quoted("findings") << kv << "[" << nl;
     for (size_t k = 0; k < findings.size(); ++k) {
         const auto& f = findings[k];
         out << i2 << "{" << nl;
         out << i3 << quoted("severity") << kv
             << quoted(f.severity == LintFinding::Severity::Error ? "error" : "warning")
             << "," << nl;
-        out << i3 << quoted("code") << kv << quoted(f.code) << "," << nl;
+        out << i3 << quoted("code") << kv << quoted("walpp.lint." + f.code) << "," << nl;
         out << i3 << quoted("line") << kv << f.line << "," << nl;
         out << i3 << quoted("column") << kv << f.column << "," << nl;
         out << i3 << quoted("message") << kv << quoted(f.message) << "," << nl;
         out << i3 << quoted("hint") << kv << quoted(f.hint) << nl;
         out << i2 << "}" << (k + 1 < findings.size() ? "," : "") << nl;
     }
-    out << i1 << "]" << nl << "}";
+    out << i1 << "]" << nl << (pretty ? "  " : "") << "}";
     return out.str();
 }
 

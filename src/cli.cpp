@@ -545,7 +545,32 @@ int CLI::run() {
         text << in.rdbuf();
         auto findings = lint_script(text.str(), lint_file);
         if (json_output) {
-            std::cout << lint_findings_json(findings, lint_file, pretty_json) << "\n";
+            bool clean = true;
+            for (const auto& f : findings) {
+                if (f.severity == LintFinding::Severity::Error) clean = false;
+            }
+            if (clean) {
+                std::cout << envelope("lint",
+                                      lint_findings_json(findings, lint_file, pretty_json),
+                                      lint_file, pretty_json) << "\n";
+            } else {
+                // A script that will not run is a failure of the command, so it
+                // carries the failure envelope. The findings stay in `data`, since
+                // they are the answer, not a side note.
+                AgentError err{"walpp.lint.failed",
+                               "the script has errors and will not run",
+                               lint_file,
+                               "see data.findings for the locations"};
+                std::string body = error_envelope("lint", err, lint_file, pretty_json);
+                auto cut = body.rfind("\"data\"");
+                if (cut != std::string::npos) {
+                    body = body.substr(0, cut) + "\"data\"" +
+                           std::string(pretty_json ? ": " : ":") +
+                           lint_findings_json(findings, lint_file, pretty_json) +
+                           (pretty_json ? "\n}" : "}");
+                }
+                std::cout << body << "\n";
+            }
         } else {
             std::cout << lint_findings_text(findings, lint_file);
         }
@@ -563,10 +588,15 @@ int CLI::run() {
             return 1;
         }
         try {
-            std::cout << inspect_trace(inspect_file, pretty_json) << "\n";
+            std::cout << envelope("inspect", inspect_trace(inspect_file, pretty_json),
+                                  inspect_file, pretty_json) << "\n";
             return 0;
         } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << "\n";
+            // Same envelope as a success: a consumer never has to tell failure from
+            // an empty result by reading prose.
+            AgentError err{"walpp.trace.unreadable", e.what(), inspect_file,
+                           "check the path and that the format is VCD, FST or CSV"};
+            std::cout << error_envelope("inspect", err, inspect_file, pretty_json) << "\n";
             return 1;
         }
     }
@@ -597,6 +627,7 @@ int CLI::run() {
     
     // Eval mode
     if (eval_mode && !eval_exprs.empty()) {
+        std::vector<std::string> json_results;
         for (const auto& expr : eval_exprs) {
             try {
                 Value result = wal_instance->eval_str(expr);
@@ -608,9 +639,9 @@ int CLI::run() {
                 // of this chain and vanish, which made `-e '(signal-names)'`
                 // look like an empty trace.
                 if (json_output) {
-                    // One JSON value per -e, so a caller reads results without
-                    // parsing WAL syntax and without guessing where one ends.
-                    std::cout << value_to_json(result) << std::endl;
+                    // Collected, not streamed: one command produces one envelope, so
+                    // `ok` describes the whole run rather than whichever -e printed last.
+                    json_results.push_back(value_to_json(result));
                 } else if (result.is_nil()) {
                     std::cout << "nil" << std::endl;
                 } else {
@@ -619,15 +650,42 @@ int CLI::run() {
                 }
             } catch (const std::exception& e) {
                 if (json_output) {
-                    // An error is a result too: a caller reading JSON should not
-                    // have to scrape stderr to learn the query failed.
-                    std::cout << "{\"error\": \"" << json_escape(e.what()) << "\"}"
-                              << std::endl;
+                    // The failure envelope carries the results that did succeed, so a
+                    // caller can see how far the run got.
+                    AgentError err{"walpp.eval.failed", e.what(), expr,
+                                   "the expressions before this one are in data.results"};
+                    std::string body = error_envelope("eval", err, trace_file, pretty_json);
+                    auto cut = body.rfind("\"data\"");
+                    if (cut != std::string::npos) {
+                        std::ostringstream partial;
+                        partial << "{\"results\":[";
+                        for (size_t k = 0; k < json_results.size(); ++k) {
+                            if (k) partial << ",";
+                            partial << json_results[k];
+                        }
+                        partial << "]}";
+                        body = body.substr(0, cut) + "\"data\"" +
+                               std::string(pretty_json ? ": " : ":") + partial.str() +
+                               (pretty_json ? "\n}" : "}");
+                    }
+                    std::cout << body << std::endl;
                 } else {
                     std::cerr << "Error: " << e.what() << std::endl;
                 }
                 return 1;
             }
+        }
+        if (json_output) {
+            std::ostringstream payload;
+            payload << "{" << (pretty_json ? "\n    " : "") << "\"results\""
+                    << (pretty_json ? ": " : ":") << "[";
+            for (size_t k = 0; k < json_results.size(); ++k) {
+                if (k) payload << ",";
+                payload << json_results[k];
+            }
+            payload << "]" << (pretty_json ? "\n  " : "") << "}";
+            std::cout << envelope("eval", payload.str(), trace_file, pretty_json)
+                      << std::endl;
         }
         return 0;
     }
