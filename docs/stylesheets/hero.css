@@ -169,19 +169,22 @@ body.bc-homepage .md-content,
  * Hidden is the fallback here rather than visible, because the class that selects it
  * is added synchronously and removed again the moment buildHero fails, so no script
  * means no class means ordinary menus. */
-body.bc-homepage .md-sidebar {
-  z-index: 1;
-}
-
 /* Each sidebar fades only across the widths where it is a column standing beside the
  * hero. Below those, Material folds it into the drawer or the header, where it is
  * opened deliberately and nothing is behind it: 60em for the table of contents,
  * 76.25em for the navigation. Fading the drawer would hide the whole menu on a phone.
  *
  * `visibility: hidden` at the bottom of the ramp, because a sidebar at opacity 0 is
- * still clickable and still takes a tab stop. */
+ * still clickable and still takes a tab stop.
+ *
+ * The z-index that lifts a sidebar over the stage (which sits at 0) belongs in here
+ * too. Unscoped, `body.bc-homepage .md-sidebar` (0,2,1) outranked Material's
+ * `.md-sidebar--primary` (0,1,0) and dropped the phone drawer from z-index 5 to 1,
+ * while .md-overlay's 54% black scrim stayed at 5 and painted over the open menu.
+ * On a phone that reads as the burger menu having lost its background. */
 @media screen and (min-width: 60em) {
   body.bc-homepage .md-sidebar--secondary {
+    z-index: 1;
     opacity: var(--bc-aside-opacity, 0);
   }
 
@@ -192,6 +195,7 @@ body.bc-homepage .md-sidebar {
 
 @media screen and (min-width: 76.25em) {
   body.bc-homepage .md-sidebar--primary {
+    z-index: 1;
     opacity: var(--bc-aside-opacity, 0);
   }
 
