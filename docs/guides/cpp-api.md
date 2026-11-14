@@ -110,15 +110,129 @@ else if (v.is_list()) {
 `to_string_repr()` renders any value the way the REPL would, which is what you want
 for logging.
 
-Two things to know, both of which differ from what a C++ programmer might assume and
-both of which are deliberate:
+### The conversion contract
 
-**Types do not coerce.** `v.to_int()` on a float value throws rather than truncating.
-See [Compatibility with upstream WAL](../reference/wal-compatibility.md).
+The accessors are not coercions. Each one either gives you the value or throws, with
+two exceptions worth memorising. Measured, not inferred:
 
-**A signal wider than 64 bits reads as a string** holding its exact bit pattern,
-because no `int64_t` holds it. Check `is_string()` on wide buses, and use the
-`bits->sint` operator to interpret one as signed.
+| value | `to_int()` | `to_float()` | `to_bool()` | `is_truthy()` |
+|---|---|---|---|---|
+| `42` | 42 | 42 | **throws** | true |
+| `3.7` | **3** | 3.7 | throws | true |
+| `-3.7` | **-3** | -3.7 | throws | true |
+| `"hi"` | throws | throws | throws | true |
+| `#t` / `#f` | throws | throws | true / false | true / false |
+| `#nil` | throws | throws | **throws** | false |
+| `(1 2)` | throws | throws | throws | true |
+| a bigint too large for 64 bits | **throws** | lossy | throws | true |
+
+Three of those will catch you out:
+
+**`to_bool()` throws on anything that is not a bool**, including `42`. It is an
+accessor, not a truth test. For WAL's notion of truth, which is what `if` and `&&`
+use, call `is_truthy()`: it never throws, and it is false for `0`, `0.0`, `""`, `()`,
+`#f` and nil.
+
+**`to_int()` truncates a float toward zero** rather than refusing. It is the one
+place the C++ API is looser than the language, which has no implicit conversion
+between an int and a float at all. If you care, check `is_int()` first.
+
+**`to_float()` on a bigint is silently lossy** above 2^53. `to_int()` on one that
+does not fit throws instead, deliberately: a value that overflows 64 bits is exactly
+the case `--bigint` exists for, so wrapping it would defeat the point.
+
+## Decisions the API inherits
+
+WAL++ makes a handful of deliberate choices that a C++ caller meets directly. Each
+is explained in full in
+[Compatibility with upstream WAL](../reference/wal-compatibility.md); this is what
+each one means from inside a program.
+
+### A signal wider than 64 bits comes back as a string
+
+No `int64_t` holds it, so the reader returns the exact bit pattern as text:
+
+```cpp
+wal::Value v = traces->signal_value("top.core.wide_bus", 0);
+if (v.is_string()) {
+    // 128 characters of '0' and '1'. Count bits, or convert:
+    int64_t signed_value = w.eval_str("(bits->sint \"" + v.to_string() + "\")").to_int();
+}
+```
+
+This is the decision everything else about types follows from. A `+` that coerced
+strings would turn arithmetic on a wide bus into string concatenation and return a
+plausible wrong answer, which on a datapath is the worst available failure. So
+nothing coerces, and `is_string()` on a wide bus is a check worth writing.
+
+For counting bits across many signals, do not do it through `Value` at all: the
+extraction kernels handle wide signals exactly and in one pass. See
+[Writing your own extraction tool](writing-fast-tools.md).
+
+### Modes are process-wide, and read at evaluation time
+
+`set_bigint_mode` and `set_compat_types_mode` are **not** per-instance:
+
+```cpp
+wal::Wal strict;                    // created first
+wal::set_compat_types_mode(true);
+wal::Wal loose;
+
+strict.eval_str("(= 0 #f)");        // true  -- the flag applies to it too
+loose.eval_str("(= 0 #f)");         // true
+
+wal::set_compat_types_mode(false);
+loose.eval_str("(= 0 #f)");         // false -- an existing instance changed behavior
+```
+
+They are global because the **parser** consults them, and the parser is used in
+several places that have no interpreter to ask. Two consequences:
+
+- You cannot run one instance strict and another loose in the same process. If you
+  need both, use two processes.
+- Set them once, during start-up, before any thread or any evaluation. Changing a
+  mode while something is evaluating is safe in the data-race sense, since both are
+  atomic, but the result is whichever value the read happened to see.
+
+### `eval_str` evaluates one expression
+
+```cpp
+w.eval_str("(define x 1) (define y 2)");   // defines x; y is never seen
+w.eval_program("(define x 1) (define y 2)");  // defines both, returns the last
+```
+
+This catches people out because the single-expression form is the right one for a
+query and the wrong one for anything with more than one form in it. Use
+`eval_program` or `run_file` for scripts.
+
+### Signal names: `.` for hierarchy, `^` for a trace id
+
+```cpp
+w.load("before.vcd", "a");
+w.load("after.vcd",  "b");
+w.eval_str("a^top.core.counter");     // the counter in trace `a`
+```
+
+`top.core.counter` is a path; `a^` selects which trace it is read from. The
+extraction modes and upstream WAL spell it the same way. Names written with the old
+`^`-joined hierarchy still resolve, so an existing script keeps working.
+
+### `mod` is Euclidean
+
+`(mod -7 3)` is `2`, not `-1`: the result is the least non-negative residue. This
+matters if you write an operator that does index arithmetic, because C++'s `%` does
+not agree. Wrapping an index that has gone negative is the usual case, and `%` gets
+it wrong.
+
+### Two engines, one binary
+
+The interpreter and the `--fast-*` extraction kernels share the file readers and
+nothing else. No language semantics apply to the kernels: the type rules, the modes
+and the operator set are all interpreter concerns. A kernel sees signal ids and
+integers.
+
+That is why the kernels are two orders of magnitude faster, and why changing a mode
+cannot affect an extraction result.
 
 ## Reading the trace directly
 

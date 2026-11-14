@@ -160,23 +160,103 @@ And on each `DeltaTimestamp`:
 | `changes` | `(signal id, new value)` for signals 64 bits or narrower |
 | `wide_changes` | `(signal id, word vector)` for wider signals, low word first |
 
-## Four things that will bite
+## Restrict the scope
 
-**Resolve names one at a time.** `get_signal_ids_by_names` silently skips names it
-cannot find, so zipping its result against your input list by position mislabels
-every signal after the first missing one. Call it per name and check for an empty
-result.
+`get_signals_in_scope` is the difference between measuring your design and measuring
+your design plus its testbench. The testbench switches too, and that activity is
+noise in every analysis built on the result. It is also the cheapest speedup
+available: fewer tracked signals means less work per timestamp.
 
-**Handle `wide_changes`.** Anything wider than 64 bits arrives in the separate
-vector, not in `changes`. A kernel that reads only `changes` will silently report
-zero activity for every wide bus, which on a datapath is most of what matters.
+## Decisions the kernel layer makes
 
-**Say when you emit.** Decide whether your first row corresponds to the first
-timestamp, as weight does, or to the second, as distance does. Write it in the
-tool's help text.
+These are the ones that change what your tool computes, as opposed to how fast it
+runs.
 
-**Restrict the scope.** `get_signals_in_scope` is the difference between measuring
-your design and measuring your design plus its testbench. The testbench switches too.
+### No language semantics apply
+
+A kernel sees signal ids and integers. The type rules, `--compat-types`, `--bigint`,
+the operator set and the standard library are all interpreter concerns, and none of
+them is in scope here. Consequences:
+
+- A mode flag cannot change an extraction result. Setting one before running your
+  tool does nothing.
+- You own the arithmetic. If a value should be read as two's complement, you do it.
+- There is no evaluation and nothing can throw a `wal::EvalError` at you.
+
+That is the trade: you give up the language and get two orders of magnitude.
+
+### Wide signals are exact, unlike in the interpreter
+
+The interpreter hands a signal wider than 64 bits to you as a bit **string**, because
+no `int64_t` holds it. A kernel gets the same value as a **word vector** in
+`wide_changes`, low word first, and can compute on it exactly.
+
+This is the one place the kernel layer is more capable than the interpreter, and it
+is why the Hamming modes count wide buses correctly:
+
+```cpp
+for (const auto& [sig_id, words] : delta.wide_changes) {
+    for (uint64_t w : words) toggles += __builtin_popcountll(w);
+}
+```
+
+A kernel that reads only `changes` silently reports zero activity for every wide bus.
+On a datapath that is most of what you wanted to measure, and nothing will tell you.
+
+### Timestamps are trace time, not cycles
+
+`delta.timestamp` is in the trace's own timescale, which `get_timescale()` reports
+as `"1ns"`, `"10ps"` and so on. It is **not** a cycle count and not an index.
+
+Converting to cycles means finding the clock edges, which is a separate pass or a
+separate tracked signal. Do not assume one timestamp is one cycle: a VCD emits a
+record whenever anything changes, so a busy cycle produces several and an idle one
+produces none.
+
+### Emit on the first timestamp, or not
+
+Hamming weight emits a row at every timestamp, including the first. Hamming distance
+emits from the second, because the first only establishes a state to compare
+against. So distance always has exactly one row fewer.
+
+Neither is wrong. Decide which your tool means and say so in its help text, because
+this is the most common off-by-one in this kind of code and it is invisible in the
+output.
+
+### Name resolution skips what it cannot find
+
+`get_signal_ids_by_names` returns ids only for the names it resolved, in order, with
+the misses dropped. Zipping its result against your input list by position therefore
+mislabels every signal after the first missing one, silently.
+
+```cpp
+// wrong when any name is missing
+auto ids = parser.get_signal_ids_by_names(names);
+for (size_t i = 0; i < ids.size(); ++i) mapping[ids[i]] = names[i];
+
+// right
+for (const auto& name : names) {
+    auto one = parser.get_signal_ids_by_names({name});
+    if (one.empty()) { warn(name); continue; }
+    mapping[one[0]] = name;
+}
+```
+
+This caused a real bug in the streaming reader, where it labelled histories with the
+wrong signal names and every value came back as zero.
+
+### The sink is installed before the parse, and resolves on the first delta
+
+The signal table only exists once the header has been read, which happens inside
+`parse()`. So a kernel cannot resolve its tracked set in its constructor; it does so
+the first time it is called, by which point the header is complete. Every kernel in
+`streaming_ops.h` has a `ready_` flag for exactly this reason.
+
+### FST materialises
+
+`parse_fst` goes through GTKWave's fstapi, which drives its own callback structure,
+so your sink is not called during the read. Results are identical; memory is not.
+See the FST section below.
 
 ## If you need the state, not a scalar
 
