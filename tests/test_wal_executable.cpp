@@ -724,6 +724,78 @@ void test_index_navigation(ExecutableTestSuite& suite, const std::string& exe_pa
     suite.add_result(result);
 }
 
+// Test 16: zero is false.
+// Regression: Value::is_truthy returned true for everything that was not nil or a
+// bool, so `(if 0 ...)` took the then branch, `(! 0)` was false and `(&& 1 0)` was
+// true. In a waveform language signal values are integers, so any condition written
+// directly on a signal did the opposite of what it said, silently. Counting rising
+// edges with the idiomatic `(&& clk (! clk@-1))` returned 0 instead of 40.
+// Rules pinned against upstream ics-jku/wal 0.9.1.
+void test_zero_is_false(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "zero, empty string and empty list are false";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+
+        struct Case { const char* expr; const char* want; };
+        const Case cases[] = {
+            // truthiness of each value kind
+            {"(if 0 1 2)", "2"},
+            {"(if 1 1 2)", "1"},
+            {"(if -1 1 2)", "1"},
+            {"(if 0.0 1 2)", "2"},
+            {"(if \"\" 1 2)", "2"},
+            {"(if \"a\" 1 2)", "1"},
+            {"(if (list) 1 2)", "2"},
+            {"(if (list 1) 1 2)", "1"},
+            // the logic operators that read it
+            {"(! 0)", "true"},
+            {"(! 1)", "false"},
+            {"(&& 1 0)", "false"},
+            {"(&& 1 1)", "true"},
+            {"(|| 0 0)", "false"},
+            {"(|| 0 1)", "true"},
+        };
+
+        for (const auto& c : cases) {
+            auto [rc, out] = run_command(exe_path + " -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should be " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+
+        // End to end: the idiomatic rising-edge condition over a real trace. 81
+        // timestamps with a toggling clock gives 40 rising edges, which is also what
+        // upstream returns for the same expression.
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (file_exists(vcd)) {
+            auto [rc, out] = run_command(
+                exe_path + " -l " + vcd +
+                " -e '(length (filter (lambda (i) (begin (set-index i)"
+                " (&& tb.clk (! tb.clk@-1)))) (range 1 81)))' 2>&1");
+            if (out.find("40") == std::string::npos) {
+                result.passed = false;
+                result.message += "idiomatic rising-edge count should be 40 (got: '" +
+                                  out + "'); ";
+            }
+        }
+
+        if (result.passed) result.message = "zero is false everywhere it is read";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -760,7 +832,7 @@ int main(int argc, char* argv[]) {
     // Create test suite
     ExecutableTestSuite suite("WAL Executable Integration Tests", exe_path);
     
-    std::cout << "\nRunning " << 15 << " test cases...\n";
+    std::cout << "\nRunning " << 16 << " test cases...\n";
     std::cout << std::string(80, '-') << "\n";
     
     // Run all tests
@@ -779,6 +851,7 @@ int main(int argc, char* argv[]) {
     test_eval_prints_lists(suite, exe_path);
     test_multiple_eval_flags(suite, exe_path);
     test_index_navigation(suite, exe_path);
+    test_zero_is_false(suite, exe_path);
     
     // Print results
     suite.print_summary();

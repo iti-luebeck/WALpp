@@ -183,9 +183,22 @@ std::string Value::to_string_repr() const {
 }
 
 bool Value::is_truthy() const {
+    // WAL's notion of truth, which is the one the signal values in a waveform need:
+    // zero is false. Treating every non-bool as true made `(if 0 ...)` take the then
+    // branch, `(! 0)` yield false, and `(&& 1 0)` yield true, so any condition written
+    // directly on a signal silently did the opposite of what it said. The upstream
+    // reference (ics-jku/wal 0.9.1) was used to pin the rules:
+    //   0, 0.0, "", () and #f are false; everything else, including a symbol, is true.
     if (is_nil()) return false;
     if (is_bool()) return std::get<bool>(data);
-    return true; // Everything else is truthy
+    if (is_int()) return std::get<int64_t>(data) != 0;
+    if (is_float()) return std::get<double>(data) != 0.0;
+    if (is_string()) return !std::get<std::string>(data).empty();
+    if (is_list()) {
+        auto list = std::get<std::shared_ptr<WList>>(data);
+        return list && !list->empty();
+    }
+    return true; // symbols, operators and anything else
 }
 
 bool Value::operator==(const Value& other) const {
