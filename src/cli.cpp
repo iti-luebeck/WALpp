@@ -458,7 +458,7 @@ void CLI::print_help() {
 }
 
 void CLI::print_version() {
-    std::cout << "WAL++ v1.2.2\n"
+    std::cout << "WAL++ v" WALPP_VERSION "\n"
               << "Language: S-expressions with 130+ operators\n"
               << "Build: C++20 with pybind11 Python bindings\n"
               << "Features: Streaming trace support (VCD, CSV, FST)\n";

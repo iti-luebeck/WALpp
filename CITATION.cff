@@ -17,7 +17,7 @@ authors:
     affiliation: "Institute of Computer Engineering, Universität zu Lübeck"
 repository-code: "https://github.com/iti-luebeck/WALpp"
 license: BSD-3-Clause
-version: 1.2.2
+version: 1.6.3
 keywords:
   - waveform analysis
   - VCD

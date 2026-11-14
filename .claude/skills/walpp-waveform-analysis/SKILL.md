@@ -8,14 +8,14 @@ description: Analyze digital simulation waveforms (VCD/FST/CSV) with the WAL++ `
 Drive the `wal` command-line tool to analyze digital simulation waveforms. WAL++ is a
 C++20 waveform-analysis language with S-expression syntax and 130+ operators.
 
-Everything below was verified against **WAL++ v1.2.2**. Where a claim could go stale,
+Everything below was verified against **WAL++ v1.6.3**. Where a claim could go stale,
 the check that verifies it is given with it.
 
 ## Finding the binary
 
 ```bash
 export WAL=$(command -v wal || echo "$PWD/build/wal")   # installed, or a local build
-$WAL --version                                          # => WAL++ v1.2.2
+$WAL --version                                          # => WAL++ v1.6.3
 ```
 
 If it is missing, build it from the repository root:

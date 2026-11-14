@@ -165,7 +165,7 @@ void REPL::handle_command(const std::string& line) {
     } else if (trimmed == "(help)") {
         print_help();
     } else if (trimmed == "(version)") {
-        std::cout << "WAL++ v1.2.2" << std::endl;
+        std::cout << "WAL++ v" WALPP_VERSION << std::endl;
     } else if (trimmed == "(list-operators)") {
         auto registry = wal_instance->get_operator_registry();
         std::cout << "Available operators: " << std::endl;

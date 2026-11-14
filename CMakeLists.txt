@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(walpp
 
-    VERSION 1.2.2 
+    VERSION 1.6.3 
     LANGUAGES CXX C
     DESCRIPTION "WAL - Waveform Analysis Language in C++20"
 )
@@ -130,6 +130,12 @@ set(WALPP_CORE_SOURCES
 
 # Create main library
 add_library(walpp ${WALPP_CORE_SOURCES})
+
+# The version was hand-written into four translation units, and project(VERSION)
+# reached none of them, so a bump could update CMakeLists, pyproject.toml and
+# CITATION.cff and still leave `wal --version`, the JSON envelope, the REPL banner
+# and walpp.__version__ reporting the old number. One definition, from one place.
+target_compile_definitions(walpp PUBLIC WALPP_VERSION="${PROJECT_VERSION}")
 
 # Embed the standard library.
 #

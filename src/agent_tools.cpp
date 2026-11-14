@@ -12,8 +12,11 @@
 #include <unordered_set>
 
 // Kept beside the version the CLI prints; CMake owns the number.
+// Normally defined by CMake from project(VERSION). The fallback only matters for a
+// translation unit built outside the project, and says so rather than naming a
+// version that will quietly go stale.
 #ifndef WALPP_VERSION
-#define WALPP_VERSION "1.2.2"
+#define WALPP_VERSION "0.0.0-unknown"
 #endif
 
 namespace wal {

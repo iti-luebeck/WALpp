@@ -98,4 +98,4 @@ WAL++ is fully compatible, but has minor implementation differences:
 ---
 
 **Last Updated**: November 8, 2025
-**Version**: 1.2.2
+**Version**: 1.6.3
