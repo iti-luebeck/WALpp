@@ -129,9 +129,9 @@ else()
     target_compile_options(walpp PRIVATE -Wall -Wextra -Wpedantic)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(walpp PRIVATE -Wduplicated-cond -Wduplicated-branches -fcoroutines)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(walpp PRIVATE -fcoroutines-ts)
     endif()
+    # NOTE: Clang needs no coroutine flag in C++20 mode. The old -fcoroutines-ts was
+    # removed in Clang 17, and passing it breaks every Clang build, Emscripten included.
 endif()
 
 # Link Lark if found
