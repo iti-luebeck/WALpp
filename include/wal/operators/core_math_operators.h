@@ -91,6 +91,25 @@ public:
                 return Value(result);
             }
 
+            // Upstream also concatenates when any operand is a STRING. Off by
+            // default here: the VCD reader represents a signal wider than 64 bits as
+            // a bit string, so a string-coercing + would turn `(+ wide 1)` into
+            // concatenation of a bit pattern and return a plausible wrong answer
+            // instead of failing. --compat-types turns it on for upstream scripts.
+            if (compat_types_mode()) {
+                bool has_string = false;
+                for (const auto& val : evaluated) {
+                    if (val.is_string()) { has_string = true; break; }
+                }
+                if (has_string) {
+                    std::string joined;
+                    for (const auto& val : evaluated) {
+                        joined += val.is_string() ? val.to_string() : val.to_string_repr();
+                    }
+                    return Value(joined);
+                }
+            }
+
             double result = 0.0;
             bool is_int = true;
             

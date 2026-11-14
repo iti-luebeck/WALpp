@@ -258,6 +258,26 @@ bool Value::is_truthy() const {
 }
 
 bool Value::operator==(const Value& other) const {
+    // Types stay apart unless a conversion is written out, so an int, a float, a
+    // bool and a string are four different things and never compare equal:
+    //   (= 0 #f)   (= 1 #t)   (= 1 1.0)   are all false.
+    // Upstream, being Python, treats all three as true. --compat-types restores that
+    // for running upstream scripts unchanged, rather than making it the default,
+    // because a silent cross-type match is how a comparison against a wide signal's
+    // bit string would quietly succeed.
+    if (compat_types_mode() && data.index() != other.data.index()) {
+        auto numeric = [](const Value& v) {
+            return v.is_int() || v.is_float() || v.is_bool() || v.is_bigint();
+        };
+        if (numeric(*this) && numeric(other)) {
+            auto as_double = [](const Value& v) -> double {
+                if (v.is_bool()) return v.to_bool() ? 1.0 : 0.0;
+                return v.to_float();
+            };
+            return std::abs(as_double(*this) - as_double(other)) < 1e-10;
+        }
+    }
+
     // A bigint and an int may hold the same number in different representations, so
     // they are compared by value before the tag check below rejects them.
     if (is_bigint() || other.is_bigint()) {

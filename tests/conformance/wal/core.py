@@ -61,6 +61,15 @@ _ext = _load_extension()
 if hasattr(_ext, "set_bigint_mode"):
     _ext.set_bigint_mode(True)
 
+# Same reasoning for type coercion. Upstream is Python and coerces freely, so these
+# tests are run with WAL++'s --compat-types behavior ON. WAL++ keeps types apart by
+# default -- `(+ 1 "hi")` is an error and `(= 0 #f)` is false -- because a silent
+# cross-type match is how a comparison against a wide signal's bit string would
+# quietly succeed. What is measured here is whether WAL++ CAN agree with upstream,
+# not whether it agrees by default.
+if hasattr(_ext, "set_compat_types_mode"):
+    _ext.set_compat_types_mode(True)
+
 
 def to_python(value):
     """Convert a WAL++ Value into the plain Python value upstream's tests expect."""

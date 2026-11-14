@@ -18,4 +18,12 @@ bool& bigint_mode() {
 
 void set_bigint_mode(bool enabled) { bigint_mode() = enabled; }
 
+/// Single definition, for the same shared-library reason as bigint_mode().
+bool& compat_types_mode() {
+    static bool enabled = false;
+    return enabled;
+}
+
+void set_compat_types_mode(bool enabled) { compat_types_mode() = enabled; }
+
 } // namespace wal

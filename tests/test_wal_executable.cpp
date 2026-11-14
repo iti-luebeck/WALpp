@@ -1454,6 +1454,206 @@ void test_load_operator(ExecutableTestSuite& suite, const std::string& exe_path)
     suite.add_result(result);
 }
 
+// Test 28: types stay apart unless a conversion is written out.
+//
+// An int, a float, a bool and a string are four different things. Upstream, being
+// Python, coerces freely; that stays available behind --compat-types rather than
+// being the default, because a silent cross-type match is exactly how a comparison
+// against a wide signal's bit string would quietly succeed.
+void test_strict_types(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "types stay separate unless explicitly converted";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        struct Case { const char* expr; const char* want; };
+
+        // Default: no coercion anywhere.
+        const Case strict[] = {
+            {"(= 0 #f)", "false"},
+            {"(= 1 #t)", "false"},
+            {"(= 1 1.0)", "false"},
+            {"(!= 1 1.0)", "true"},
+            {"(= 1 1)", "true"},
+            {"(= 1.0 1.0)", "true"},
+            {"(= \"a\" \"a\")", "true"},
+            {"(= \"1\" 1)", "false"},
+            {"(in 1.0 (list 1 2))", "false"},
+            // and + refuses to join a string to a number
+            {"(+ 1 \"hi\")", "Expected number"},
+            {"(+ \"a\" \"b\")", "Expected number"},
+            // the explicit conversions are the way across
+            {"(= (int->string 1) \"1\")", "true"},
+            {"(= (string->int \"1\") 1)", "true"},
+        };
+        for (const auto& c : strict) {
+            auto [rc, out] = run_command(exe_path + " -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should give " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+
+        // --compat-types restores upstream's coercion. Each expectation below was
+        // taken by running upstream 0.9.1 on the same expression.
+        const Case compat[] = {
+            {"(= 0 #f)", "true"},
+            {"(= 1 #t)", "true"},
+            {"(= 1 1.0)", "true"},
+            {"(= 0 #t)", "false"},
+            {"(+ 1 \"hi\")", "1hi"},
+            {"(+ \"a\" \"b\")", "ab"},
+            // a string still does not equal a number
+            {"(= \"a\" 1)", "false"},
+        };
+        for (const auto& c : compat) {
+            auto [rc, out] = run_command(
+                exe_path + " --compat-types -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string("--compat-types ") + c.expr +
+                                  " should give " + c.want + " (got: '" + out + "'); ";
+            }
+        }
+
+        if (result.passed) {
+            result.message = "strict by default, upstream coercion behind --compat-types";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 29: mod is Euclidean, so the result is the least non-negative residue.
+//
+// C++'s % truncates, so its sign follows the dividend and `(mod -7 3)` came out
+// -1, which represents no congruence class mod 3 and breaks the ordinary job of
+// wrapping an index that has gone negative. For every POSITIVE divisor this agrees
+// with upstream, so the correct answer and the compatible one coincide in every
+// realistic case; they differ only for a negative divisor.
+void test_mod_euclidean(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "mod is Euclidean: 0 <= r < |divisor|";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        struct Case { const char* expr; const char* want; const char* note; };
+        const Case cases[] = {
+            {"(mod 7 3)",   "1", "upstream: 1"},
+            {"(mod -7 3)",  "2", "upstream: 2"},
+            {"(mod -1 4)",  "3", "upstream: 3"},
+            {"(mod 0 5)",   "0", "upstream: 0"},
+            {"(mod 9 3)",   "0", "upstream: 0"},
+            // negative divisor: upstream floors and gives -2 and -1 here, which are
+            // not non-negative residues. Euclidean keeps 0 <= r < |divisor|.
+            {"(mod 7 -3)",  "1", "upstream floors: -2"},
+            {"(mod -7 -3)", "2", "upstream floors: -1"},
+        };
+        for (const auto& c : cases) {
+            auto [rc, out] = run_command(exe_path + " -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should be " + c.want + " (" +
+                                  c.note + ") but gave '" + out + "'; ";
+            }
+        }
+        // division by zero is an error, not a crash
+        auto [rcz, outz] = run_command(exe_path + " -e '(mod 1 0)' 2>&1");
+        if (outz.find("zero") == std::string::npos) {
+            result.passed = false;
+            result.message += "(mod 1 0) should report division by zero; ";
+        }
+        if (result.passed) {
+            result.message = "least non-negative residue, agreeing with upstream for n > 0";
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 30: the comparison operators, including across types and on bigints.
+void test_comparisons(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "comparison operators";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        struct Case { const char* expr; const char* want; };
+        const Case cases[] = {
+            {"(< 1 2)", "true"},      {"(< 2 1)", "false"},    {"(< 1 1)", "false"},
+            {"(> 2 1)", "true"},      {"(> 1 2)", "false"},
+            {"(<= 1 1)", "true"},     {"(<= 2 1)", "false"},
+            {"(>= 1 1)", "true"},     {"(>= 1 2)", "false"},
+            // ordering still mixes int and float, which is what makes `=` refusing
+            // to a deliberate choice about identity rather than an accident
+            {"(< 1 1.5)", "true"},    {"(> 2.5 2)", "true"},
+            // n-ary equality and inequality, as upstream
+            {"(= 1 1 1)", "true"},    {"(= 1 1 2)", "false"},
+            {"(!= 3 3)", "false"},    {"(!= 3 3 3)", "false"},
+            {"(!= 3 3 4)", "true"},
+            // collections compare structurally
+            {"(= (list 1 2) (list 1 2))", "true"},
+            {"(= (list 1 2) (list 1 3))", "false"},
+            {"(= (array (1 2)) (array (1 2)))", "true"},
+            // strings and symbols
+            {"(= \"ab\" \"ab\")", "true"},
+            {"(= (quote ab) (quote ab))", "true"},
+            {"(= (quote ab) (quote ba))", "false"},
+        };
+        for (const auto& c : cases) {
+            auto [rc, out] = run_command(exe_path + " -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should be " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+
+        // past 2^53 a comparison through double would call distinct values equal
+        const Case big[] = {
+            {"(< 583547542375894327581 583547542375894327582)", "true"},
+            {"(> 583547542375894327582 583547542375894327581)", "true"},
+            {"(= 583547542375894327581 583547542375894327581)", "true"},
+            {"(= 583547542375894327581 583547542375894327582)", "false"},
+        };
+        for (const auto& c : big) {
+            auto [rc, out] = run_command(
+                exe_path + " --bigint -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string("--bigint ") + c.expr + " should be " +
+                                  c.want + " (got: '" + out + "'); ";
+            }
+        }
+
+        if (result.passed) result.message = "ordering, equality and bigint comparison";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1518,6 +1718,9 @@ int main(int argc, char* argv[]) {
     test_array_element_names(suite, exe_path);
     test_separator(suite, exe_path);
     test_load_operator(suite, exe_path);
+    test_strict_types(suite, exe_path);
+    test_mod_euclidean(suite, exe_path);
+    test_comparisons(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

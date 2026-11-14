@@ -249,6 +249,26 @@ private:
  * inline static gave each of them its OWN copy, so setting the mode from Python left
  * the parser inside libwalpp still in 64-bit mode.
  */
+/**
+ * @brief Whether upstream's permissive type coercion is enabled.
+ *
+ * Off by default. WAL++ keeps types apart unless a conversion is written out:
+ * `(+ 1 "hi")` is an error, and `(= 0 #f)`, `(= 1 #t)` and `(= 1 1.0)` are all
+ * false, because an int, a bool, a float and a string are four different things.
+ *
+ * That matters here more than it would in a general-purpose language. The VCD
+ * reader represents a signal wider than 64 bits as a bit STRING, so a `+` that
+ * coerced strings would turn `(+ wide 1)` into concatenation of a bit pattern and
+ * hand back a plausible-looking wrong answer instead of failing.
+ *
+ * Upstream, being Python, coerces freely. `--compat-types` turns that on for
+ * running upstream scripts unchanged, and says so rather than making it the
+ * silent default.
+ */
+bool& compat_types_mode();
+
+void set_compat_types_mode(bool enabled);
+
 bool& bigint_mode();
 
 void set_bigint_mode(bool enabled);

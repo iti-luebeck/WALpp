@@ -50,6 +50,10 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
                 ++i;
                 if (i + 1 < args.size()) fast_output_file = args[++i];
             }
+        } else if (arg == "--compat-types") {
+            // Upstream's permissive coercion, for running upstream scripts
+            // unchanged. Off by default: see compat_types_mode().
+            set_compat_types_mode(true);
         } else if (arg == "--bigint") {
             // Opt-in arbitrary-precision integers. Off by default: 64-bit is what
             // waveform values and indices need, and the bigint path is slower.
@@ -174,6 +178,8 @@ void CLI::print_usage() {
               << "  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)\n"
               << "  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)\n"
               << "  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)\n"
+              << "  --compat-types                      Upstream's permissive type coercion\n"
+              << "                                      (default: types stay separate)\n"
               << "  --bigint                            Arbitrary-precision integers\n"
               << "                                      (default is 64-bit, which is faster)\n"
               << "  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)\n"

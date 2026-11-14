@@ -446,7 +446,25 @@ private:
             if (divisor == 0) {
                 throw EvalError("mod: division by zero");
             }
-            return Value(evaluated[0].to_int() % divisor);
+            // Euclidean modulo: the remainder is the least NON-NEGATIVE residue,
+            // 0 <= r < |divisor|, which is what `a mod n` means in arithmetic.
+            //
+            // C++'s % truncates instead, so its sign follows the dividend and
+            // `(mod -7 3)` came out -1. That is not a representative of any
+            // congruence class mod 3, and it silently breaks the ordinary use of
+            // wrapping an index or a cycle offset that has gone negative.
+            //
+            // For every positive divisor this agrees with upstream (Python floors,
+            // which coincides with Euclidean when the divisor is positive), so the
+            // compatible answer and the correct one are the same in every realistic
+            // case. They differ only for a negative divisor, where Euclidean keeps
+            // the result non-negative and Python's does not.
+            int64_t dividend = evaluated[0].to_int();
+            int64_t remainder = dividend % divisor;
+            if (remainder < 0) {
+                remainder += (divisor < 0) ? -divisor : divisor;
+            }
+            return Value(remainder);
         });
 
         // (average list) - upstream's spelling of mean
