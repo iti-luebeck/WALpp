@@ -970,6 +970,102 @@ void test_special_variables(ExecutableTestSuite& suite, const std::string& exe_p
     suite.add_result(result);
 }
 
+// Test 20: lists and arrays compare by value, not by identity.
+//
+// `Value::operator==` fell through to comparing only the variant tag for every
+// reference type, so `(= (list 1 2) (list 1 3))` answered TRUE for any two lists.
+// Like the truthiness bug, this produced a wrong answer with no error, and it also
+// silently broke `in`, `!=` and anything filtering a list of lists.
+void test_structural_equality(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "lists and arrays compare by value";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        result.passed = true;
+        struct Case { const char* expr; const char* want; };
+        const Case cases[] = {
+            {"(= (list 1 2) (list 1 2))", "true"},
+            {"(= (list 1 2) (list 1 3))", "false"},     // was true
+            {"(= (list 1 2) (list 1 2 3))", "false"},   // was true
+            {"(!= (list 1 2) (list 1 3))", "true"},     // was false
+            {"(in (list 1) (list (list 1) (list 2)))", "true"},
+            {"(in (list 9) (list (list 1) (list 2)))", "false"},
+            {"(= (array (1 2)) (array (1 2)))", "true"},
+            {"(= (array (1 2)) (array (1 3)))", "false"},
+        };
+        for (const auto& c : cases) {
+            auto [rc, out] = run_command(exe_path + " -e '" + c.expr + "' 2>&1");
+            if (out.find(c.want) == std::string::npos) {
+                result.passed = false;
+                result.message += std::string(c.expr) + " should be " + c.want +
+                                  " (got: '" + out + "'); ";
+            }
+        }
+        if (result.passed) result.message = "equality is structural for collections";
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 21: an FST and the equivalent VCD must describe the same trace.
+//
+// The FST reader skipped every variable FST had flagged as an alias, and kept the
+// bit range FST appends to a vector's name. counter.fst therefore listed 4 signals
+// where counter.vcd listed 7, and `tb.dut.counter` did not resolve against the FST
+// at all while the identical VCD worked.
+void test_fst_matches_vcd(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "FST and VCD readers agree on the same design";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        std::string fst = "tests/original/traces/counter.fst";
+        if (!file_exists(vcd) || !file_exists(fst)) {
+            result.passed = true;
+            result.message = "Skipped: traces not found";
+        } else {
+            result.passed = true;
+            const char* exprs[] = {
+                "SIGNALS",
+                "(length SIGNALS)",
+                "MAX-INDEX",
+                "tb.dut.counter",
+                "(length (find (&& tb.clk (! tb.clk@-1))))",
+            };
+            for (const auto& expr : exprs) {
+                auto [rc_v, out_v] = run_command(
+                    exe_path + " -l " + vcd + " -e '" + expr + "' 2>&1");
+                auto [rc_f, out_f] = run_command(
+                    exe_path + " -l " + fst + " -e '" + expr + "' 2>&1");
+                if (out_v != out_f) {
+                    result.passed = false;
+                    result.message += std::string(expr) + ": VCD gave '" + out_v +
+                                      "' but FST gave '" + out_f + "'; ";
+                }
+            }
+            if (result.passed) {
+                result.message = "both readers report the same signals and values";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1026,6 +1122,8 @@ int main(int argc, char* argv[]) {
     test_multiple_eval_flags(suite, exe_path);
     test_index_navigation(suite, exe_path);
     test_zero_is_false(suite, exe_path);
+    test_structural_equality(suite, exe_path);
+    test_fst_matches_vcd(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

@@ -37,6 +37,9 @@ public:
         register_conversions(registry);
         register_list_and_math(registry);
         register_output_and_aliases(registry);
+        register_arrays(registry);
+        register_variables(registry);
+        register_trace_analysis(registry);
     }
 
 private:
@@ -293,16 +296,31 @@ private:
         // (convert/bin n) - the binary digits of n, read back as a decimal integer,
         // which is what upstream returns: (convert/bin 5) is 101.
         registry.register_operator("convert/bin", [](SEval& eval, const std::vector<Value>& args) -> Value {
-            if (args.size() != 1) {
-                throw EvalError("convert/bin expects 1 argument (integer)");
+            // Upstream: (convert/bin value [width]) -- width zero-pads the digits.
+            if (args.empty() || args.size() > 2) {
+                throw EvalError("convert/bin expects (convert/bin expr:int [width:int])");
             }
             Value v = eval.eval(args[0]);
             if (!v.is_int()) {
                 throw EvalError("convert/bin: argument must be an integer");
             }
+            size_t width = 0;
+            if (args.size() == 2) {
+                Value w = eval.eval(args[1]);
+                if (!w.is_int()) {
+                    throw EvalError("convert/bin: second argument must evaluate to int");
+                }
+                if (w.to_int() > 0) width = static_cast<size_t>(w.to_int());
+            }
+            // Upstream always returns the binary digits as a STRING, including for 0
+            // ("0") and for negatives ("-101"). An earlier version here reinterpreted
+            // the digits as a decimal integer, which disagreed with upstream for every
+            // input and silently lost the leading-zero/width information that makes
+            // this operator useful on bit vectors.
             int64_t n = v.to_int();
             bool negative = n < 0;
-            uint64_t magnitude = negative ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            uint64_t magnitude = negative ? (~static_cast<uint64_t>(n) + 1ULL)
+                                          : static_cast<uint64_t>(n);
             std::string digits;
             if (magnitude == 0) {
                 digits = "0";
@@ -311,14 +329,10 @@ private:
                 digits.insert(digits.begin(), char('0' + (magnitude & 1ULL)));
                 magnitude >>= 1;
             }
-            try {
-                int64_t asDecimal = std::stoll(digits);
-                return Value(negative ? -asDecimal : asDecimal);
-            } catch (const std::exception&) {
-                // Beyond ~18 binary digits the decimal reading overflows; the digit
-                // string is the useful answer then.
-                return Value(negative ? "-" + digits : digits);
+            while (digits.size() < width) {
+                digits.insert(digits.begin(), '0');
             }
+            return Value(negative ? "-" + digits : digits);
         });
     }
 
@@ -356,20 +370,33 @@ private:
 
         // (in element list) - note the argument order
         registry.register_operator("in", [](SEval& eval, const std::vector<Value>& args) -> Value {
-            if (args.size() != 2) {
-                throw EvalError("in expects 2 arguments (element list)");
+            // Upstream: (in value... container) is variadic and true only when EVERY
+            // value is present. The binary-only form here rejected `(in 1 2 lst)`.
+            if (args.size() < 2) {
+                throw EvalError("in expects at least 2 arguments (in value* [list|string])");
             }
             auto evaluated = eval.eval_args(args);
-            if (!evaluated[1].is_list()) {
-                throw EvalError("in: second argument must be a list");
-            }
-            auto list = evaluated[1].to_list();
-            for (size_t i = 0; i < list->size(); ++i) {
-                if ((*list)[i] == evaluated[0]) {
-                    return Value(true);
+            const Value& container = evaluated.back();
+
+            auto contains = [&container](const Value& needle) -> bool {
+                if (container.is_list()) {
+                    auto list = container.to_list();
+                    for (size_t i = 0; i < list->size(); ++i) {
+                        if ((*list)[i] == needle) return true;
+                    }
+                    return false;
                 }
+                if (container.is_string()) {
+                    if (!needle.is_string()) return false;
+                    return container.to_string().find(needle.to_string()) != std::string::npos;
+                }
+                throw EvalError("in: last argument must be a list or a string");
+            };
+
+            for (size_t i = 0; i + 1 < evaluated.size(); ++i) {
+                if (!contains(evaluated[i])) return Value(false);
             }
-            return Value(false);
+            return Value(true);
         });
 
         // (mod a b) - upstream's spelling of %
@@ -410,6 +437,278 @@ private:
                 total += item.to_float();
             }
             return Value(total / static_cast<double>(list->size()));
+        });
+    }
+
+    /// Upstream's `set` and `get`, which are not WAL++'s `set!` / `get-signal`.
+    static void register_variables(OperatorRegistry& registry) {
+        // (set (key expr) (key expr) ...) -- assigns to ALREADY DEFINED symbols only,
+        // which is what distinguishes it from define. Unlike set!, it takes pairs and
+        // can assign several at once.
+        registry.register_operator("set", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.empty()) {
+                throw EvalError("set: expects at least one (key expr) pair");
+            }
+            Value result = Value(nullptr);
+            for (const auto& arg : args) {
+                if (!arg.is_list()) {
+                    throw EvalError("set: arguments must be (key expr) pairs");
+                }
+                auto pair = arg.to_list();
+                if (pair->size() != 2) {
+                    throw EvalError("set: arguments must be (key expr) pairs");
+                }
+                if (!(*pair)[0].is_symbol()) {
+                    throw EvalError("set: key must be a symbol");
+                }
+                const std::string& name = (*pair)[0].to_symbol()->get_name();
+                result = eval.eval((*pair)[1]);
+                // write() walks the scope chain and throws if undefined, which is
+                // upstream's "Write to undefined symbol" behavior.
+                eval.get_environment()->write(name, result);
+            }
+            return result;
+        });
+
+        // (get "name") -- resolve a name computed at runtime, as a variable or signal.
+        registry.register_operator("get", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) {
+                throw EvalError("get: expects exactly one argument");
+            }
+            Value name = eval.eval(args[0]);
+            std::string symbol_name;
+            if (name.is_string()) {
+                symbol_name = name.to_string();
+            } else if (name.is_symbol()) {
+                symbol_name = name.to_symbol()->get_name();
+            } else {
+                return Value(nullptr);
+            }
+            return eval.eval(Value(std::make_shared<Symbol>(symbol_name)));
+        });
+
+        // (symbol-add 'a "b" 5) => 'ab5 -- concatenate parts into one symbol.
+        registry.register_operator("symbol-add", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.empty()) {
+                throw EvalError("symbol-add: expects at least one argument");
+            }
+            auto evaluated = eval.eval_args(args);
+            std::string name;
+            for (const auto& part : evaluated) {
+                if (part.is_symbol()) {
+                    name += part.to_symbol()->get_name();
+                } else if (part.is_string()) {
+                    name += part.to_string();
+                } else {
+                    name += part.to_string_repr();
+                }
+            }
+            return Value(std::make_shared<Symbol>(name));
+        });
+    }
+
+    /**
+     * Operators that sweep the trace rather than reading one index.
+     *
+     * Each saves every trace's index, walks to the end, and restores the indices, so
+     * the caller's position is unchanged -- upstream does the same, and scripts rely
+     * on being able to call these mid-analysis.
+     */
+    static void register_trace_analysis(OperatorRegistry& registry) {
+        // (find condition) -> list of indices where condition held.
+        registry.register_operator("find", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) {
+                throw EvalError("find: expects exactly one argument (find condition)");
+            }
+            if (!eval.get_traces() || eval.get_traces()->empty()) {
+                throw EvalError("find: no trace loaded");
+            }
+            auto saved = eval.get_traces()->indices();
+            auto found = std::make_shared<WList>();
+            try {
+                bool ended = false;
+                while (!ended) {
+                    if (eval.eval(args[0]).is_truthy()) {
+                        auto ids = eval.get_traces()->get_trace_ids();
+                        auto trace = eval.get_traces()->get_trace(ids.front());
+                        found->push_back(Value(static_cast<int64_t>(trace->get_index())));
+                    }
+                    ended = !eval.get_traces()->step(1).empty();
+                }
+            } catch (...) {
+                restore(eval, saved);
+                throw;
+            }
+            restore(eval, saved);
+            return Value(found);
+        });
+
+        // (whenever condition body...) -> value of the last body run.
+        registry.register_operator("whenever", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() < 2) {
+                throw EvalError("whenever: expects at least two arguments (whenever condition body)");
+            }
+            if (!eval.get_traces() || eval.get_traces()->empty()) {
+                throw EvalError("whenever: no trace loaded");
+            }
+            auto saved = eval.get_traces()->indices();
+            Value result = Value(nullptr);
+            try {
+                bool ended = false;
+                while (!ended) {
+                    if (eval.eval(args[0]).is_truthy()) {
+                        result = eval_body(eval, args, 1);
+                    }
+                    ended = !eval.get_traces()->step(1).empty();
+                }
+            } catch (...) {
+                restore(eval, saved);
+                throw;
+            }
+            restore(eval, saved);
+            return result;
+        });
+
+        // (fold/signal f acc stop signal) -- fold over a signal's values until stop.
+        registry.register_operator("fold/signal", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 4) {
+                throw EvalError("fold/signal: expects 4 arguments (fold/signal f acc stop signal)");
+            }
+            Value func = eval.eval(args[0]);
+            if (!func.is_closure()) {
+                throw EvalError("fold/signal: first argument must be a function");
+            }
+            Value acc = eval.eval(args[1]);
+            const Value& stop = args[2];
+            Value signal = eval.eval(args[3]);
+            if (!signal.is_symbol()) {
+                throw EvalError("fold/signal: last argument must be a signal");
+            }
+            if (!eval.get_traces() || eval.get_traces()->empty()) {
+                throw EvalError("fold/signal: no trace loaded");
+            }
+            const std::string& signal_name = signal.to_symbol()->get_name();
+            auto saved = eval.get_traces()->indices();
+            try {
+                bool ended = false;
+                while (!eval.eval(stop).is_truthy() && !ended) {
+                    Value current = eval.get_traces()->signal_value(signal_name, 0);
+                    std::vector<Value> call_args{acc, current};
+                    acc = eval.eval_closure(func.to_closure(), call_args);
+                    ended = !eval.get_traces()->step(1).empty();
+                }
+            } catch (...) {
+                restore(eval, saved);
+                throw;
+            }
+            restore(eval, saved);
+            return acc;
+        });
+    }
+
+    /// Put every trace back where it was before a sweep.
+    static void restore(SEval& eval, const std::unordered_map<std::string, int>& saved) {
+        for (const auto& [tid, index] : saved) {
+            eval.get_traces()->set_index(index, tid);
+        }
+    }
+
+    /**
+     * Upstream's arrays: string-keyed, insertion-ordered, MUTABLE maps.
+     *
+     * These are not WAL++'s existing `array-ref`/`array-set` list helpers, which index
+     * a list positionally. Upstream's `array` is a dict, shared by reference, so
+     * `(seta a ...)` is visible through every binding holding the same array.
+     */
+    static void register_arrays(OperatorRegistry& registry) {
+        // (array (key expr) (key expr) ...) -- each argument is a two-element pair.
+        registry.register_operator("array", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            auto array = std::make_shared<WArray>();
+            for (const auto& arg : args) {
+                if (!arg.is_list()) {
+                    throw EvalError("array: arguments must be (key expr) pairs");
+                }
+                auto pair = arg.to_list();
+                if (pair->size() != 2) {
+                    throw EvalError("array: arguments must be (key expr) pairs");
+                }
+                Value key = eval.eval((*pair)[0]);
+                Value value = eval.eval((*pair)[1]);
+                array->set(WArray::key_of(key), value);
+            }
+            return Value(array);
+        });
+
+        // (seta array key value) -- mutates in place and returns the array.
+        registry.register_operator("seta", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 3) {
+                throw EvalError("seta: requires three arguments (seta array key value)");
+            }
+            Value target = eval.eval(args[0]);
+            if (!target.is_array()) {
+                throw EvalError("seta: must be applied on an array");
+            }
+            Value key = eval.eval(args[1]);
+            Value value = eval.eval(args[2]);
+            target.to_array()->set(WArray::key_of(key), value);
+            return target;
+        });
+
+        // (geta array key) -- missing keys are an error upstream, not nil.
+        registry.register_operator("geta", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) {
+                throw EvalError("geta: requires two arguments (geta array key)");
+            }
+            Value target = eval.eval(args[0]);
+            if (!target.is_array()) {
+                throw EvalError("geta: first argument must be an array");
+            }
+            std::string key = WArray::key_of(eval.eval(args[1]));
+            const Value* found = target.to_array()->find(key);
+            if (!found) {
+                throw EvalError("geta: key " + key + " not found");
+            }
+            return *found;
+        });
+
+        // (dela array key) -- mutates in place and returns the array.
+        registry.register_operator("dela", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) {
+                throw EvalError("dela: requires two arguments (dela array key)");
+            }
+            Value target = eval.eval(args[0]);
+            if (!target.is_array()) {
+                throw EvalError("dela: first argument must be an array");
+            }
+            std::string key = WArray::key_of(eval.eval(args[1]));
+            if (!target.to_array()->erase(key)) {
+                throw EvalError("dela: key " + key + " not found");
+            }
+            return target;
+        });
+
+        // (mapa fn array) -- fn receives (key value); returns the list of results.
+        registry.register_operator("mapa", [](SEval& eval, const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) {
+                throw EvalError("mapa: requires two arguments (mapa function array)");
+            }
+            Value func = eval.eval(args[0]);
+            if (!func.is_closure()) {
+                throw EvalError("mapa: first argument must be a function");
+            }
+            Value target = eval.eval(args[1]);
+            if (!target.is_array()) {
+                throw EvalError("mapa: second argument must be an array");
+            }
+            auto results = std::make_shared<WList>();
+            // Iterate over a copy: upstream's closure may seta/dela the same array,
+            // and mutating the vector we are walking would invalidate the iteration.
+            auto snapshot = target.to_array()->entries();
+            for (const auto& [key, value] : snapshot) {
+                std::vector<Value> call_args{Value(key), value};
+                results->push_back(eval.eval_closure(func.to_closure(), call_args));
+            }
+            return Value(results);
         });
     }
 

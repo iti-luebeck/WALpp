@@ -43,6 +43,7 @@ PYBIND11_MODULE(wal_cpp, m) {
         .def("is_string", &Value::is_string, "Check if string")
         .def("is_symbol", &Value::is_symbol, "Check if symbol")
         .def("is_list", &Value::is_list, "Check if list")
+        .def("is_array", &Value::is_array, "Check if array (upstream's string-keyed map)")
         .def("is_number", &Value::is_number, "Check if numeric (int or float)")
         
         // Conversion methods
@@ -52,6 +53,7 @@ PYBIND11_MODULE(wal_cpp, m) {
         .def("to_string", &Value::to_string, "Convert to string")
         .def("to_symbol", &Value::to_symbol, "Convert to symbol (returns Symbol object)")
         .def("to_list", &Value::to_list, "Convert to list (returns shared_ptr<WList>)")
+        .def("to_array", &Value::to_array, "Convert to array (returns shared_ptr<WArray>)")
         .def("to_string_repr", &Value::to_string_repr, "Get string representation")
         
         // Python special methods
@@ -62,6 +64,37 @@ PYBIND11_MODULE(wal_cpp, m) {
         .def("__bool__", &Value::to_bool)
         .def("__eq__", [](const Value& a, const Value& b) {
             return a.to_string_repr() == b.to_string_repr();
+        });
+
+    // ───────────────────────────────────────────────────────────────
+    // WArray Class Bindings (upstream's string-keyed map)
+    // ───────────────────────────────────────────────────────────────
+
+    py::class_<WArray, std::shared_ptr<WArray>>(m, "Array")
+        .def(py::init<>())
+        .def("__len__", [](const WArray& self) { return self.size(); })
+        .def("__contains__", [](const WArray& self, const std::string& key) {
+            return self.has(key);
+        })
+        .def("__getitem__", [](const WArray& self, const std::string& key) -> Value {
+            const Value* found = self.find(key);
+            if (!found) throw py::key_error(key);
+            return *found;
+        })
+        .def("__setitem__", [](WArray& self, const std::string& key, const Value& v) {
+            self.set(key, v);
+        })
+        .def("entries", [](const WArray& self) {
+            // (key, value) pairs in insertion order, which is how upstream's dicts
+            // iterate and what `mapa` depends on.
+            py::list out;
+            for (const auto& [key, value] : self.entries()) {
+                out.append(py::make_tuple(key, value));
+            }
+            return out;
+        }, "Key/value pairs in insertion order")
+        .def("__repr__", [](const WArray& self) {
+            return "#<Array: " + self.to_string() + ">";
         });
 
     // ───────────────────────────────────────────────────────────────

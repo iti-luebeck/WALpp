@@ -14,6 +14,7 @@ namespace wal {
 // Forward declarations
 class Symbol;
 class WList;
+class WArray;
 class Closure;
 class Macro;
 class Environment;
@@ -88,6 +89,7 @@ public:
         std::string,                              // String
         std::shared_ptr<Symbol>,                  // Symbol
         std::shared_ptr<WList>,                   // List
+        std::shared_ptr<WArray>,                  // Array (upstream's string-keyed map)
         std::shared_ptr<Closure>,                 // Function
         std::shared_ptr<Macro>,                   // Macro
         std::shared_ptr<Environment>,             // Environment
@@ -110,6 +112,7 @@ public:
     Value(const char* s);
     Value(std::shared_ptr<Symbol> sym);
     Value(std::shared_ptr<WList> list);
+    Value(std::shared_ptr<WArray> array);
     Value(std::shared_ptr<Closure> closure);
     Value(std::shared_ptr<Macro> macro);
     Value(std::shared_ptr<Environment> env);
@@ -125,6 +128,7 @@ public:
     bool is_string() const;
     bool is_symbol() const;
     bool is_list() const;
+    bool is_array() const;
     bool is_closure() const;
     bool is_macro() const;
     bool is_environment() const;
@@ -140,6 +144,7 @@ public:
     const std::string& to_string() const;
     std::shared_ptr<Symbol> to_symbol() const;
     std::shared_ptr<WList> to_list() const;
+    std::shared_ptr<WArray> to_array() const;
     std::shared_ptr<Closure> to_closure() const;
     std::shared_ptr<Macro> to_macro() const;
     std::shared_ptr<Environment> to_environment() const;
@@ -230,6 +235,46 @@ public:
     WList(std::vector<Value>&& values) : std::vector<Value>(std::move(values)) {}
 
     std::string to_string() const;
+};
+
+/**
+ * @brief Upstream WAL's `array`: a string-keyed, insertion-ordered map.
+ *
+ * Upstream represents an array as a Python dict, so it is NOT a vector: keys are
+ * arbitrary (ints, floats, strings and symbols are all stringified on the way in,
+ * which is why `(seta a 0 "foo")` and `(geta a "0")` name the same slot), and the
+ * value is a mutable reference, so `(seta a ...)` is visible through every binding
+ * that holds the same array.
+ *
+ * Insertion order is preserved because `mapa` iterates in it and upstream's dicts
+ * are ordered. Lookup stays O(1) through `index_`, which maps a key to its slot in
+ * `entries_`.
+ *
+ * @ingroup AST
+ */
+class WArray {
+public:
+    using Entry = std::pair<std::string, Value>;
+
+    /// Canonical key spelling. Upstream stringifies int, float and Symbol keys, so
+    /// 0, "0" and '0 are one and the same key.
+    static std::string key_of(const Value& v);
+
+    bool has(const std::string& key) const { return index_.count(key) > 0; }
+    const Value* find(const std::string& key) const;
+    void set(const std::string& key, const Value& value);
+    bool erase(const std::string& key);
+
+    const std::vector<Entry>& entries() const { return entries_; }
+    size_t size() const { return entries_.size(); }
+    bool empty() const { return entries_.empty(); }
+
+    std::string to_string() const;
+    bool operator==(const WArray& other) const;
+
+private:
+    std::vector<Entry> entries_;
+    std::unordered_map<std::string, size_t> index_;
 };
 
 /**

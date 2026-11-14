@@ -71,6 +71,9 @@ def to_python(value):
         return Symbol(value.to_symbol().get_name())
     if value.is_list():
         return WList(to_python(item) for item in value.to_list())
+    if value.is_array():
+        # Upstream's arrays are dicts, and its tests compare against dict literals.
+        return {key: to_python(item) for key, item in value.to_array().entries()}
     return value
 
 

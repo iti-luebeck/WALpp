@@ -199,11 +199,18 @@ public:
         });
         
         registry.register_operator("!=", [](SEval& eval, const std::vector<Value>& args) -> Value {
-            if (args.size() != 2) {
-                throw EvalError("!= requires exactly 2 arguments");
+            // Upstream's != is n-ary and means "not all equal": (!= 3 3 3) is false,
+            // (!= 3 3 "a") is true. The binary-only form rejected both.
+            if (args.size() < 2) {
+                throw EvalError("!= requires at least 2 arguments");
             }
             auto evaluated = eval.eval_args(args);
-            return Value(evaluated[0] != evaluated[1]);
+            for (size_t i = 1; i < evaluated.size(); ++i) {
+                if (!(evaluated[i] == evaluated[0])) {
+                    return Value(true);
+                }
+            }
+            return Value(false);
         });
         
         registry.register_operator("<", [](SEval& eval, const std::vector<Value>& args) -> Value {

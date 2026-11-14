@@ -17,7 +17,7 @@ namespace {
 
 struct CallbackState {
     // Signal lookup (populated during hierarchy walk)
-    std::unordered_map<fstHandle, std::string>* handle_to_signal;
+    std::unordered_map<fstHandle, std::vector<std::string>>* handle_to_signal;
     std::unordered_map<fstHandle, int>*         handle_to_width;
     // Rolling current values (updated per change event)
     std::unordered_map<std::string, Value>*     current_values;
@@ -64,7 +64,13 @@ static void value_change_cb(void* user_data,
 
     auto it = s->handle_to_signal->find(handle);
     if (it != s->handle_to_signal->end()) {
-        (*s->current_values)[it->second] = parse_fst_value(value);
+        // One FST handle can back several names: FST marks the second and later
+        // occurrences of a signal as aliases, which is how a port wired through a
+        // hierarchy appears. They are real, separately named signals.
+        Value parsed = parse_fst_value(value);
+        for (const auto& name : it->second) {
+            (*s->current_values)[name] = parsed;
+        }
     }
 }
 
@@ -83,7 +89,7 @@ void FSTTrace::load() {
         // ----------------------------------------------------------------
         // 1. Walk the signal hierarchy
         // ----------------------------------------------------------------
-        std::unordered_map<fstHandle, std::string> handle_to_signal;
+        std::unordered_map<fstHandle, std::vector<std::string>> handle_to_signal;
         std::unordered_map<fstHandle, int>         handle_to_width;
         std::string current_scope;
 
@@ -109,14 +115,25 @@ void FSTTrace::load() {
                 }
 
                 case FST_HT_VAR: {
-                    if (hier->u.var.is_alias) break; // skip aliases
+                    // Aliases used to be skipped here, which silently dropped every
+                    // signal FST had already seen under another name: counter.fst
+                    // listed 4 signals where counter.vcd listed 7, and tb.dut.clk
+                    // could not be read at all from an FST.
 
-                    std::string var_name  = hier->u.var.name;
+                    // FST spells a vector variable "counter [3:0]". The range is not
+                    // part of the name -- the VCD reader does not keep it, and leaving
+                    // it on meant `tb.dut.counter` did not resolve against an FST while
+                    // the identical VCD worked. Width is kept from u.var.length.
+                    std::string var_name = hier->u.var.name;
+                    auto bracket = var_name.find(" [");
+                    if (bracket != std::string::npos && var_name.back() == ']') {
+                        var_name = var_name.substr(0, bracket);
+                    }
                     std::string full_name = current_scope.empty()
                         ? var_name
                         : current_scope + Trace::SCOPE_SEPARATOR + var_name;
 
-                    handle_to_signal[hier->u.var.handle] = full_name;
+                    handle_to_signal[hier->u.var.handle].push_back(full_name);
                     handle_to_width[hier->u.var.handle]  = static_cast<int>(hier->u.var.length);
 
                     SignalInfo info;
@@ -126,10 +143,16 @@ void FSTTrace::load() {
                     info.scope   = current_scope;
                     info.kind    = static_cast<char>(hier->u.var.typ);
 
-                    signal_info[full_name]        = info;
-                    wire_id_to_signal[hier->u.var.handle] = full_name;
-                    signal_names.push_back(full_name);
-                    current_values[full_name] = Value(0);
+                    if (signal_info.find(full_name) == signal_info.end()) {
+                        signal_info[full_name] = info;
+                        signal_names.push_back(full_name);
+                        current_values[full_name] = Value(0);
+                    }
+                    // The reverse map keeps the first (non-alias) name for a handle.
+                    if (wire_id_to_signal.find(static_cast<int>(hier->u.var.handle))
+                            == wire_id_to_signal.end()) {
+                        wire_id_to_signal[hier->u.var.handle] = full_name;
+                    }
                     break;
                 }
 

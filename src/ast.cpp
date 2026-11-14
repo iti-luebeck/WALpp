@@ -18,6 +18,7 @@ Value::Value(std::string_view s) : data(std::string(s)) {}
 Value::Value(const char* s) : data(std::string(s)) {}
 Value::Value(std::shared_ptr<Symbol> sym) : data(sym) {}
 Value::Value(std::shared_ptr<WList> list) : data(list) {}
+Value::Value(std::shared_ptr<WArray> array) : data(array) {}
 Value::Value(std::shared_ptr<Closure> closure) : data(closure) {}
 Value::Value(std::shared_ptr<Macro> macro) : data(macro) {}
 Value::Value(std::shared_ptr<Environment> env) : data(env) {}
@@ -54,6 +55,10 @@ bool Value::is_symbol() const {
 
 bool Value::is_list() const {
     return std::holds_alternative<std::shared_ptr<WList>>(data);
+}
+
+bool Value::is_array() const {
+    return std::holds_alternative<std::shared_ptr<WArray>>(data);
 }
 
 bool Value::is_closure() const {
@@ -119,6 +124,13 @@ std::shared_ptr<WList> Value::to_list() const {
     return std::get<std::shared_ptr<WList>>(data);
 }
 
+std::shared_ptr<WArray> Value::to_array() const {
+    if (!is_array()) {
+        throw std::runtime_error("Value is not an array");
+    }
+    return std::get<std::shared_ptr<WArray>>(data);
+}
+
 std::shared_ptr<Closure> Value::to_closure() const {
     if (!is_closure()) {
         throw EvalError("Expected closure, got " + to_string_repr());
@@ -170,6 +182,8 @@ std::string Value::to_string_repr() const {
         return std::get<std::shared_ptr<Symbol>>(data)->get_name();
     } else if (is_list()) {
         return std::get<std::shared_ptr<WList>>(data)->to_string();
+    } else if (is_array()) {
+        return std::get<std::shared_ptr<WArray>>(data)->to_string();
     } else if (is_closure()) {
         return std::get<std::shared_ptr<Closure>>(data)->to_string();
     } else if (is_macro()) {
@@ -198,6 +212,10 @@ bool Value::is_truthy() const {
         auto list = std::get<std::shared_ptr<WList>>(data);
         return list && !list->empty();
     }
+    if (is_array()) {
+        auto array = std::get<std::shared_ptr<WArray>>(data);
+        return array && !array->empty();
+    }
     return true; // symbols, operators and anything else
 }
 
@@ -218,7 +236,28 @@ bool Value::operator==(const Value& other) const {
         auto b = std::get<std::shared_ptr<Symbol>>(other.data);
         return a->get_name() == b->get_name();
     }
-    // For reference types (list, closure, etc.), use pointer equality
+    // Lists and arrays compare by VALUE, as upstream does. They used to fall through
+    // to the tag comparison below, which made `(= (list 1 2) (list 1 3))` answer true
+    // for ANY two lists -- the same class of silent wrong answer as the truthiness bug.
+    if (is_list()) {
+        auto a = std::get<std::shared_ptr<WList>>(data);
+        auto b = std::get<std::shared_ptr<WList>>(other.data);
+        if (a == b) return true;
+        if (!a || !b || a->size() != b->size()) return false;
+        for (size_t i = 0; i < a->size(); ++i) {
+            if (!((*a)[i] == (*b)[i])) return false;
+        }
+        return true;
+    }
+    if (is_array()) {
+        auto a = std::get<std::shared_ptr<WArray>>(data);
+        auto b = std::get<std::shared_ptr<WArray>>(other.data);
+        if (a == b) return true;
+        if (!a || !b) return false;
+        return *a == *b;
+    }
+    // Closures, macros, environments and operators remain identity-compared: there is
+    // no meaningful structural equality for them.
     return data.index() == other.data.index();
 }
 
@@ -264,6 +303,70 @@ std::string WList::to_string() const {
     }
     oss << ")";
     return oss.str();
+}
+
+// ============================================================================
+// WArray Implementation
+// ============================================================================
+
+std::string WArray::key_of(const Value& v) {
+    // Upstream stringifies keys, so 0, "0" and '0 all name one slot. Floats go
+    // through the same repr as elsewhere so that (seta a 1.5 x) round-trips.
+    if (v.is_string()) return v.to_string();
+    if (v.is_symbol()) return v.to_symbol()->get_name();
+    if (v.is_int() || v.is_float() || v.is_bool()) return v.to_string_repr();
+    throw std::runtime_error("array key must be an int, float, string or symbol");
+}
+
+const Value* WArray::find(const std::string& key) const {
+    auto it = index_.find(key);
+    if (it == index_.end()) return nullptr;
+    return &entries_[it->second].second;
+}
+
+void WArray::set(const std::string& key, const Value& value) {
+    auto it = index_.find(key);
+    if (it != index_.end()) {
+        entries_[it->second].second = value;   // keeps the original position
+        return;
+    }
+    index_[key] = entries_.size();
+    entries_.emplace_back(key, value);
+}
+
+bool WArray::erase(const std::string& key) {
+    auto it = index_.find(key);
+    if (it == index_.end()) return false;
+    size_t pos = it->second;
+    entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(pos));
+    index_.erase(it);
+    for (auto& [k, i] : index_) {
+        if (i > pos) --i;
+    }
+    return true;
+}
+
+std::string WArray::to_string() const {
+    std::ostringstream oss;
+    oss << "{";
+    bool first = true;
+    for (const auto& [key, value] : entries_) {
+        if (!first) oss << " ";
+        first = false;
+        oss << '"' << key << "\": " << value.to_string_repr();
+    }
+    oss << "}";
+    return oss.str();
+}
+
+bool WArray::operator==(const WArray& other) const {
+    // Order-insensitive, like the Python dict it mirrors.
+    if (entries_.size() != other.entries_.size()) return false;
+    for (const auto& [key, value] : entries_) {
+        const Value* their = other.find(key);
+        if (!their || !(*their == value)) return false;
+    }
+    return true;
 }
 
 // ============================================================================
