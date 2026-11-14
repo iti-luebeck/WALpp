@@ -334,10 +334,11 @@ wal -l trace.vcd -e '(get-index)'       # Get current index
 ```scheme
 (if (> 5 3) "yes" "no")    ; "yes"
 
-(cond 
-  ((= x 0) "zero")
-  ((> x 0) "positive")
-  (else "negative"))
+(define n -3)
+(cond
+  ((= n 0) "zero")
+  ((> n 0) "positive")
+  (else "negative"))       ; "negative"
 ```
 
 ### Lambda Functions

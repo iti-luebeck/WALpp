@@ -57,7 +57,10 @@
       }
       if (c === ';') { inComment = true; continue; }
       if (c === '"') { if (start < 0) start = i; inString = true; continue; }
-      if (c === '(') { if (depth === 0) start = i; depth++; continue; }
+      // Only claim the start if nothing has claimed it already, or a reader macro
+      // in front of the list is dropped: '(a b c) became (a b c), which evaluates
+      // as a call to `a`. Mirrors split_forms() in mark-runnable-snippets.py.
+      if (c === '(') { if (start < 0) start = i; depth++; continue; }
       if (c === ')') {
         depth--;
         if (depth === 0 && start >= 0) { forms.push(source.slice(start, i + 1)); start = -1; }

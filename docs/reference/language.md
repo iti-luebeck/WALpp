@@ -135,10 +135,22 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 
 ### Logical
 
+The names are `&&`, `||` and `!`, as in upstream WAL. There is no `and`, `or` or
+`not`. The literals are `#t` and `#f`: `true` and `false` are how a boolean
+*prints*, not how you write one.
+
 ```scheme
-(and true true)     ; true
-(or false true)     ; true
-(not false)         ; true
+(&& #t #t)          ; true
+(|| #f #t)          ; true
+(! #f)              ; true
+```
+
+Any value works, not just booleans. Zero and the empty string are false:
+
+```scheme
+(&& 1 1)            ; true
+(! 0)               ; true
+(! "")              ; true
 ```
 
 ### List Operations
@@ -165,14 +177,17 @@ WAL++ uses S-expressions (symbolic expressions), the classic Lisp syntax:
 ### Type Checking
 
 ```scheme
-(is-int 42)         ; true
-(is-float 3.14)     ; true
-(is-string "hi")    ; true
-(is-symbol 'foo)    ; true
-(is-list '(1 2))    ; true
-(is-bool true)      ; true
-(is-nil nil)        ; true
+(is-int 42)              ; true
+(is-float 3.14)          ; true
+(is-string "hi")         ; true
+(is-symbol 'foo)         ; true
+(is-list '(1 2))         ; true
+(is-bool #t)             ; true
+(is-nil (if #f 1))       ; true   an `if` with no else arm yields nil
 ```
+
+Each has a `?` spelling as well, which is upstream's: `int?`, `float?`, `string?`,
+`symbol?`, `list?`, `bool?`, `nil?`. They are the same operators.
 
 ## Functions
 
@@ -280,30 +295,37 @@ wal -l trace.vcd -f analysis.wal
 ### Statistical Analysis
 
 ```scheme
-; Calculate signal statistics
-(define clk-width (signal-width "clk"))
-(define data-width (signal-width "data"))
+; Ask the trace rather than naming signals you hope are there
+(define names (signal-names))
+(define widths (map signal-width names))
 
-; Analysis results
 (list
-  "Clock width:" clk-width
-  "Data width:" data-width
-  "Total bits:" (+ clk-width data-width))
+  "signals" (length names)
+  "widest" (max-val widths)
+  "total bits" (sum widths))
 ```
+
+Against `handshake.vcd`: `("signals" 4 "widest" 8 "total bits" 11)`.
+
+A name can be given in full, `dut.data`, or by its leaf alone, `data`, when that
+leaf is unambiguous in the trace.
 
 ### Bus Analysis
 
-```scheme
-; Analyze address and data buses
-(define addr-width (signal-width "address"))
-(define data-width (signal-width "data"))
-(define max-addr (- (* 256 addr-width) 1))
+Width tells a bus from a control line without knowing anything about the design.
 
-(list
-  "Address bus:" addr-width
-  "Data bus:" data-width
-  "Max address:" max-addr)
+```scheme
+; Anything wider than one bit is carrying a value, not a flag
+(define buses
+  (filter (lambda (s) (> (signal-width s) 1)) (signal-names)))
+(define control
+  (filter (lambda (s) (= (signal-width s) 1)) (signal-names)))
+
+(list "buses" buses "control" control)
 ```
+
+Against the playground's `handshake.vcd` that gives
+`("buses" ('dut.data) "control" ('dut.clk 'dut.valid 'dut.ready))`.
 
 ### Complex Filtering
 

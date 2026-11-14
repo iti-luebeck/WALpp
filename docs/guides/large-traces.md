@@ -155,12 +155,15 @@ wal -l trace.vcd -e '(length SIGNALS)' -e 'MAX-INDEX' -e 'SCOPES'
 good predictor of whether a full load will fit. `SCOPES` shows what you could narrow
 to.
 
-`--fast-list` answers the same question without loading anything:
+`inspect` answers the same question without loading anything:
 
 ```bash
-wal --fast-list trace.vcd -o signals.txt
+wal inspect trace.vcd --format=names 2>/dev/null > signals.txt
 wc -l signals.txt
 ```
+
+The flag spelling is `--fast-list trace.vcd -o signals.txt`, which is the same
+command.
 
 ## See also
 

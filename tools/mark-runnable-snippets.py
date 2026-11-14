@@ -76,7 +76,10 @@ def split_forms(source):
             i += 1
             continue
         if c == "(":
-            if depth == 0:
+            # Only claim the start if nothing has claimed it already, or a reader
+            # macro in front of the list is dropped: '(a b c) became (a b c), which
+            # evaluates as a call to `a`. Mirrors splitForms() in playground.js.
+            if start < 0:
                 start = i
             depth += 1
             i += 1

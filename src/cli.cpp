@@ -363,8 +363,7 @@ bool CLI::parse_arguments(int argc, const char* argv[]) {
                 }
             }
         } else if (arg == "--cache-stats") {
-            // This flag will be handled during trace loading
-            // Store it for later use in run()
+            report_cache_stats = true;
         } else if (arg[0] != '-') {
             // Positional argument - assume it's a file
             file_mode = true;
@@ -492,7 +491,7 @@ void CLI::apply_streaming_config() {
             }
             config.chunk_size_bytes = chunk_size_bytes;
             config.cache_capacity_per_signal = cache_capacity;
-            config.report_cache_stats = false;  // Stats will be printed manually if requested
+            config.report_cache_stats = report_cache_stats;
             
             container->set_streaming_config(config);
         }

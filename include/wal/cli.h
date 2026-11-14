@@ -74,6 +74,7 @@ private:
     std::string pipe_file;
     size_t chunk_size_bytes = 100 * 1024 * 1024;  // Default 100 MB
     size_t cache_capacity = 1000;  // Default 1000 entries per signal
+    bool report_cache_stats = false;  // --cache-stats
     
     // Parsing
     bool parse_arguments(int argc, const char* argv[]);

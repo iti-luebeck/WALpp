@@ -3,36 +3,85 @@
 Every flag, what it does, and which ones change results rather than
 performance.
 
-## Options
+## Usage
+
+This is `wal --help`, verbatim. If it and this page ever disagree, the binary is
+right.
 
 ```bash
-wal [OPTIONS] [FILE]
+Usage: wal <verb> [options]        (recommended)
+       wal [flags] [FILE]          (equivalent; what the paper documents)
 
-OPTIONS:
-  -h, --help                  Show help message
-  -v, --version               Show version information
-  -e, --eval EXPR             Evaluate expression
-  -f, --file FILE             Execute WAL program file
-  -l, --load FILE             Load waveform trace file
+VERBS
+  inspect TRACE [--format=F]        what is in a trace
+        F = json (default) | names    names gives "width name" + a timescale header
+  lint SCRIPT.wal                   check a script without running it
+  eval EXPR [EXPR...]               evaluate expressions
+  run SCRIPT.wal                    run a script
+  repl                              start the interactive REPL
+  extract KIND TRACE -o OUT.csv     one pass over a trace, CSV out
+        KIND = weight | distance | values
+        [--scope SCOPE]             only signals under a hierarchy prefix
+        [--signals FILE]            only the signals named in FILE
 
-FAST MODE (optimized HD/HW calculation with CSV output):
-  --fast-hd-all FILE -o OUT.csv       Hamming Distance (all signals)
-  --fast-hd-scope SCOPE FILE -o OUT   Hamming Distance (scoped)
-  --fast-hd-signals LIST FILE -o OUT  Hamming Distance (signal list)
-  --fast-hw-all FILE -o OUT.csv       Hamming Weight (all signals)
-  --fast-hw-scope SCOPE FILE -o OUT   Hamming Weight (scoped)
-  --fast-hw-signals LIST FILE -o OUT  Hamming Weight (signal list)
+  Common to all verbs: -l TRACE, --json, --compact-json
 
-INPUT MODES:
-  --pipe FILE                 Read trace from named pipe
-  --stdin                     Read trace from standard input
+EXAMPLES
+  wal inspect trace.vcd --json
+  wal inspect trace.vcd --format=names > signals.txt
+  wal extract weight trace.vcd --scope top.core -o activity.csv
+  wal eval '(count (rising tb.clk))' -l trace.vcd
+  wal lint analysis.wal
 
-STREAMING OPTIONS:
-  --streaming                 Enable streaming (auto for files > 100 MB)
-  --no-streaming              Disable streaming
-  --chunk-size SIZE           Set chunk size in MB (default: 100)
-  --cache-capacity NUM        Set cache entries per signal (default: 1000)
-  --cache-stats               Show cache statistics after loading
+GENERAL FLAGS
+  -h, --help                        this message
+  -v, --version                     version information
+  -e, --eval EXPR                   evaluate an expression
+  -f, --file FILE                   run a WAL script
+  -l, --load FILE                   load a trace
+
+OUTPUT
+  --json                            results and findings as JSON, in the
+                                    standard envelope (ok / data / error)
+  --compact-json                    the same, on one line
+
+LANGUAGE
+  --compat-types                    upstream's permissive type coercion
+                                    (default: types stay separate)
+  --bigint                          arbitrary-precision integers
+                                    (default: 64-bit, which is faster)
+
+EXTRACTION FLAGS  (equivalent to `extract`; these are what the published
+                   artifact scripts use, and they are not going away)
+  --fast-hw-all FILE -o OUT             = extract weight FILE
+  --fast-hw-scope SCOPE FILE -o OUT     = extract weight FILE --scope SCOPE
+  --fast-hw-signals LIST FILE -o OUT    = extract weight FILE --signals LIST
+  --fast-hd-all FILE -o OUT             = extract distance FILE
+  --fast-hd-scope SCOPE FILE -o OUT     = extract distance FILE --scope SCOPE
+  --fast-hd-signals LIST FILE -o OUT    = extract distance FILE --signals LIST
+  --fast-values-signals LIST FILE -o OUT = extract values FILE --signals LIST
+  --fast-list FILE -o OUT               = inspect FILE --format=names
+
+  weight   = Hamming weight: bits set at each timestamp
+  distance = Hamming distance: bits changed since the previous timestamp
+  values   = the decoded value of each listed signal, when it changes
+  (for a signal listing, see `inspect --format=names`)
+
+AGENT MODES (flag spelling)
+  --inspect FILE                    = inspect FILE
+  --lint FILE.wal                   = lint FILE.wal
+
+INPUT MODES
+  --pipe FILE                       read trace data from a named pipe
+  --stdin                           read trace data from standard input
+
+STREAMING
+  --streaming                       always stream the trace
+  --no-streaming                    never stream, whatever the size
+  (neither)                         stream only above --auto-threshold
+  --chunk-size SIZE                 chunk size in MB (default: 100)
+  --cache-capacity NUM              cache entries per signal (default: 1000)
+For interactive help, start the REPL and type (help)
 ```
 
 ## Examples
