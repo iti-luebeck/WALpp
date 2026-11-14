@@ -4,8 +4,8 @@
 ; (see bench_ct_extraction.py). Prints one "index,signal,value" row per value
 ; change of each of the four marker signals.
 ;
-; Python WAL addresses a signal as '<trace-id>^<hierarchy path>; the CLI
-; option `-l` loads the first trace as t0.
+; A signal is addressed as <trace-id>^<dotted hierarchy path>, the same in WAL++
+; as in upstream WAL. The CLI option `-l` loads the first trace as t0.
 
 (alias clk 't0^TOP.SAILORBlackBoxAdapter.clock)
 (alias addr 't0^TOP.SAILORBlackBoxAdapter.busIO_dummyDataBus_address)

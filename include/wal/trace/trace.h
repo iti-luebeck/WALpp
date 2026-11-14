@@ -74,7 +74,7 @@ class TraceContainer;
  * 
  * **Scope Hierarchy:**
  * Traces support hierarchical signal naming (e.g., `top.module.signal`)
- * using the `SCOPE_SEPARATOR` ('') character.
+ * using the `SCOPE_SEPARATOR` ('.') character.
  */
 class Trace {
 public:
@@ -112,8 +112,22 @@ public:
     /// Scopes in current hierarchy level
     static constexpr const char* LOCAL_SCOPES = "LOCAL-SCOPES";
 
-    /// Character used to separate hierarchy levels in signal names
-    static constexpr char SCOPE_SEPARATOR = '^';
+    /**
+     * @brief Character that separates hierarchy levels in a signal name.
+     *
+     * `.`, as upstream WAL (ics-jku/wal) and as WAL++'s own `--fast-*` paths have
+     * always spelled it: `tb.dut.counter`.
+     *
+     * It used to be `^`, which disagreed with BOTH of those at once. That left the
+     * interpreter and the fast paths of the same binary naming the same signal two
+     * different ways, and it took `^` away from the meaning upstream gives it, which
+     * is to prefix a TRACE ID: `a^tb.dut.clk` selects the signal from the trace
+     * loaded under id `a`.
+     *
+     * A name written the old way still resolves, so existing scripts keep working:
+     * see resolve_signal_name() in signal_resolve.h.
+     */
+    static constexpr char SCOPE_SEPARATOR = '.';
 
 protected:
     std::string tid;                    // Trace ID

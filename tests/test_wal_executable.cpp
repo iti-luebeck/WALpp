@@ -1318,6 +1318,142 @@ void test_array_element_names(ExecutableTestSuite& suite, const std::string& exe
     suite.add_result(result);
 }
 
+// Test 26: `.` separates hierarchy, `^` prefixes a trace id, as upstream.
+//
+// WAL++'s interpreter used `^` for hierarchy, which disagreed with upstream AND
+// with WAL++'s own --fast-* paths, so one binary named the same signal two ways.
+// It also took `^` away from the meaning upstream gives it. Names written the old
+// way still resolve so existing scripts keep working.
+void test_separator(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "dotted hierarchy, caret trace id";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found";
+        } else {
+            result.passed = true;
+            struct Case { const char* expr; const char* want; };
+
+            // Single trace: names are dotted, and SIGNALS reports them dotted.
+            const Case single[] = {
+                {"SIGNALS", "'tb.dut.counter"},
+                {"SCOPES", "('tb 'tb.dut)"},
+                {"(begin (set-index 40) tb.dut.counter)", "15"},
+                // (quote ...) rather than the apostrophe: the expression is passed
+                // inside single quotes, which an apostrophe would close.
+                {"(signal? (quote tb.dut.clk))", "true"},
+                // the old caret spelling still resolves
+                {"(begin (set-index 40) tb^dut^counter)", "15"},
+                {"(get-signal \"tb^dut^counter\")", "0"},
+            };
+            for (const auto& c : single) {
+                auto [rc, out] = run_command(
+                    exe_path + " -l " + vcd + " -e '" + c.expr + "' 2>&1");
+                if (out.find(c.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(c.expr) + " should contain " + c.want +
+                                      " (got: '" + out + "'); ";
+                }
+            }
+
+            // The fast paths have always used dots. The interpreter must agree now.
+            auto [rcl, listing] = run_command(
+                exe_path + " --fast-list " + vcd + " -o /dev/stdout 2>/dev/null");
+            auto [rcs, signals] = run_command(
+                exe_path + " -l " + vcd + " -e 'SIGNALS' 2>&1");
+            if (listing.find("tb.dut.counter") == std::string::npos ||
+                signals.find("tb.dut.counter") == std::string::npos) {
+                result.passed = false;
+                result.message += "fast path and interpreter must spell a name alike; ";
+            }
+
+            // Two traces: `^` selects which one.
+            std::string load = " -e '(load \"" + vcd + "\" \"a\")'"
+                               " -e '(load \"" + vcd + "\" \"b\")'";
+            const Case multi[] = {
+                {"(list a^MAX-INDEX b^MAX-INDEX)", "(80 80)"},
+                {"(begin (step 5) (list a^INDEX b^INDEX))", "(5 5)"},
+                {"(count (rising a^tb.clk))", "40"},
+            };
+            for (const auto& c : multi) {
+                auto [rc, out] = run_command(
+                    exe_path + load + " -e '" + c.expr + "' 2>&1");
+                if (out.find(c.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(c.expr) + " should contain " + c.want +
+                                      " (got: '" + out + "'); ";
+                }
+            }
+
+            if (result.passed) {
+                result.message = "hierarchy is dotted, ^ selects a trace, old names still resolve";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
+// Test 27: a script's own (load ...) must work, not only the -l flag.
+//
+// Streaming defaulted to on, and a streaming trace does not populate SIGNALS,
+// SCOPES or MAX-INDEX. The -l path force-disabled streaming; the `load` OPERATOR
+// did not. Every upstream script begins with (load ...), so every one of them saw
+// a trace reporting zero signals.
+void test_load_operator(ExecutableTestSuite& suite, const std::string& exe_path) {
+    TestResult result;
+    result.name = "(load ...) populates the trace, like -l";
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    try {
+        std::string vcd = "tests/original/traces/counter.vcd";
+        if (!file_exists(vcd)) {
+            result.passed = true;
+            result.message = "Skipped: trace not found";
+        } else {
+            result.passed = true;
+            std::string load = " -e '(load \"" + vcd + "\" \"a\")'";
+            struct Case { const char* expr; const char* want; };
+            const Case cases[] = {
+                {"(length SIGNALS)", "7"},
+                {"(length SCOPES)", "2"},
+                {"MAX-INDEX", "80"},
+                {"(count (rising tb.clk))", "40"},
+            };
+            for (const auto& c : cases) {
+                auto [rc, out] = run_command(
+                    exe_path + load + " -e '" + c.expr + "' 2>&1");
+                if (out.find(c.want) == std::string::npos) {
+                    result.passed = false;
+                    result.message += std::string(c.expr) + " after (load ...) should be " +
+                                      c.want + " (got: '" + out + "'); ";
+                }
+            }
+            if (result.passed) {
+                result.message = "a script's own load gives a fully populated trace";
+            }
+        }
+    } catch (const std::exception& e) {
+        result.passed = false;
+        result.message = std::string("Exception: ") + e.what();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    result.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    suite.add_result(result);
+}
+
 // =============================================================================
 // MAIN TEST RUNNER
 // =============================================================================
@@ -1380,6 +1516,8 @@ int main(int argc, char* argv[]) {
     test_std_library(suite, exe_path);
     test_bigint_mode(suite, exe_path);
     test_array_element_names(suite, exe_path);
+    test_separator(suite, exe_path);
+    test_load_operator(suite, exe_path);
     test_wal_compat_forms(suite, exe_path);
     test_script_runs_all_forms(suite, exe_path);
     test_special_variables(suite, exe_path);

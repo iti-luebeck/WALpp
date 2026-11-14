@@ -34,7 +34,15 @@ private:
     bool trace_mode = false;
     bool pipe_mode = false;
     bool stdin_mode = false;
-    bool streaming_enabled = true;  // Streaming auto-detection (default: enabled)
+    // Streaming is OFF unless --streaming asks for it.
+    //
+    // It used to default to true, and apply_streaming_config() pushed that into the
+    // container before anything loaded. The -l path then force-disabled it ("hamming
+    // operators require full trace access"), but the `load` OPERATOR did not, so a
+    // script's own `(load ...)` silently got a streaming trace, and a streaming trace
+    // does not populate SIGNALS, SCOPES or MAX-INDEX. Every upstream script begins
+    // with `(load ...)`, so every one of them saw a trace reporting zero signals.
+    bool streaming_enabled = false;
     bool streaming_explicit = false;  // User explicitly set streaming
     
     // Fast mode flags

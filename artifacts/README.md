@@ -148,7 +148,7 @@ SCA-WAL test patterns. The value of the testbench's `filename` register (the
 test-pattern file it read) has been shortened to a relative path; the traces
 are otherwise unchanged. Their testbench contains wide file-I/O registers
 (`filename`, `dumpfile`, `line`) that dominate an all-signals Hamming weight;
-use a scope such as `test_aes_128^uut` to restrict the sum to the AES core.
+use a scope such as `test_aes_128.uut` to restrict the sum to the AES core.
 
 ## Reproducing
 
