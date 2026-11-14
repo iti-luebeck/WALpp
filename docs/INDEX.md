@@ -83,15 +83,17 @@ in the [command-line reference](reference/cli.md#agent-and-scripting-modes).
 
 | | |
 |---|---|
-| `wal` | The namespace index, everything below in one place |
-| `Value` | The tagged union every expression evaluates to |
-| `Symbol`, `WList` | The reader's output types |
-| `Closure`, `Macro` | User-defined functions and macros |
-| `Environment` | Scope chain and variable lookup |
-| `UserOperator` | The interface an operator of your own implements |
-| `fast_vcd` | The extraction reader, which bypasses the interpreter |
-
-Each of those is a page under the API tab.
+| [`wal`](../api/wal/index.md) | The namespace index, everything below in one place |
+| [`Value`](../api/Value.md) | The tagged union every expression evaluates to |
+| [`Symbol`](../api/Symbol.md), [`WList`](../api/WList.md), [`WArray`](../api/WArray.md) | The reader's output types |
+| [`Closure`](../api/Closure.md), [`Macro`](../api/Macro.md) | User-defined functions and macros |
+| [`Environment`](../api/Environment.md) | Scope chain and variable lookup |
+| [`UserOperator`](../api/UserOperator.md) | The interface an operator of your own implements |
+| [`Wal`](../api/wal/Wal.md) | The façade: load a trace, evaluate, step |
+| [`BigInt`](../api/wal/BigInt.md) | Arbitrary-precision integers, under `--bigint` |
+| [`AgentError`](../api/wal/AgentError.md), [`LintFinding`](../api/wal/LintFinding.md) | The agent modes' own types |
+| [`fast_vcd`](../api/fast_vcd/index.md) | The extraction reader, which bypasses the interpreter |
+| [`StreamingHamming`](../api/fast_vcd/StreamingHamming.md), [`StreamingValues`](../api/fast_vcd/StreamingValues.md) | The single-pass kernels |
 
 For the entry points you actually call from a program, with code, start at the
 [C++ API quick reference](API_QUICK_REFERENCE.md) and
