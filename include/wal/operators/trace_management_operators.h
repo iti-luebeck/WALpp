@@ -32,6 +32,19 @@ namespace wal::operators {
  * All implementations are header-only for compiler optimization.
  */
 class TraceManagementOperators {
+private:
+    /// A signal name given as a string OR as a symbol.
+    ///
+    /// Upstream writes these quoted, as `(signal? 'tb.clk)` and
+    /// `(signal-width 'tb.dut.counter)`, so demanding a string rejected the spelling
+    /// every upstream script uses.
+    static std::string signal_name_of(const Value& v, const char* who) {
+        if (v.is_string()) return v.to_string();
+        if (v.is_symbol()) return v.to_symbol()->get_name();
+        throw EvalError(std::string(who) + ": signal name must be a string or symbol");
+    }
+
+public:
 public:
     /**
      * @brief Register all trace management operators
@@ -204,11 +217,8 @@ public:
 
             auto evaluated = eval.eval_args(args);
 
-            if (!evaluated[0].is_string()) {
-                throw EvalError("signal?: signal name must be a string");
-            }
 
-            std::string signal_name = evaluated[0].to_string();
+            std::string signal_name = signal_name_of(evaluated[0], "signal");
 
             try {
                 // Any accepted spelling counts as existing (see signal_resolve.h).
@@ -227,11 +237,8 @@ public:
 
             auto evaluated = eval.eval_args(args);
 
-            if (!evaluated[0].is_string()) {
-                throw EvalError("signal-width: signal name must be a string");
-            }
 
-            std::string signal_name = evaluated[0].to_string();
+            std::string signal_name = signal_name_of(evaluated[0], "signal");
 
             try {
                 std::string resolved = signal_name;
@@ -252,11 +259,8 @@ public:
 
             auto evaluated = eval.eval_args(args);
 
-            if (!evaluated[0].is_string()) {
-                throw EvalError("get-signal: signal name must be a string");
-            }
 
-            std::string signal_name = evaluated[0].to_string();
+            std::string signal_name = signal_name_of(evaluated[0], "signal");
             int offset = 0;
 
             if (args.size() >= 2) {

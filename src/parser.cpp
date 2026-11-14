@@ -135,6 +135,7 @@ Value Parser::parse_atom() {
             // Read the whole word after the marker, so `#t`, `#f` and `#nil` stay
             // literals while `#INDEX` and `#ready` are group references.
             size_t end = position + 1;
+            if (end < input.length() && (input[end] == '.' || input[end] == '^')) ++end;
             while (end < input.length() &&
                    (std::isalnum(static_cast<unsigned char>(input[end])) ||
                     input[end] == '_' || input[end] == '-')) {
@@ -143,8 +144,12 @@ Value Parser::parse_atom() {
             std::string word = input.substr(position + 1, end - (position + 1));
             bool literal = (marker == '#') &&
                            (word == "t" || word == "f" || word == "nil" || word == "n");
-            is_shorthand = !literal && !word.empty() &&
-                           (std::isalpha(static_cast<unsigned char>(after)) || after == '_');
+            // `#.name` is a group reference too: upstream writes the leaf with its
+            // leading separator when the group prefix has none. Requiring a letter
+            // straight after the marker made that an "Invalid boolean literal".
+            bool starts_name = std::isalpha(static_cast<unsigned char>(after)) ||
+                               after == '_' || after == '.' || after == '^';
+            is_shorthand = !literal && starts_name;
         }
         if (is_shorthand) {
             next();  // consume the marker

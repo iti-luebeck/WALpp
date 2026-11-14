@@ -229,7 +229,18 @@ public:
                 throw EvalError("min requires at least 1 argument");
             }
             auto evaluated = eval.eval_args(args);
-            
+
+            // Upstream spells this `(min list)`. WAL++ took its numbers variadically,
+            // so an upstream script handing it a list failed. Both work now: a lone
+            // list argument is taken apart, anything else is read as the numbers.
+            if (evaluated.size() == 1 && evaluated[0].is_list()) {
+                auto list = evaluated[0].to_list();
+                if (list->empty()) {
+                    throw EvalError("min: list is empty");
+                }
+                evaluated.assign(list->begin(), list->end());
+            }
+
             // Check all arguments are numbers
             for (const auto& val : evaluated) {
                 if (!val.is_number()) {
@@ -259,7 +270,18 @@ public:
                 throw EvalError("max requires at least 1 argument");
             }
             auto evaluated = eval.eval_args(args);
-            
+
+            // Upstream spells this `(max list)`. WAL++ took its numbers variadically,
+            // so an upstream script handing it a list failed. Both work now: a lone
+            // list argument is taken apart, anything else is read as the numbers.
+            if (evaluated.size() == 1 && evaluated[0].is_list()) {
+                auto list = evaluated[0].to_list();
+                if (list->empty()) {
+                    throw EvalError("max: list is empty");
+                }
+                evaluated.assign(list->begin(), list->end());
+            }
+
             // Check all arguments are numbers
             for (const auto& val : evaluated) {
                 if (!val.is_number()) {

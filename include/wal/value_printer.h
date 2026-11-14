@@ -3,6 +3,7 @@
 #include "ast.h"
 #include <iostream>
 #include <ostream>
+#include <cmath>
 
 namespace wal {
 
@@ -32,7 +33,13 @@ inline void print_value(const Value& result, std::ostream& os, bool quote_string
     } else if (result.is_int()) {
         os << result.to_int();
     } else if (result.is_float()) {
-        os << result.to_float();
+        // A whole float prints with its ".0" so a float is distinguishable from an
+        // int, as upstream's output is: `(average (list 1 2 3))` is 2.0, not 2.
+        double value = result.to_float();
+        os << value;
+        if (std::isfinite(value) && value == static_cast<int64_t>(value)) {
+            os << ".0";
+        }
     } else if (result.is_string()) {
         if (quote_strings) {
             os << "\"" << result.to_string() << "\"";

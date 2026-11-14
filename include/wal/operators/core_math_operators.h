@@ -237,11 +237,32 @@ public:
                 throw EvalError("min requires at least 1 argument");
             }
             auto evaluated = eval.eval_args(args);
-            double min_val = evaluated[0].to_float();
-            for (size_t i = 1; i < evaluated.size(); ++i) {
-                min_val = std::min(min_val, evaluated[i].to_float());
+            // Upstream spells this `(min list)`. WAL++ took its numbers variadically,
+            // so an upstream script handing it a list failed. Both work now: a single
+            // list argument is taken apart, anything else is read as the numbers.
+            std::vector<Value> items;
+            if (evaluated.size() == 1 && evaluated[0].is_list()) {
+                auto list = evaluated[0].to_list();
+                if (list->empty()) {
+                    throw EvalError("min: list is empty");
+                }
+                items.assign(list->begin(), list->end());
+            } else {
+                items = evaluated;
             }
-            return Value(min_val);
+            bool all_int = true;
+            for (const auto& item : items) {
+                if (!item.is_number()) {
+                    throw EvalError("min: all arguments must be numbers");
+                }
+                if (!item.is_int()) all_int = false;
+            }
+            double best = items[0].to_float();
+            for (size_t i = 1; i < items.size(); ++i) {
+                best = std::min(best, items[i].to_float());
+            }
+            // Keep an all-integer input integral, as upstream does.
+            return all_int ? Value(static_cast<int64_t>(best)) : Value(best);
         });
         
         registry.register_operator("max", [](SEval& eval, const std::vector<Value>& args) -> Value {
@@ -249,11 +270,32 @@ public:
                 throw EvalError("max requires at least 1 argument");
             }
             auto evaluated = eval.eval_args(args);
-            double max_val = evaluated[0].to_float();
-            for (size_t i = 1; i < evaluated.size(); ++i) {
-                max_val = std::max(max_val, evaluated[i].to_float());
+            // Upstream spells this `(max list)`. WAL++ took its numbers variadically,
+            // so an upstream script handing it a list failed. Both work now: a single
+            // list argument is taken apart, anything else is read as the numbers.
+            std::vector<Value> items;
+            if (evaluated.size() == 1 && evaluated[0].is_list()) {
+                auto list = evaluated[0].to_list();
+                if (list->empty()) {
+                    throw EvalError("max: list is empty");
+                }
+                items.assign(list->begin(), list->end());
+            } else {
+                items = evaluated;
             }
-            return Value(max_val);
+            bool all_int = true;
+            for (const auto& item : items) {
+                if (!item.is_number()) {
+                    throw EvalError("max: all arguments must be numbers");
+                }
+                if (!item.is_int()) all_int = false;
+            }
+            double best = items[0].to_float();
+            for (size_t i = 1; i < items.size(); ++i) {
+                best = std::max(best, items[i].to_float());
+            }
+            // Keep an all-integer input integral, as upstream does.
+            return all_int ? Value(static_cast<int64_t>(best)) : Value(best);
         });
         
         // ═══════════════════════════════════════════════════════════════

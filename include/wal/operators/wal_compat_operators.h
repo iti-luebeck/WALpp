@@ -255,11 +255,22 @@ private:
             if (args.size() != 1) {
                 throw EvalError("defined? expects 1 argument (symbol)");
             }
-            if (!args[0].is_symbol()) {
+            // Always written quoted, as `(defined? 'x)`, so the argument arrives as
+            // (quote x) and has to be evaluated to reach the symbol. Testing the raw
+            // form for is_symbol() rejected the only spelling anyone uses.
+            Value target = args[0];
+            if (target.is_list()) {
+                auto form = target.to_list();
+                if (form->size() == 2 && (*form)[0].is_symbol() &&
+                    (*form)[0].to_symbol()->get_name() == "quote") {
+                    target = (*form)[1];
+                }
+            }
+            if (!target.is_symbol()) {
                 throw EvalError("defined?: argument must be a symbol");
             }
             try {
-                eval.get_environment()->get(args[0].to_symbol()->get_name());
+                eval.get_environment()->get(target.to_symbol()->get_name());
                 return Value(true);
             } catch (const EvalError&) {
                 return Value(false);
@@ -708,7 +719,15 @@ private:
             }
             std::string leaf = name_of(args[0], "resolve-scope");
             if (eval.has_alias(leaf)) leaf = eval.get_aliases().at(leaf);
-            return Value(std::make_shared<Symbol>(qualify(eval, eval.get_scope(), leaf)));
+            // Upstream READS the signal and fails when it does not exist. Returning
+            // the name as a symbol instead made `~wrongname` quietly succeed, which
+            // is the opposite of what a scope-relative reference is for.
+            std::string full = qualify(eval, eval.get_scope(), leaf);
+            std::string resolved;
+            if (!resolve_signal_name(eval.get_traces(), full, resolved)) {
+                throw EvalError("resolve-scope: No signal with name \"" + full + "\"");
+            }
+            return eval.get_traces()->signal_value(resolved, 0);
         });
 
         // (resolve-group name) -- the same, relative to the current group.
@@ -718,8 +737,14 @@ private:
             }
             std::string leaf = name_of(args[0], "resolve-group");
             if (eval.has_alias(leaf)) leaf = eval.get_aliases().at(leaf);
-            // A group is already a prefix, so it joins without a separator.
-            return Value(std::make_shared<Symbol>(eval.get_group() + leaf));
+            // A group is already a prefix, so it joins without a separator. As with
+            // resolve-scope, the signal is read and a missing one is an error.
+            std::string full = eval.get_group() + leaf;
+            std::string resolved;
+            if (!resolve_signal_name(eval.get_traces(), full, resolved)) {
+                throw EvalError("resolve-group: No signal with name \"" + full + "\"");
+            }
+            return eval.get_traces()->signal_value(resolved, 0);
         });
 
         // (all-scopes) -- every scope in the trace.
@@ -872,9 +897,27 @@ private:
     static std::string qualify(SEval& eval, const std::string& scope,
                                const std::string& leaf) {
         if (scope.empty()) return leaf;
+        // The scope may be written with either separator, while the trace stores one
+        // spelling. Comparing only the literal string made a dotted scope look like a
+        // group, so the leaf was joined with no separator at all.
+        auto translate = [](std::string text, char from, char to) {
+            for (auto& c : text) {
+                if (c == from) c = to;
+            }
+            return text;
+        };
         auto scopes = all_scopes(eval);
-        bool is_real_scope = std::find(scopes.begin(), scopes.end(), scope) != scopes.end();
-        return is_real_scope ? scope + Trace::SCOPE_SEPARATOR + leaf : scope + leaf;
+        const std::string dotted = translate(scope, Trace::SCOPE_SEPARATOR, '.');
+        bool is_real_scope = false;
+        for (const auto& known : scopes) {
+            if (known == scope || translate(known, Trace::SCOPE_SEPARATOR, '.') == dotted) {
+                is_real_scope = true;
+                break;
+            }
+        }
+        // Keep the separator the caller used, so a dotted scope yields a dotted name.
+        char separator = scope.find('.') != std::string::npos ? '.' : Trace::SCOPE_SEPARATOR;
+        return is_real_scope ? scope + separator + leaf : scope + leaf;
     }
 
     /// Mirror the current scope/group into a global, as upstream's CS and CG.

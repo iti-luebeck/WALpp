@@ -129,8 +129,16 @@ public:
             }
             auto evaluated = eval.eval_args(args);
             
+            // Upstream's length also measures a string and an array, which is what
+            // `(length SIGNALS)` and `(length "abc")` both rely on.
+            if (evaluated[0].is_string()) {
+                return Value(static_cast<int64_t>(evaluated[0].to_string().size()));
+            }
+            if (evaluated[0].is_array()) {
+                return Value(static_cast<int64_t>(evaluated[0].to_array()->size()));
+            }
             if (!evaluated[0].is_list()) {
-                throw EvalError("length: argument must be a list");
+                throw EvalError("length: argument must be a list, string or array");
             }
             
             return Value(static_cast<int64_t>(evaluated[0].to_list()->size()));
