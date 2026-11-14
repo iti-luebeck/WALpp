@@ -47,6 +47,10 @@ build against an installed WAL++ the way a consumer would.
 
 ### Driving WAL++ from an agent
 
+| | |
+|---|---|
+| [Driving WAL++ from an agent](guides/agentic-workflows.md) | The JSON envelope, `inspect`, `lint`, and the loop they are for |
+
 The repository ships a Claude skill at
 [`.claude/skills/walpp-waveform-analysis/`](https://github.com/iti-luebeck/WALpp/blob/main/.claude/skills/walpp-waveform-analysis/SKILL.md),
 written from the WAL++ usage behind the paper. It carries its own `verify.sh`, which

@@ -96,6 +96,7 @@ nav:
       - Scaling to full-core traces: docs/guides/scaling-extraction.md
       - Working with very large traces: docs/guides/large-traces.md
     - Migrating from WAL: docs/guides/migrating-from-wal.md
+    - Driving WAL++ from an agent: docs/guides/agentic-workflows.md
   - Building on WAL++:
     - Embedding WAL++ in a C++ program: docs/guides/cpp-api.md
     - Writing your own extraction tool: docs/guides/writing-fast-tools.md

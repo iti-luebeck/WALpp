@@ -2112,6 +2112,42 @@ void test_agent_modes(ExecutableTestSuite& suite, const std::string& exe_path) {
             std::remove(bad.c_str());
         }
 
+        // --lint: position decides whether an unknown symbol is reported at all. In
+        // head position it is a call to something that does not exist, so it is an
+        // error. In argument position it is left alone, because that is how a signal
+        // is read and nothing is loaded here, so any bare name there may be real.
+        //
+        // The asymmetry is what the agent guide tells readers to rely on: lint says
+        // the script will START, never that the names in it exist. That is `inspect`'s
+        // job. If this ever becomes symmetric the guide is wrong, so pin it.
+        {
+            std::string arg_pos = "/tmp/walpp_lint_argsym.wal";
+            std::ofstream f(arg_pos);
+            f << "(printf \"%d\\n\" zzzundefined)\n";
+            f.close();
+            auto [rc, out] = run_command(exe_path + " --lint " + arg_pos + " 2>&1; echo rc=$?");
+            if (out.find("rc=0") == std::string::npos ||
+                out.find("no problems found") == std::string::npos) {
+                result.passed = false;
+                result.message += "an unknown symbol in argument position should pass, "
+                                  "it may be a signal (got: '" + out + "'); ";
+            }
+            std::remove(arg_pos.c_str());
+
+            std::string head_pos = "/tmp/walpp_lint_headsym.wal";
+            std::ofstream g(head_pos);
+            g << "(zzzundefined 1)\n";
+            g.close();
+            auto [rc2, out2] = run_command(exe_path + " --lint " + head_pos + " 2>&1; echo rc=$?");
+            if (out2.find("rc=1") == std::string::npos ||
+                out2.find("unknown-operator") == std::string::npos) {
+                result.passed = false;
+                result.message += "the same symbol in head position should be an error "
+                                  "(got: '" + out2 + "'); ";
+            }
+            std::remove(head_pos.c_str());
+        }
+
         // --lint: unbalanced delimiters are located, not just reported.
         {
             std::string bad = "/tmp/walpp_lint_paren.wal";

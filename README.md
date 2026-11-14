@@ -31,6 +31,7 @@ The full documentation is in [`docs/`](docs/INDEX.md).
 - [Scaling to full-core traces](docs/guides/scaling-extraction.md) - the `--fast-*` extraction modes and what they cost
 - [Working with very large traces](docs/guides/large-traces.md) - streaming, and choosing between the three ways to read a trace
 - [Migrating from WAL](docs/guides/migrating-from-wal.md)
+- [Driving WAL++ from an agent](docs/guides/agentic-workflows.md) - JSON envelope, `inspect`, `lint`, and the loop they are for
 
 **Building on WAL++**
 
