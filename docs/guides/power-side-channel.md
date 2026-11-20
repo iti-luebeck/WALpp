@@ -5,7 +5,7 @@ silicon, by deriving an activity trace from a simulation waveform and running th
 same attacks an evaluator would.
 
 This guide describes the method used in
-[Nešković et al., *Security-Driven Verification of RISC-V Crypto Extensions*](../INDEX.md),
+[Nešković et al., *Security-Driven Verification of RISC-V Crypto Extensions*](https://doi.org/10.1109/LES.2026.3753937),
 applied to AES-128 on the Sailor core at both RTL and post-route netlist level.
 
 ## The idea

@@ -19,7 +19,7 @@ for throughput on traces too large for the original to handle.
 ### Security analysis
 
 These describe the two analyses in
-[Nešković et al., *Security-Driven Verification of RISC-V Crypto Extensions*](#citing),
+[Nešković et al., *Security-Driven Verification of RISC-V Crypto Extensions*](https://doi.org/10.1109/LES.2026.3753937),
 applied to the Zkn scalar-crypto instructions of the Sailor core. Neither is specific
 to that core.
 
@@ -113,6 +113,9 @@ reasons specific to waveform data, and both can be switched back with
 
 ## Citing
 
-If WAL++ contributes to published work, please cite the paper in
-[`CITATION.bib`](../CITATION.bib), and consider citing upstream WAL as well: the
+If WAL++ contributes to published work, please cite the paper
+A. Nešković, A. Kabour, C. Ewert, M. Berekovic, R. Meyer, S. Mulhem:
+*Security-Driven Verification of RISC-V Crypto Extensions: A Scalable Framework for
+Timing and Power Side-Channel Analysis*, IEEE Embedded Systems Letters, 2026,
+doi:[10.1109/LES.2026.3753937](https://doi.org/10.1109/LES.2026.3753937) (BibTeX: [`CITATION.bib`](../CITATION.bib)), and consider citing upstream WAL as well: the
 language, its operator library and its standard library are theirs.

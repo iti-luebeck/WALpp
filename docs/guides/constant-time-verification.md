@@ -5,7 +5,7 @@ operates on. A cryptographic implementation that fails this leaks key material
 through timing, even when it is functionally correct.
 
 This guide describes the method used in
-[Nešković et al., *Security-Driven Verification of RISC-V Crypto Extensions*](../INDEX.md),
+[Nešković et al., *Security-Driven Verification of RISC-V Crypto Extensions*](https://doi.org/10.1109/LES.2026.3753937),
 applied to the Zkn scalar-crypto instructions of the Sailor core. Nothing in it is
 specific to that core.
 

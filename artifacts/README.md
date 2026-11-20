@@ -6,7 +6,8 @@ traces behind the evaluation of
 > A. Nešković, A. Kabour, C. Ewert, M. Berekovic, R. Meyer, S. Mulhem:
 > *Security-Driven Verification of RISC-V Crypto Extensions: A Scalable
 > Framework for Timing and Power Side-Channel Analysis.*
-> IEEE Embedded Systems Letters (SeHAS 2027), accepted for publication.
+> IEEE Embedded Systems Letters, 2026 (early access),
+> doi:[10.1109/LES.2026.3753937](https://doi.org/10.1109/LES.2026.3753937).
 > BibTeX: [`CITATION.bib`](../CITATION.bib).
 
 The Sailor simulation waveforms are tens to hundreds of GB per campaign and

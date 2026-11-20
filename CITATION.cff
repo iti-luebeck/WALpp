@@ -26,14 +26,17 @@ keywords:
   - side-channel analysis
   - Hamming distance
 
-# Accepted for publication in IEEE Embedded Systems Letters (SeHAS 2027).
-# TODO: add year, volume, issue, start/end pages and doi once published
-# (also in CITATION.bib).
+# IEEE Embedded Systems Letters (SeHAS 2027), early access.
+# TODO: add volume, issue and start/end pages once the article is assigned
+# to an issue (also in CITATION.bib).
 preferred-citation:
   type: article
-  status: in-press
+  status: advance-online
   title: "Security-Driven Verification of RISC-V Crypto Extensions: A Scalable Framework for Timing and Power Side-Channel Analysis"
   journal: "IEEE Embedded Systems Letters"
+  year: 2026
+  doi: "10.1109/LES.2026.3753937"
+  url: "https://doi.org/10.1109/LES.2026.3753937"
   authors:
     - given-names: Andrija
       family-names: Nešković

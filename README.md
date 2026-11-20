@@ -226,7 +226,8 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and license tex
 
 ## Citing WAL++
 
-If you use WAL++ in your research, please cite our paper as given in
+If you use WAL++ in your research, please cite our paper
+([Nešković et al., IEEE Embedded Systems Letters, 2026](https://doi.org/10.1109/LES.2026.3753937)) as given in
 [CITATION.cff](CITATION.cff) (GitHub shows it under "Cite this repository") or
 [CITATION.bib](CITATION.bib). The workloads, scripts, results and traces of the
 paper's evaluation are in [artifacts/](artifacts/).
