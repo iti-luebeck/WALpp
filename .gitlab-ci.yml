@@ -5,6 +5,7 @@ stages:
   - wheel
   - wasm
   - docs
+  - publish
 
 variables:
   CMAKE_BUILD_TYPE: Release
@@ -282,5 +283,32 @@ docs:deploy:
   environment:
     name: docs
     url: https://www.iti.uni-luebeck.de/docs/walpp/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "github-release"
+
+# github.com/iti-luebeck/walpp follows this branch: its main is github-release, nothing else goes there
+# (GitLab main has the internal history). The deploy key in GITHUB_MIRROR_KEY may write to that one
+# repository only; the variable is protected, so only the protected branch github-release pushes. SSH
+# goes over port 443 (ssh.github.com), which the runner's egress filter lets out. No --force: when
+# GitHub has commits this branch lacks, the job fails instead of throwing them away.
+github:mirror:
+  stage: publish
+  # The institute's Docker runner (#51) takes only jobs tagged docker
+  tags: [docker]
+  image: ubuntu:24.04
+  needs: []
+  variables:
+    GIT_DEPTH: 0
+    GIT_STRATEGY: clone
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq git openssh-client
+  script:
+    - chmod 600 "$GITHUB_MIRROR_KEY"
+    - export GIT_SSH_COMMAND="ssh -i $GITHUB_MIRROR_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$GITHUB_KNOWN_HOSTS"
+    - git push ssh://git@ssh.github.com:443/iti-luebeck/walpp.git "$CI_COMMIT_SHA:refs/heads/main"
+  environment:
+    name: github
+    url: https://github.com/iti-luebeck/walpp
   rules:
     - if: $CI_COMMIT_BRANCH == "github-release"
